@@ -12,6 +12,12 @@ SYSTEM_INSTRUCTION = (
     "Answer concisely and accurately based only on the provided snapshots."
 )
 
+SINGLE_SNAPSHOT_SYSTEM_INSTRUCTION = (
+    "You are an expert at analysing web-page content snapshots. "
+    "The user will provide one snapshot of a page and ask a question about it. "
+    "Answer concisely and accurately based only on the provided snapshot."
+)
+
 
 def _get_client() -> genai.Client:
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -53,6 +59,35 @@ def compare_snapshots(
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
+            temperature=0.3,
+        ),
+    )
+    return response.text
+
+
+def answer_question_about_snapshot(
+    snapshot_id: int,
+    question: str,
+    *,
+    use_html: bool = False,
+) -> str:
+    """Send one snapshot to Gemini and return its answer to *question*."""
+    snapshot = Snapshot.objects.select_related("page").get(id=snapshot_id)
+    content = snapshot.html_content if use_html else snapshot.content
+
+    prompt = (
+        f"## Snapshot (id={snapshot.id}, taken {snapshot.created_at.isoformat()})\n\n"
+        f"{content}\n\n"
+        f"---\n\n"
+        f"## Question\n\n{question}"
+    )
+
+    client = _get_client()
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=SINGLE_SNAPSHOT_SYSTEM_INSTRUCTION,
             temperature=0.3,
         ),
     )
