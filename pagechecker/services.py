@@ -21,6 +21,19 @@ def create_page(url: str) -> Page:
     return page
 
 
+def update_page(page_id: int, url: str, *, keep_previous_snapshots: bool = True) -> Page:
+    page = get_page(page_id=page_id)
+    page.url = url
+    page.save(update_fields=["url"])
+
+    if not keep_previous_snapshots:
+        page.snapshots.all().delete()
+
+    check_page(page.id)
+    page.refresh_from_db()
+    return page
+
+
 def delete_page(page_id: int) -> None:
     Page.objects.filter(id=page_id).delete()
 
