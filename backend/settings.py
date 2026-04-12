@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -31,6 +32,7 @@ ALLOWED_HOSTS = ["api.yukiclaire.xyz", "localhost"]
 # Application definition
 
 INSTALLED_APPS = [
+    "corsheaders",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -42,6 +44,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -116,3 +119,16 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+
+
+cors_allowed_origins = os.getenv("CORS_ALLOWED_ORIGINS", "").strip()
+
+if cors_allowed_origins:
+    CORS_ALLOWED_ORIGINS = [
+        origin.strip()
+        for origin in cors_allowed_origins.split(",")
+        if origin.strip()
+    ]
+elif DEBUG:
+    # Development default: allow requests from any local/frontend origin.
+    CORS_ALLOW_ALL_ORIGINS = True
