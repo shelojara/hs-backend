@@ -54,13 +54,25 @@ def check_page(request, payload: CheckPageRequest):
 @router.post("/v1.PageChecker.CompareSnapshots", response=CompareSnapshotsResponse)
 def compare_snapshots(request, payload: CompareSnapshotsRequest):
     try:
+        page = services.get_page(page_id=payload.page_id)
+    except ObjectDoesNotExist:
+        return JsonResponse({"error": "Page not found."}, status=404)
+
+    snapshots = list(page.snapshots.order_by("-created_at")[:2])
+    if len(snapshots) < 2:
+        return JsonResponse(
+            {"error": "Page must have at least 2 snapshots to compare."},
+            status=400,
+        )
+
+    snapshot_b, snapshot_a = snapshots[0], snapshots[1]
+
+    try:
         answer = gemini_service.compare_snapshots(
-            snapshot_a_id=payload.snapshot_a_id,
-            snapshot_b_id=payload.snapshot_b_id,
+            snapshot_a_id=snapshot_a.id,
+            snapshot_b_id=snapshot_b.id,
             question=payload.question,
         )
-    except ObjectDoesNotExist:
-        return JsonResponse({"error": "One or both snapshots not found."}, status=404)
     except RuntimeError as exc:
         return JsonResponse({"error": str(exc)}, status=500)
     return CompareSnapshotsResponse(answer=answer)

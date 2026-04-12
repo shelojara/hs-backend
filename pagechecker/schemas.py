@@ -58,8 +58,7 @@ class DeletePageResponse(Schema):
 
 
 class CompareSnapshotsRequest(Schema):
-    snapshot_a_id: int
-    snapshot_b_id: int
+    page_id: int
     question: str
 
 
