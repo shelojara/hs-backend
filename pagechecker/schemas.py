@@ -55,3 +55,13 @@ class DeletePageRequest(Schema):
 
 class DeletePageResponse(Schema):
     pass
+
+
+class CompareSnapshotsRequest(Schema):
+    snapshot_a_id: int
+    snapshot_b_id: int
+    question: str
+
+
+class CompareSnapshotsResponse(Schema):
+    answer: str

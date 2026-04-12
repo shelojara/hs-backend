@@ -1,9 +1,13 @@
+from django.core.exceptions import ObjectDoesNotExist
+from django.http import JsonResponse
 from ninja import Router
 
-from pagechecker import services
+from pagechecker import gemini_service, services
 from pagechecker.schemas import (
     CheckPageRequest,
     CheckPageResponse,
+    CompareSnapshotsRequest,
+    CompareSnapshotsResponse,
     CreatePageRequest,
     CreatePageResponse,
     DeletePageRequest,
@@ -45,3 +49,18 @@ def delete_page(request, payload: DeletePageRequest):
 def check_page(request, payload: CheckPageRequest):
     has_changed = services.check_page(page_id=payload.page_id)
     return CheckPageResponse(has_changed=has_changed)
+
+
+@router.post("/v1.PageChecker.CompareSnapshots", response=CompareSnapshotsResponse)
+def compare_snapshots(request, payload: CompareSnapshotsRequest):
+    try:
+        answer = gemini_service.compare_snapshots(
+            snapshot_a_id=payload.snapshot_a_id,
+            snapshot_b_id=payload.snapshot_b_id,
+            question=payload.question,
+        )
+    except ObjectDoesNotExist:
+        return JsonResponse({"error": "One or both snapshots not found."}, status=404)
+    except RuntimeError as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+    return CompareSnapshotsResponse(answer=answer)
