@@ -36,7 +36,7 @@ def check_page(page_id: int) -> bool:
     latest_snapshot = Snapshot.objects.filter(page=page).order_by("-created_at").first()
     has_changed = latest_snapshot is None or latest_snapshot.content != current_text
 
-    Snapshot.objects.create(page=page, content=current_text)
+    Snapshot.objects.create(page=page, content=current_text, html_content=response.text)
 
     page.last_checked_at = timezone.now()
     page.save(update_fields=["last_checked_at"])

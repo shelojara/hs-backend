@@ -7,6 +7,7 @@ class Snapshot(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     content = models.TextField()
+    html_content = models.TextField(default="")
 
     def __str__(self):
         return f"{self.page.url} - {self.created_at}"
