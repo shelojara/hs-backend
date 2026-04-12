@@ -1,4 +1,5 @@
 import httpx
+from django.db import transaction
 from django.utils import timezone
 
 from pagechecker import gemini_service
@@ -21,9 +22,10 @@ def create_page(url: str) -> Page:
     return page
 
 
+@transaction.atomic
 def update_page(page_id: int, url: str, *, keep_snapshots: bool = False) -> Page:
     """Update a page's URL, re-extract title/icon, and optionally clear old snapshots."""
-    page = Page.objects.get(id=page_id)
+    page = Page.objects.select_for_update().get(id=page_id)
     page.url = url
     page.save(update_fields=["url"])
 
