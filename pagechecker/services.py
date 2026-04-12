@@ -44,7 +44,7 @@ def check_page(page_id: int) -> bool:
     return has_changed
 
 
-def compare_snapshots(page_id: int, question: str) -> str:
+def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) -> str:
     """Compare the latest two snapshots of a page using Gemini."""
     page = get_page(page_id=page_id)
 
@@ -58,6 +58,7 @@ def compare_snapshots(page_id: int, question: str) -> str:
         snapshot_a_id=older.id,
         snapshot_b_id=newer.id,
         question=question,
+        use_html=use_html,
     )
 
 
