@@ -21,6 +21,20 @@ def create_page(url: str) -> Page:
     return page
 
 
+def update_page(page_id: int, url: str, *, keep_snapshots: bool = False) -> Page:
+    """Update a page's URL, re-extract title/icon, and optionally clear old snapshots."""
+    page = Page.objects.get(id=page_id)
+    page.url = url
+    page.save(update_fields=["url"])
+
+    if not keep_snapshots:
+        page.snapshots.all().delete()
+
+    check_page(page.id)
+    page.refresh_from_db()
+    return page
+
+
 def delete_page(page_id: int) -> None:
     Page.objects.filter(id=page_id).delete()
 
