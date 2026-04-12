@@ -1,4 +1,5 @@
 import httpx
+from django.db import IntegrityError
 from django.utils import timezone
 
 from pagechecker import gemini_service
@@ -16,6 +17,24 @@ def get_page(page_id: int) -> Page:
 
 def create_page(url: str) -> Page:
     page = Page.objects.create(url=url)
+    check_page(page.id)
+    page.refresh_from_db()
+    return page
+
+
+def update_page(page_id: int, url: str, *, keep_previous_snapshots: bool) -> Page:
+    """Change the page URL, optionally clear snapshots, then fetch to refresh title/icon."""
+    page = Page.objects.get(id=page_id)
+
+    if not keep_previous_snapshots:
+        Snapshot.objects.filter(page=page).delete()
+
+    page.url = url
+    try:
+        page.save(update_fields=["url"])
+    except IntegrityError as exc:
+        raise ValueError("A page with this URL already exists.") from exc
+
     check_page(page.id)
     page.refresh_from_db()
     return page

@@ -27,6 +27,16 @@ class CreatePageResponse(Schema):
     page: Page
 
 
+class UpdatePageRequest(Schema):
+    page_id: int
+    url: str
+    keep_previous_snapshots: bool = True
+
+
+class UpdatePageResponse(Schema):
+    page: Page
+
+
 class CheckPageRequest(Schema):
     page_id: int
 
