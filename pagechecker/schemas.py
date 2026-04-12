@@ -60,6 +60,16 @@ class DeletePageResponse(Schema):
     pass
 
 
+class UpdatePageRequest(Schema):
+    page_id: int
+    url: str
+    keep_snapshots: bool = False
+
+
+class UpdatePageResponse(Schema):
+    page: Page
+
+
 class CompareSnapshotsRequest(Schema):
     page_id: int
     question: str
