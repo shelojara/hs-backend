@@ -6,7 +6,6 @@ class Snapshot(Schema):
     id: int
     created_at: datetime
     content: str
-    html_content: str
 
 
 class Page(Schema):

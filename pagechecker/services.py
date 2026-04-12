@@ -3,7 +3,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from pagechecker import gemini_service
-from pagechecker.html_utils import extract_body_text, extract_metadata
+from pagechecker.html_utils import extract_body_html, extract_body_text, extract_metadata
 from pagechecker.models import Page, Snapshot
 
 
@@ -52,7 +52,8 @@ def check_page(page_id: int) -> bool:
     latest_snapshot = Snapshot.objects.filter(page=page).order_by("-created_at").first()
     has_changed = latest_snapshot is None or latest_snapshot.content != current_text
 
-    Snapshot.objects.create(page=page, content=current_text, html_content=response.text)
+    body_html = extract_body_html(response.text)
+    Snapshot.objects.create(page=page, content=current_text, html_content=body_html)
 
     metadata = extract_metadata(response.text, str(page.url))
     page.title = metadata["title"]

@@ -13,6 +13,17 @@ def extract_body_text(html: str) -> str:
     return body.get_text(separator="\n", strip=True)
 
 
+def extract_body_html(html: str) -> str:
+    """Return inner HTML of the document body (no head/doctype), scripts/styles removed."""
+    soup = BeautifulSoup(html, "html.parser")
+    body = soup.body or soup
+
+    for tag in body.find_all(["script", "style"]):
+        tag.decompose()
+
+    return body.decode_contents()
+
+
 def extract_metadata(html: str, page_url: str) -> dict[str, str]:
     """Extract title and icon URL from page HTML."""
     soup = BeautifulSoup(html, "html.parser")
