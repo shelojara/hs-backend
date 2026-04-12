@@ -1,10 +1,8 @@
-from urllib.parse import urljoin
-
 import httpx
-from bs4 import BeautifulSoup
 from django.utils import timezone
 
 from pagechecker import gemini_service
+from pagechecker.html_utils import extract_body_text, extract_metadata
 from pagechecker.models import Page, Snapshot
 
 
@@ -33,14 +31,14 @@ def check_page(page_id: int) -> bool:
 
     response = httpx.get(str(page.url), verify=False)
     response.raise_for_status()
-    current_text = _extract_body_text(response.text)
+    current_text = extract_body_text(response.text)
 
     latest_snapshot = Snapshot.objects.filter(page=page).order_by("-created_at").first()
     has_changed = latest_snapshot is None or latest_snapshot.content != current_text
 
     Snapshot.objects.create(page=page, content=current_text, html_content=response.text)
 
-    metadata = _extract_metadata(response.text, str(page.url))
+    metadata = extract_metadata(response.text, str(page.url))
     page.title = metadata["title"]
     page.icon = metadata["icon"]
     page.last_checked_at = timezone.now()
@@ -65,37 +63,3 @@ def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) ->
         question=question,
         use_html=use_html,
     )
-
-
-def _extract_body_text(html: str) -> str:
-    soup = BeautifulSoup(html, "html.parser")
-    body = soup.body or soup
-
-    for tag in body.find_all(["script", "style"]):
-        tag.decompose()
-
-    return body.get_text(separator="\n", strip=True)
-
-
-def _extract_metadata(html: str, page_url: str) -> dict[str, str]:
-    """Extract title and icon URL from page HTML."""
-    soup = BeautifulSoup(html, "html.parser")
-
-    title = ""
-    og_title = soup.find("meta", attrs={"property": "og:title"})
-    if og_title and og_title.get("content"):
-        title = og_title["content"].strip()
-    elif soup.title and soup.title.string:
-        title = soup.title.string.strip()
-
-    icon = ""
-    for rel in (["icon"], ["shortcut", "icon"], ["apple-touch-icon"]):
-        link = soup.find("link", rel=rel)
-        if link and link.get("href"):
-            icon = urljoin(page_url, link["href"])
-            break
-
-    if not icon:
-        icon = urljoin(page_url, "/favicon.ico")
-
-    return {"title": title, "icon": icon}
