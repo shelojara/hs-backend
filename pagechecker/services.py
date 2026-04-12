@@ -43,6 +43,25 @@ def check_page(page_id: int) -> bool:
     return has_changed
 
 
+def compare_snapshots(page_id: int, question: str) -> str:
+    """Compare the latest two snapshots of a page using Gemini."""
+    from pagechecker import gemini_service
+
+    page = get_page(page_id=page_id)
+
+    snapshots = list(page.snapshots.order_by("-created_at")[:2])
+    if len(snapshots) < 2:
+        raise ValueError("Page must have at least 2 snapshots to compare.")
+
+    older, newer = snapshots[1], snapshots[0]
+
+    return gemini_service.compare_snapshots(
+        snapshot_a_id=older.id,
+        snapshot_b_id=newer.id,
+        question=question,
+    )
+
+
 def _extract_body_text(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
     body = soup.body or soup
