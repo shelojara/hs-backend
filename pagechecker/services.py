@@ -2,6 +2,7 @@ import httpx
 from bs4 import BeautifulSoup
 from django.utils import timezone
 
+from pagechecker import gemini_service
 from pagechecker.models import Page, Snapshot
 
 
@@ -45,8 +46,6 @@ def check_page(page_id: int) -> bool:
 
 def compare_snapshots(page_id: int, question: str) -> str:
     """Compare the latest two snapshots of a page using Gemini."""
-    from pagechecker import gemini_service
-
     page = get_page(page_id=page_id)
 
     snapshots = list(page.snapshots.order_by("-created_at")[:2])

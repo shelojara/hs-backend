@@ -1,6 +1,6 @@
 from django.core.exceptions import ObjectDoesNotExist
-from django.http import JsonResponse
 from ninja import Router
+from ninja.errors import HttpError
 
 from pagechecker import services
 from pagechecker.schemas import (
@@ -59,9 +59,9 @@ def compare_snapshots(request, payload: CompareSnapshotsRequest):
             question=payload.question,
         )
     except ObjectDoesNotExist:
-        return JsonResponse({"error": "Page not found."}, status=404)
+        raise HttpError(404, "Page not found.")
     except ValueError as exc:
-        return JsonResponse({"error": str(exc)}, status=400)
+        raise HttpError(400, str(exc))
     except RuntimeError as exc:
-        return JsonResponse({"error": str(exc)}, status=500)
+        raise HttpError(500, str(exc))
     return CompareSnapshotsResponse(answer=answer)
