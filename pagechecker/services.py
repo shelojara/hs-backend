@@ -64,12 +64,23 @@ def check_page(page_id: int) -> bool:
 
 
 def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) -> str:
-    """Compare the latest two snapshots of a page using Gemini."""
+    """Answer a question about the page's snapshots using Gemini.
+
+    Uses the two most recent snapshots when both exist; otherwise answers from
+    the single latest snapshot only.
+    """
     page = get_page(page_id=page_id)
 
     snapshots = list(page.snapshots.order_by("-created_at")[:2])
-    if len(snapshots) < 2:
-        raise ValueError("Page must have at least 2 snapshots to compare.")
+    if not snapshots:
+        raise ValueError("Page must have at least one snapshot to ask questions.")
+
+    if len(snapshots) == 1:
+        return gemini_service.answer_question_about_snapshot(
+            snapshot_id=snapshots[0].id,
+            question=question,
+            use_html=use_html,
+        )
 
     older, newer = snapshots[1], snapshots[0]
 
