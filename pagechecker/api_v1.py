@@ -72,7 +72,6 @@ def compare_snapshots(request, payload: CompareSnapshotsRequest):
         answer = services.compare_snapshots(
             page_id=payload.page_id,
             question=payload.question,
-            use_html=payload.use_html,
         )
     except ObjectDoesNotExist:
         raise HttpError(404, "Page not found.")

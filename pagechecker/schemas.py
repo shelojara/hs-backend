@@ -6,7 +6,6 @@ class Snapshot(Schema):
     id: int
     created_at: datetime
     content: str
-    html_content: str
 
 
 class Page(Schema):
@@ -73,7 +72,6 @@ class UpdatePageResponse(Schema):
 class CompareSnapshotsRequest(Schema):
     page_id: int
     question: str
-    use_html: bool = False
 
 
 class CompareSnapshotsResponse(Schema):

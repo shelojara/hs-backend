@@ -33,15 +33,13 @@ def compare_snapshots(
     snapshot_a_id: int,
     snapshot_b_id: int,
     question: str,
-    *,
-    use_html: bool = False,
 ) -> str:
     """Send two snapshots to Gemini and return its answer to *question*."""
     snapshot_a = Snapshot.objects.select_related("page").get(id=snapshot_a_id)
     snapshot_b = Snapshot.objects.select_related("page").get(id=snapshot_b_id)
 
-    content_a = snapshot_a.html_content if use_html else snapshot_a.content
-    content_b = snapshot_b.html_content if use_html else snapshot_b.content
+    content_a = snapshot_a.content
+    content_b = snapshot_b.content
 
     prompt = (
         f"## Snapshot A (id={snapshot_a.id}, taken {snapshot_a.created_at.isoformat()})\n\n"
@@ -68,12 +66,10 @@ def compare_snapshots(
 def answer_question_about_snapshot(
     snapshot_id: int,
     question: str,
-    *,
-    use_html: bool = False,
 ) -> str:
     """Send one snapshot to Gemini and return its answer to *question*."""
     snapshot = Snapshot.objects.select_related("page").get(id=snapshot_id)
-    content = snapshot.html_content if use_html else snapshot.content
+    content = snapshot.content
 
     prompt = (
         f"## Snapshot (id={snapshot.id}, taken {snapshot.created_at.isoformat()})\n\n"

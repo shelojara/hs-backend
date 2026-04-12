@@ -3,7 +3,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from pagechecker import gemini_service
-from pagechecker.html_utils import extract_body_text, extract_metadata
+from pagechecker.html_utils import extract_body_html, extract_body_text, extract_metadata
 from pagechecker.models import Page, Snapshot
 
 
@@ -52,7 +52,8 @@ def check_page(page_id: int) -> bool:
     latest_snapshot = Snapshot.objects.filter(page=page).order_by("-created_at").first()
     has_changed = latest_snapshot is None or latest_snapshot.content != current_text
 
-    Snapshot.objects.create(page=page, content=current_text, html_content=response.text)
+    body_html = extract_body_html(response.text)
+    Snapshot.objects.create(page=page, content=current_text, html_content=body_html)
 
     metadata = extract_metadata(response.text, str(page.url))
     page.title = metadata["title"]
@@ -63,7 +64,7 @@ def check_page(page_id: int) -> bool:
     return has_changed
 
 
-def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) -> str:
+def compare_snapshots(page_id: int, question: str) -> str:
     """Answer a question about the page's snapshots using Gemini.
 
     Uses the two most recent snapshots when both exist; otherwise answers from
@@ -79,7 +80,6 @@ def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) ->
         return gemini_service.answer_question_about_snapshot(
             snapshot_id=snapshots[0].id,
             question=question,
-            use_html=use_html,
         )
 
     older, newer = snapshots[1], snapshots[0]
@@ -88,5 +88,4 @@ def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) ->
         snapshot_a_id=older.id,
         snapshot_b_id=newer.id,
         question=question,
-        use_html=use_html,
     )
