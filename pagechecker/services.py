@@ -1,3 +1,5 @@
+from urllib.parse import urljoin
+
 import httpx
 from bs4 import BeautifulSoup
 from django.utils import timezone
@@ -38,8 +40,11 @@ def check_page(page_id: int) -> bool:
 
     Snapshot.objects.create(page=page, content=current_text, html_content=response.text)
 
+    metadata = _extract_metadata(response.text, str(page.url))
+    page.title = metadata["title"]
+    page.icon = metadata["icon"]
     page.last_checked_at = timezone.now()
-    page.save(update_fields=["last_checked_at"])
+    page.save(update_fields=["last_checked_at", "title", "icon"])
 
     return has_changed
 
@@ -70,3 +75,27 @@ def _extract_body_text(html: str) -> str:
         tag.decompose()
 
     return body.get_text(separator="\n", strip=True)
+
+
+def _extract_metadata(html: str, page_url: str) -> dict[str, str]:
+    """Extract title and icon URL from page HTML."""
+    soup = BeautifulSoup(html, "html.parser")
+
+    title = ""
+    og_title = soup.find("meta", attrs={"property": "og:title"})
+    if og_title and og_title.get("content"):
+        title = og_title["content"].strip()
+    elif soup.title and soup.title.string:
+        title = soup.title.string.strip()
+
+    icon = ""
+    for rel in (["icon"], ["shortcut", "icon"], ["apple-touch-icon"]):
+        link = soup.find("link", rel=rel)
+        if link and link.get("href"):
+            icon = urljoin(page_url, link["href"])
+            break
+
+    if not icon:
+        icon = urljoin(page_url, "/favicon.ico")
+
+    return {"title": title, "icon": icon}
