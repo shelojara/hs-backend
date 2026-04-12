@@ -12,6 +12,8 @@ class Snapshot(Schema):
 class Page(Schema):
     id: int
     url: str
+    title: str = ""
+    icon: str = ""
     created_at: datetime
     last_checked_at: datetime | None = None
     latest_snapshot: Snapshot | None = None

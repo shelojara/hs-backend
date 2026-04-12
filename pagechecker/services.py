@@ -1,8 +1,8 @@
 import httpx
-from bs4 import BeautifulSoup
 from django.utils import timezone
 
 from pagechecker import gemini_service
+from pagechecker.html_utils import extract_body_text, extract_metadata
 from pagechecker.models import Page, Snapshot
 
 
@@ -31,15 +31,18 @@ def check_page(page_id: int) -> bool:
 
     response = httpx.get(str(page.url), verify=False)
     response.raise_for_status()
-    current_text = _extract_body_text(response.text)
+    current_text = extract_body_text(response.text)
 
     latest_snapshot = Snapshot.objects.filter(page=page).order_by("-created_at").first()
     has_changed = latest_snapshot is None or latest_snapshot.content != current_text
 
     Snapshot.objects.create(page=page, content=current_text, html_content=response.text)
 
+    metadata = extract_metadata(response.text, str(page.url))
+    page.title = metadata["title"]
+    page.icon = metadata["icon"]
     page.last_checked_at = timezone.now()
-    page.save(update_fields=["last_checked_at"])
+    page.save(update_fields=["last_checked_at", "title", "icon"])
 
     return has_changed
 
@@ -60,13 +63,3 @@ def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) ->
         question=question,
         use_html=use_html,
     )
-
-
-def _extract_body_text(html: str) -> str:
-    soup = BeautifulSoup(html, "html.parser")
-    body = soup.body or soup
-
-    for tag in body.find_all(["script", "style"]):
-        tag.decompose()
-
-    return body.get_text(separator="\n", strip=True)

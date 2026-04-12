@@ -15,6 +15,8 @@ class Snapshot(models.Model):
 
 class Page(models.Model):
     url = models.URLField(unique=True)
+    title = models.CharField(max_length=512, blank=True, default="")
+    icon = models.URLField(max_length=2048, blank=True, default="")
 
     created_at = models.DateTimeField(auto_now_add=True)
 
