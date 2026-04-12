@@ -27,17 +27,22 @@ def compare_snapshots(
     snapshot_a_id: int,
     snapshot_b_id: int,
     question: str,
+    *,
+    use_html: bool = False,
 ) -> str:
     """Send two snapshots to Gemini and return its answer to *question*."""
     snapshot_a = Snapshot.objects.select_related("page").get(id=snapshot_a_id)
     snapshot_b = Snapshot.objects.select_related("page").get(id=snapshot_b_id)
 
+    content_a = snapshot_a.html_content if use_html else snapshot_a.content
+    content_b = snapshot_b.html_content if use_html else snapshot_b.content
+
     prompt = (
         f"## Snapshot A (id={snapshot_a.id}, taken {snapshot_a.created_at.isoformat()})\n\n"
-        f"{snapshot_a.content}\n\n"
+        f"{content_a}\n\n"
         f"---\n\n"
         f"## Snapshot B (id={snapshot_b.id}, taken {snapshot_b.created_at.isoformat()})\n\n"
-        f"{snapshot_b.content}\n\n"
+        f"{content_b}\n\n"
         f"---\n\n"
         f"## Question\n\n{question}"
     )
