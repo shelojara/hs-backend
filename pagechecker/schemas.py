@@ -72,6 +72,7 @@ class UpdatePageResponse(Schema):
 class CompareSnapshotsRequest(Schema):
     page_id: int
     question: str
+    use_html: bool = False
 
 
 class CompareSnapshotsResponse(Schema):
