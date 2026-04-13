@@ -13,6 +13,39 @@ logger = logging.getLogger(__name__)
 # Bound prompt size for feature extraction (plain-text body snapshot).
 _FEATURE_TEXT_MAX_CHARS = 12_000
 
+
+def _developer_api_key() -> str | None:
+    """Key for Gemini Developer API.
+
+    google-genai documents `GOOGLE_API_KEY`; this app historically used
+    `GEMINI_API_KEY`. Accept both so env matches SDK / deployment docs.
+    """
+    return os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+
+
+def _response_visible_text(response: object) -> str | None:
+    """Concatenate model text parts, skipping thought/reasoning parts.
+
+    `GenerateContentResponse.text` omits parts with ``thought=True``; for
+    thinking models the JSON answer can live only in later parts, leaving
+    ``response.text`` empty and breaking schema parsing.
+    """
+    candidates = getattr(response, "candidates", None)
+    if not candidates:
+        return None
+    content = candidates[0].content
+    if content is None or not content.parts:
+        return None
+    chunks: list[str] = []
+    for part in content.parts:
+        text = getattr(part, "text", None)
+        if not isinstance(text, str) or not text:
+            continue
+        if getattr(part, "thought", None) is True:
+            continue
+        chunks.append(text)
+    return "".join(chunks) if chunks else None
+
 SYSTEM_INSTRUCTION = (
     "You are an expert at analysing web-page content snapshots. "
     "The user will provide two snapshots of the same page taken at different times "
@@ -46,18 +79,28 @@ class SnapshotFeaturesResponse(BaseModel):
 
 
 def _get_client() -> genai.Client:
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = _developer_api_key()
     if not api_key:
         raise RuntimeError(
-            "GEMINI_API_KEY environment variable is not set. "
-            "Please set it to a valid Gemini API key."
+            "No Gemini API key found. Set GEMINI_API_KEY or GOOGLE_API_KEY "
+            "to a valid Gemini Developer API key."
         )
     return genai.Client(api_key=api_key)
 
 
+def _features_from_parsed(parsed: object) -> list[str] | None:
+    if isinstance(parsed, SnapshotFeaturesResponse):
+        return _normalize_features(parsed.features)
+    if isinstance(parsed, dict):
+        raw = parsed.get("features", [])
+        if isinstance(raw, list):
+            return _normalize_features(raw)
+    return None
+
+
 def extract_snapshot_features(*, page_url: str, text: str) -> list[str]:
     """Ask Gemini for three content descriptors (price slot if visible); empty if unavailable."""
-    if not os.environ.get("GEMINI_API_KEY"):
+    if not _developer_api_key():
         return []
 
     snippet = (text or "")[:_FEATURE_TEXT_MAX_CHARS]
@@ -84,19 +127,28 @@ def extract_snapshot_features(*, page_url: str, text: str) -> list[str]:
                 response_schema=SnapshotFeaturesResponse,
             ),
         )
-        parsed = response.parsed
-        if isinstance(parsed, SnapshotFeaturesResponse):
-            return _normalize_features(parsed.features)
-        if isinstance(parsed, dict):
-            raw = parsed.get("features", [])
-            if isinstance(raw, list):
-                return _normalize_features(raw)
-        text_out = response.text
-        if text_out:
-            data = json.loads(text_out)
-            raw = data.get("features", [])
-            if isinstance(raw, list):
-                return _normalize_features(raw)
+        normalized = _features_from_parsed(response.parsed)
+        if normalized:
+            return normalized
+
+        json_text = _response_visible_text(response) or response.text
+        if json_text:
+            try:
+                model = SnapshotFeaturesResponse.model_validate_json(json_text)
+            except Exception:
+                try:
+                    data = json.loads(json_text)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "Gemini features: response was not valid JSON (first 200 chars): %r",
+                        json_text[:200],
+                    )
+                else:
+                    raw = data.get("features", [])
+                    if isinstance(raw, list):
+                        return _normalize_features(raw)
+            else:
+                return _normalize_features(model.features)
     except Exception:
         logger.exception("Gemini snapshot feature extraction failed")
 
