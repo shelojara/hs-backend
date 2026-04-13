@@ -6,7 +6,6 @@ from django.utils import timezone
 from pagechecker import gemini_service
 from pagechecker.html_utils import (
     extract_body_html,
-    extract_body_text,
     extract_metadata,
     html_to_markdown,
 )
@@ -69,20 +68,19 @@ def check_page(page_id: int) -> bool:
 
     response = httpx.get(str(page.url), verify=False)
     response.raise_for_status()
-    current_text = extract_body_text(response.text)
-
-    latest_snapshot = Snapshot.objects.filter(page=page).order_by("-created_at").first()
-    has_changed = latest_snapshot is None or latest_snapshot.content != current_text
 
     body_html = extract_body_html(response.text)
     md_content = html_to_markdown(body_html)
+
+    latest_snapshot = Snapshot.objects.filter(page=page).order_by("-created_at").first()
+    has_changed = latest_snapshot is None or latest_snapshot.md_content != md_content
+
     features = gemini_service.extract_snapshot_features(
         page_url=str(page.url),
-        html=body_html,
+        md_content=md_content,
     )
     Snapshot.objects.create(
         page=page,
-        content=current_text,
         html_content=body_html,
         md_content=md_content,
         features=features,
@@ -101,7 +99,8 @@ def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) ->
     """Answer a question about the page's snapshots using Gemini.
 
     Uses the two most recent snapshots when both exist; otherwise answers from
-    the single latest snapshot only.
+    the single latest snapshot only. *use_html* is ignored (kept for API compatibility);
+    prompts always use Markdown snapshots.
     """
     page = get_page(page_id=page_id)
 
@@ -113,7 +112,6 @@ def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) ->
         return gemini_service.answer_question_about_snapshot(
             snapshot_id=snapshots[0].id,
             question=question,
-            use_html=use_html,
         )
 
     older, newer = snapshots[1], snapshots[0]
@@ -122,5 +120,4 @@ def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) ->
         snapshot_a_id=older.id,
         snapshot_b_id=newer.id,
         question=question,
-        use_html=use_html,
     )

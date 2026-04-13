@@ -6,7 +6,6 @@ class Snapshot(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
-    content = models.TextField()
     html_content = models.TextField(default="")
     md_content = models.TextField(default="")
     features = models.JSONField(default=list)

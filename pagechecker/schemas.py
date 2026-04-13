@@ -1,13 +1,20 @@
 from datetime import datetime
+
 from ninja import Schema
+from pydantic import computed_field
 
 
 class Snapshot(Schema):
     id: int
     created_at: datetime
-    content: str
     md_content: str = ""
     features: list[str] = []
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def content(self) -> str:
+        """Alias of md_content for backward-compatible API clients."""
+        return self.md_content
 
 
 class Page(Schema):
