@@ -8,6 +8,7 @@ class Snapshot(models.Model):
 
     content = models.TextField()
     html_content = models.TextField(default="")
+    features = models.JSONField(default=list)
 
     def __str__(self):
         return f"{self.page.url} - {self.created_at}"
