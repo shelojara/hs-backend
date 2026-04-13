@@ -53,11 +53,15 @@ def check_page(page_id: int) -> bool:
     has_changed = latest_snapshot is None or latest_snapshot.content != current_text
 
     body_html = extract_body_html(response.text)
+    features = gemini_service.extract_snapshot_features(
+        page_url=str(page.url),
+        text=current_text,
+    )
     Snapshot.objects.create(
         page=page,
         content=current_text,
         html_content=body_html,
-        features=[],
+        features=features,
     )
 
     metadata = extract_metadata(response.text, str(page.url))
