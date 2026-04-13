@@ -13,4 +13,5 @@ dependencies = [
     "gunicorn>=25.3.0",
     "httpx>=0.28.1",
     "ruff>=0.15.10",
+    "whitenoise>=6.9.0",
 ]
