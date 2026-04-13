@@ -6,7 +6,7 @@ from pagechecker.models import Page, Snapshot
 class SnapshotInline(admin.TabularInline):
     model = Snapshot
     extra = 0
-    readonly_fields = ("created_at", "content", "html_content", "md_content", "features")
+    readonly_fields = ("created_at", "html_content", "md_content", "features")
     can_delete = False
 
 
@@ -23,6 +23,6 @@ class PageAdmin(admin.ModelAdmin):
 class SnapshotAdmin(admin.ModelAdmin):
     list_display = ("page", "created_at")
     list_filter = ("created_at",)
-    search_fields = ("page__url", "page__title", "content", "md_content")
+    search_fields = ("page__url", "page__title", "md_content")
     readonly_fields = ("created_at",)
     raw_id_fields = ("page",)

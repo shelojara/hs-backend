@@ -24,17 +24,18 @@ SINGLE_SNAPSHOT_SYSTEM_INSTRUCTION = (
 )
 
 FEATURES_SYSTEM_INSTRUCTION = (
-    "You summarise a web page from its body HTML (scripts/styles already removed). "
-    "Infer visible meaning from structure and text nodes. "
+    "You summarise a web page from a Markdown rendering of its body "
+    "(scripts/styles already removed in the conversion). "
+    "Infer visible meaning from structure and text. "
     "Return exactly three short content descriptors: concrete phrases about "
     "what the page offers or covers (e.g. 'wireless earbuds', 'free shipping', "
     "'api documentation'). Prefer noun phrases over mood "
     "adjectives like 'professional' or 'minimal'. "
     "If the page clearly states a product or service price (including "
     "currency symbol or code), use one of the three slots for that price "
-    "exactly as written in the content (normalise only obvious whitespace). "
+    "exactly as written in the snapshot (normalise only obvious whitespace). "
     "If no price is present, all three must be non-price content descriptors. "
-    "Base every item only on the provided HTML. No duplicates; trim whitespace; "
+    "Base every item only on the provided Markdown. No duplicates; trim whitespace; "
     "each item at most 3 words."
 )
 
@@ -53,18 +54,18 @@ def _get_client() -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
-def extract_snapshot_features(*, page_url: str, html: str) -> list[str]:
+def extract_snapshot_features(*, page_url: str, md_content: str) -> list[str]:
     """Ask Gemini for three content descriptors (price slot if visible); empty if unavailable."""
     if not os.environ.get("GEMINI_API_KEY"):
         return []
 
-    body_html = html or ""
-    if not body_html.strip():
+    body_md = md_content or ""
+    if not body_md.strip():
         return []
 
     prompt = (
         f"## Page URL\n\n{page_url}\n\n"
-        f"## Body HTML\n\n{body_html}\n\n"
+        f"## Body Markdown\n\n{body_md}\n\n"
         "## Task\n\n"
         "Return exactly three content descriptors (and include a clear price in "
         "one slot when the page shows one), as specified in the system instruction."
@@ -133,23 +134,13 @@ def compare_snapshots(
     snapshot_a_id: int,
     snapshot_b_id: int,
     question: str,
-    *,
-    use_html: bool = False,
 ) -> str:
     """Send two snapshots to Gemini and return its answer to *question*."""
     snapshot_a = Snapshot.objects.select_related("page").get(id=snapshot_a_id)
     snapshot_b = Snapshot.objects.select_related("page").get(id=snapshot_b_id)
 
-    content_a = (
-        (snapshot_a.md_content or snapshot_a.html_content or snapshot_a.content)
-        if use_html
-        else snapshot_a.content
-    )
-    content_b = (
-        (snapshot_b.md_content or snapshot_b.html_content or snapshot_b.content)
-        if use_html
-        else snapshot_b.content
-    )
+    content_a = snapshot_a.md_content or ""
+    content_b = snapshot_b.md_content or ""
 
     prompt = (
         f"## Snapshot A (id={snapshot_a.id}, taken {snapshot_a.created_at.isoformat()})\n\n"
@@ -176,16 +167,10 @@ def compare_snapshots(
 def answer_question_about_snapshot(
     snapshot_id: int,
     question: str,
-    *,
-    use_html: bool = False,
 ) -> str:
     """Send one snapshot to Gemini and return its answer to *question*."""
     snapshot = Snapshot.objects.select_related("page").get(id=snapshot_id)
-    content = (
-        (snapshot.md_content or snapshot.html_content or snapshot.content)
-        if use_html
-        else snapshot.content
-    )
+    content = snapshot.md_content or ""
 
     prompt = (
         f"## Snapshot (id={snapshot.id}, taken {snapshot.created_at.isoformat()})\n\n"
