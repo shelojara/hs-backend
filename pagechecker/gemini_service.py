@@ -28,10 +28,16 @@ SINGLE_SNAPSHOT_SYSTEM_INSTRUCTION = (
 
 FEATURES_SYSTEM_INSTRUCTION = (
     "You summarise a web page's visible text snapshot. "
-    "Pick exactly three short descriptors for the page: mostly single-word "
-    "adjectives (e.g. technical, promotional, minimal). "
-    "Base them only on the snapshot text. No punctuation in each word, "
-    "no duplicates, lowercase."
+    "Return exactly three short content descriptors: concrete phrases about "
+    "what the page offers or covers (e.g. 'wireless earbuds', 'free shipping', "
+    "'api documentation'). Prefer noun phrases or short clauses over mood "
+    "adjectives like 'professional' or 'minimal'. "
+    "If the snapshot clearly states a product or service price (including "
+    "currency symbol or code), use one of the three slots for that price "
+    "exactly as written in the snapshot (normalise only obvious whitespace). "
+    "If no price is present, all three must be non-price content descriptors. "
+    "Base every item only on the snapshot text. No duplicates; trim whitespace; "
+    "each item at most 12 words."
 )
 
 
@@ -50,7 +56,7 @@ def _get_client() -> genai.Client:
 
 
 def extract_snapshot_features(*, page_url: str, text: str) -> list[str]:
-    """Ask Gemini for three descriptor words; empty list if unavailable or on failure."""
+    """Ask Gemini for three content descriptors (price slot if visible); empty if unavailable."""
     if not os.environ.get("GEMINI_API_KEY"):
         return []
 
@@ -62,7 +68,8 @@ def extract_snapshot_features(*, page_url: str, text: str) -> list[str]:
         f"## Page URL\n\n{page_url}\n\n"
         f"## Snapshot text (may be truncated)\n\n{snippet}\n\n"
         "## Task\n\n"
-        "Return exactly three descriptors as specified in the system instruction."
+        "Return exactly three content descriptors (and include a clear price in "
+        "one slot when the snapshot shows one), as specified in the system instruction."
     )
 
     try:
@@ -79,36 +86,46 @@ def extract_snapshot_features(*, page_url: str, text: str) -> list[str]:
         )
         parsed = response.parsed
         if isinstance(parsed, SnapshotFeaturesResponse):
-            return _normalize_feature_words(parsed.features)
+            return _normalize_features(parsed.features)
         if isinstance(parsed, dict):
             raw = parsed.get("features", [])
             if isinstance(raw, list):
-                return _normalize_feature_words(raw)
+                return _normalize_features(raw)
         text_out = response.text
         if text_out:
             data = json.loads(text_out)
             raw = data.get("features", [])
             if isinstance(raw, list):
-                return _normalize_feature_words(raw)
+                return _normalize_features(raw)
     except Exception:
         logger.exception("Gemini snapshot feature extraction failed")
 
     return []
 
 
-def _normalize_feature_words(words: list[str]) -> list[str]:
+_FEATURE_ITEM_MAX_CHARS = 200
+_FEATURE_ITEM_MAX_WORDS = 12
+
+
+def _normalize_features(items: list[str]) -> list[str]:
     out: list[str] = []
-    for w in words:
-        if not isinstance(w, str):
+    seen: set[str] = set()
+    for raw in items:
+        if not isinstance(raw, str):
             continue
-        s = w.strip().lower().replace("-", " ")
-        s = " ".join(s.split())
+        s = " ".join(raw.strip().split())
         if not s:
             continue
-        if " " in s:
-            s = s.split()[0]
-        if s and s not in out:
-            out.append(s)
+        words = s.split()
+        if len(words) > _FEATURE_ITEM_MAX_WORDS:
+            s = " ".join(words[:_FEATURE_ITEM_MAX_WORDS])
+        if len(s) > _FEATURE_ITEM_MAX_CHARS:
+            s = s[:_FEATURE_ITEM_MAX_CHARS].rstrip()
+        key = s.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
         if len(out) >= 3:
             break
     return out[:3]
