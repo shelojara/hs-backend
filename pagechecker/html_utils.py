@@ -1,7 +1,65 @@
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
+from bs4.element import Tag
 from markdownify import markdownify
+
+_CHROME_ROLE = frozenset({"navigation", "contentinfo"})
+
+# id/class substrings → treat as nav or footer chrome (lowercased match)
+_CHROME_ID_CLASS_MARKERS = (
+    "navbar",
+    "nav-bar",
+    "nav_bar",
+    "site-nav",
+    "sitenav",
+    "main-nav",
+    "mainnav",
+    "topnav",
+    "top-nav",
+    "bottom-nav",
+    "bottomnav",
+    "header-nav",
+    "footernav",
+    "footer-nav",
+    "page-footer",
+    "site-footer",
+    "global-footer",
+    "sticky-footer",
+    "footer-wrapper",
+    "footercontainer",
+)
+
+
+def _chrome_id_class_blob(tag: Tag) -> str:
+    parts: list[str] = []
+    tid = tag.get("id")
+    if isinstance(tid, str):
+        parts.append(tid)
+    classes = tag.get("class")
+    if isinstance(classes, list):
+        parts.extend(str(c) for c in classes)
+    elif isinstance(classes, str):
+        parts.append(classes)
+    return " ".join(parts).lower()
+
+
+def _strip_nav_and_footer(body: Tag) -> None:
+    """Remove nav bars and footers from body (semantic tags, roles, common id/class)."""
+    for tag in body.find_all(["nav", "footer"]):
+        tag.decompose()
+
+    for tag in body.find_all(attrs={"role": True}):
+        role = (tag.get("role") or "").strip().lower()
+        if role in _CHROME_ROLE:
+            tag.decompose()
+
+    for tag in body.find_all(["div", "header", "aside", "section"]):
+        blob = _chrome_id_class_blob(tag)
+        if not blob:
+            continue
+        if any(m in blob for m in _CHROME_ID_CLASS_MARKERS):
+            tag.decompose()
 
 
 def extract_body_text(html: str) -> str:
@@ -10,6 +68,8 @@ def extract_body_text(html: str) -> str:
 
     for tag in body.find_all(["script", "style"]):
         tag.decompose()
+
+    _strip_nav_and_footer(body)
 
     return body.get_text(separator="\n", strip=True)
 
@@ -21,6 +81,8 @@ def extract_body_html(html: str) -> str:
 
     for tag in body.find_all(["script", "style"]):
         tag.decompose()
+
+    _strip_nav_and_footer(body)
 
     return body.decode_contents()
 
