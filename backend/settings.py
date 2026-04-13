@@ -29,6 +29,28 @@ DEBUG = True
 ALLOWED_HOSTS = ["api.yukiclaire.xyz", "localhost"]
 
 
+def _csrf_trusted_origins() -> list[str]:
+    """Build CSRF trusted origins from ALLOWED_HOSTS plus optional env override."""
+    out: list[str] = []
+    for host in ALLOWED_HOSTS:
+        if not host or host == "*":
+            continue
+        if host in {"localhost", "127.0.0.1", "[::1]"}:
+            out.extend((f"http://{host}", f"https://{host}"))
+        else:
+            out.append(f"https://{host}")
+            if DEBUG:
+                out.append(f"http://{host}")
+    extra = os.getenv("CSRF_TRUSTED_ORIGINS", "").strip()
+    if extra:
+        out.extend(o.strip() for o in extra.split(",") if o.strip())
+    # Deduplicate while preserving order
+    return list(dict.fromkeys(out))
+
+
+CSRF_TRUSTED_ORIGINS = _csrf_trusted_origins()
+
+
 # Application definition
 
 INSTALLED_APPS = [
