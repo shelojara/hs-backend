@@ -12,6 +12,7 @@ dependencies = [
     "google-genai>=1.72.0",
     "gunicorn>=25.3.0",
     "httpx>=0.28.1",
+    "markdownify>=1.2.2",
     "ruff>=0.15.10",
     "whitenoise>=6.9.0",
 ]
