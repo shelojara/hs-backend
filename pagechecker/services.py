@@ -1,5 +1,6 @@
 import httpx
 from django.db import transaction
+from django.db.models import Exists, OuterRef, Subquery
 from django.utils import timezone
 
 from pagechecker import gemini_service
@@ -7,8 +8,24 @@ from pagechecker.html_utils import extract_body_html, extract_body_text, extract
 from pagechecker.models import Page, Snapshot
 
 
-def list_pages(limit: int = 20, offset: int = 0) -> list[Page]:
-    return list(Page.objects.order_by("-created_at")[offset : offset + limit])
+def list_pages(limit: int = 20, offset: int = 0, feature: str | None = None) -> list[Page]:
+    qs = Page.objects.order_by("-created_at")
+    token = (feature or "").strip()
+    if token:
+        latest_id = (
+            Snapshot.objects.filter(page_id=OuterRef("pk"))
+            .order_by("-created_at", "-id")
+            .values("id")[:1]
+        )
+        qs = qs.annotate(_latest_snapshot_id=Subquery(latest_id)).filter(
+            Exists(
+                Snapshot.objects.filter(
+                    id=OuterRef("_latest_snapshot_id"),
+                    features__contains=[token],
+                )
+            )
+        )
+    return list(qs[offset : offset + limit])
 
 
 def get_page(page_id: int) -> Page:

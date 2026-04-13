@@ -46,6 +46,8 @@ class GetPageResponse(Schema):
 class ListPagesRequest(Schema):
     limit: int = 20
     offset: int = 0
+    # If set, only pages whose *latest* snapshot includes this token in `features` are returned.
+    feature: str | None = None
 
 
 class ListPagesResponse(Schema):
