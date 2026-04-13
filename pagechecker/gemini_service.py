@@ -1,9 +1,17 @@
+import json
+import logging
 import os
 
 from google import genai
 from google.genai import types
+from pydantic import BaseModel, Field
 
 from pagechecker.models import Snapshot
+
+logger = logging.getLogger(__name__)
+
+# Bound prompt size for feature extraction (plain-text body snapshot).
+_FEATURE_TEXT_MAX_CHARS = 12_000
 
 SYSTEM_INSTRUCTION = (
     "You are an expert at analysing web-page content snapshots. "
@@ -18,6 +26,18 @@ SINGLE_SNAPSHOT_SYSTEM_INSTRUCTION = (
     "Answer concisely and accurately based only on the provided snapshot."
 )
 
+FEATURES_SYSTEM_INSTRUCTION = (
+    "You summarise a web page's visible text snapshot. "
+    "Pick exactly three short descriptors for the page: mostly single-word "
+    "adjectives (e.g. technical, promotional, minimal). "
+    "Base them only on the snapshot text. No punctuation in each word, "
+    "no duplicates, lowercase."
+)
+
+
+class SnapshotFeaturesResponse(BaseModel):
+    features: list[str] = Field(min_length=3, max_length=3)
+
 
 def _get_client() -> genai.Client:
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -27,6 +47,71 @@ def _get_client() -> genai.Client:
             "Please set it to a valid Gemini API key."
         )
     return genai.Client(api_key=api_key)
+
+
+def extract_snapshot_features(*, page_url: str, text: str) -> list[str]:
+    """Ask Gemini for three descriptor words; empty list if unavailable or on failure."""
+    if not os.environ.get("GEMINI_API_KEY"):
+        return []
+
+    snippet = (text or "")[:_FEATURE_TEXT_MAX_CHARS]
+    if not snippet.strip():
+        return []
+
+    prompt = (
+        f"## Page URL\n\n{page_url}\n\n"
+        f"## Snapshot text (may be truncated)\n\n{snippet}\n\n"
+        "## Task\n\n"
+        "Return exactly three descriptors as specified in the system instruction."
+    )
+
+    try:
+        client = _get_client()
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=FEATURES_SYSTEM_INSTRUCTION,
+                temperature=0.3,
+                response_mime_type="application/json",
+                response_schema=SnapshotFeaturesResponse,
+            ),
+        )
+        parsed = response.parsed
+        if isinstance(parsed, SnapshotFeaturesResponse):
+            return _normalize_feature_words(parsed.features)
+        if isinstance(parsed, dict):
+            raw = parsed.get("features", [])
+            if isinstance(raw, list):
+                return _normalize_feature_words(raw)
+        text_out = response.text
+        if text_out:
+            data = json.loads(text_out)
+            raw = data.get("features", [])
+            if isinstance(raw, list):
+                return _normalize_feature_words(raw)
+    except Exception:
+        logger.exception("Gemini snapshot feature extraction failed")
+
+    return []
+
+
+def _normalize_feature_words(words: list[str]) -> list[str]:
+    out: list[str] = []
+    for w in words:
+        if not isinstance(w, str):
+            continue
+        s = w.strip().lower().replace("-", " ")
+        s = " ".join(s.split())
+        if not s:
+            continue
+        if " " in s:
+            s = s.split()[0]
+        if s and s not in out:
+            out.append(s)
+        if len(out) >= 3:
+            break
+    return out[:3]
 
 
 def compare_snapshots(
