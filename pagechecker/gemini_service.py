@@ -26,17 +26,33 @@ SINGLE_SNAPSHOT_SYSTEM_INSTRUCTION = (
     "Answer concisely and accurately based only on the provided snapshot."
 )
 
-FEATURES_SYSTEM_INSTRUCTION = (
-    "You summarise a web page's visible text snapshot. "
-    "Pick exactly three short descriptors for the page: mostly single-word "
-    "adjectives (e.g. technical, promotional, minimal). "
-    "Base them only on the snapshot text. No punctuation in each word, "
-    "no duplicates, lowercase."
+INSIGHTS_SYSTEM_INSTRUCTION = (
+    "You infer what a web page is about from its visible text snapshot (and URL for context). "
+    "Use only information supported by the snapshot; if something is unclear, omit that highlight "
+    "or leave its value empty. "
+    "Field page_kind: short snake_case label for the dominant page type "
+    "(e.g. ecommerce_product, news_article, documentation, blog_post, manga_series, anime_streaming, "
+    "forum_thread, landing_marketing, other). "
+    "Field about: one or two sentences describing the main topic or purpose. "
+    "Field highlights: zero to eight objects, each with label (short snake_case key, e.g. price, "
+    "currency, product_category, genre, author, studio, release_year, rating) and value "
+    "(concise human-readable string from the page, or empty string if unknown). "
+    "For shopping pages, prefer price/currency/category/seller when present in the text. "
+    "For manga/anime/media catalog pages, prefer genre, title, author/creator, studio, format, "
+    "rating, release or chapter info when present. "
+    "Omit highlights that add nothing beyond about; do not invent prices or genres."
 )
 
 
-class SnapshotFeaturesResponse(BaseModel):
-    features: list[str] = Field(min_length=3, max_length=3)
+class SnapshotHighlight(BaseModel):
+    label: str = Field(min_length=1, max_length=64)
+    value: str = Field(max_length=512)
+
+
+class SnapshotContentInsightsResponse(BaseModel):
+    about: str = Field(min_length=1, max_length=1200)
+    page_kind: str = Field(min_length=1, max_length=120)
+    highlights: list[SnapshotHighlight] = Field(default_factory=list, max_length=12)
 
 
 def _get_client() -> genai.Client:
@@ -49,20 +65,20 @@ def _get_client() -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
-def extract_snapshot_features(*, page_url: str, text: str) -> list[str]:
-    """Ask Gemini for three descriptor words; empty list if unavailable or on failure."""
+def extract_content_insights(*, page_url: str, text: str) -> dict:
+    """Ask Gemini for structured page summary; empty dict if unavailable or on failure."""
     if not os.environ.get("GEMINI_API_KEY"):
-        return []
+        return {}
 
     snippet = (text or "")[:_FEATURE_TEXT_MAX_CHARS]
     if not snippet.strip():
-        return []
+        return {}
 
     prompt = (
         f"## Page URL\n\n{page_url}\n\n"
         f"## Snapshot text (may be truncated)\n\n{snippet}\n\n"
         "## Task\n\n"
-        "Return exactly three descriptors as specified in the system instruction."
+        "Return JSON matching the schema: about, page_kind, highlights."
     )
 
     try:
@@ -71,29 +87,96 @@ def extract_snapshot_features(*, page_url: str, text: str) -> list[str]:
             model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
-                system_instruction=FEATURES_SYSTEM_INSTRUCTION,
+                system_instruction=INSIGHTS_SYSTEM_INSTRUCTION,
                 temperature=0.3,
                 response_mime_type="application/json",
-                response_schema=SnapshotFeaturesResponse,
+                response_schema=SnapshotContentInsightsResponse,
             ),
         )
         parsed = response.parsed
-        if isinstance(parsed, SnapshotFeaturesResponse):
-            return _normalize_feature_words(parsed.features)
+        if isinstance(parsed, SnapshotContentInsightsResponse):
+            return _insights_to_dict(parsed)
         if isinstance(parsed, dict):
-            raw = parsed.get("features", [])
-            if isinstance(raw, list):
-                return _normalize_feature_words(raw)
+            normalized = _normalize_insights_dict(parsed)
+            if normalized:
+                return normalized
         text_out = response.text
         if text_out:
             data = json.loads(text_out)
-            raw = data.get("features", [])
-            if isinstance(raw, list):
-                return _normalize_feature_words(raw)
+            normalized = _normalize_insights_dict(data)
+            if normalized:
+                return normalized
     except Exception:
-        logger.exception("Gemini snapshot feature extraction failed")
+        logger.exception("Gemini snapshot content insights extraction failed")
 
-    return []
+    return {}
+
+
+def _insights_to_dict(parsed: SnapshotContentInsightsResponse) -> dict:
+    return {
+        "about": parsed.about.strip(),
+        "page_kind": _normalize_page_kind(parsed.page_kind),
+        "highlights": _normalize_highlights(
+            [{"label": h.label, "value": h.value} for h in parsed.highlights]
+        ),
+    }
+
+
+def _normalize_page_kind(raw: str) -> str:
+    s = (raw or "").strip().lower().replace(" ", "_")
+    s = "_".join(p for p in s.split("_") if p)
+    return s[:120] if s else "other"
+
+
+def _normalize_highlights(items: list) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        label = item.get("label")
+        value = item.get("value")
+        if not isinstance(label, str):
+            continue
+        label_key = _normalize_page_kind(label.replace(".", "_"))
+        if not label_key or label_key in seen:
+            continue
+        val = value.strip() if isinstance(value, str) else ""
+        if len(val) > 512:
+            val = val[:509] + "..."
+        out.append({"label": label_key, "value": val})
+        seen.add(label_key)
+        if len(out) >= 8:
+            break
+    return out
+
+
+def _normalize_insights_dict(data: dict) -> dict:
+    about = data.get("about")
+    page_kind = data.get("page_kind")
+    highlights = data.get("highlights")
+    if not isinstance(about, str) or not about.strip():
+        return {}
+    if not isinstance(page_kind, str) or not page_kind.strip():
+        page_kind = "other"
+    hl: list = highlights if isinstance(highlights, list) else []
+    return {
+        "about": about.strip()[:1200],
+        "page_kind": _normalize_page_kind(page_kind),
+        "highlights": _normalize_highlights(hl),
+    }
+
+
+def legacy_feature_tags_from_insights(insights: dict) -> list[str]:
+    """Up to three short tokens for older clients that only read features."""
+    raw: list[str] = []
+    pk = insights.get("page_kind")
+    if isinstance(pk, str) and pk.strip():
+        raw.append(pk.replace("_", " "))
+    for h in (insights.get("highlights") or [])[:4]:
+        if isinstance(h, dict) and isinstance(h.get("label"), str):
+            raw.append(h["label"].replace("_", " "))
+    return _normalize_feature_words(raw)[:3]
 
 
 def _normalize_feature_words(words: list[str]) -> list[str]:

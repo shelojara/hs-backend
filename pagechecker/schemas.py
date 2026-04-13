@@ -1,5 +1,19 @@
 from datetime import datetime
+
 from ninja import Schema
+
+from pagechecker import models as pc_models
+
+
+class SnapshotHighlight(Schema):
+    label: str
+    value: str
+
+
+class SnapshotContentInsights(Schema):
+    about: str = ""
+    page_kind: str = ""
+    highlights: list[SnapshotHighlight] = []
 
 
 class Snapshot(Schema):
@@ -7,6 +21,7 @@ class Snapshot(Schema):
     created_at: datetime
     content: str
     features: list[str] = []
+    content_insights: SnapshotContentInsights | None = None
 
 
 class Page(Schema):
@@ -78,3 +93,50 @@ class CompareSnapshotsRequest(Schema):
 
 class CompareSnapshotsResponse(Schema):
     answer: str
+
+
+def snapshot_from_model(s: pc_models.Snapshot) -> Snapshot:
+    raw_insights = s.content_insights or {}
+    insights: SnapshotContentInsights | None = None
+    if isinstance(raw_insights, dict) and raw_insights:
+        hl_raw = raw_insights.get("highlights") or []
+        highlights: list[SnapshotHighlight] = []
+        if isinstance(hl_raw, list):
+            for item in hl_raw:
+                if isinstance(item, dict) and isinstance(item.get("label"), str):
+                    val = item.get("value")
+                    highlights.append(
+                        SnapshotHighlight(
+                            label=item["label"],
+                            value=val.strip()
+                            if isinstance(val, str)
+                            else "",
+                        )
+                    )
+        about = raw_insights.get("about")
+        page_kind = raw_insights.get("page_kind")
+        insights = SnapshotContentInsights(
+            about=about.strip() if isinstance(about, str) else "",
+            page_kind=page_kind.strip() if isinstance(page_kind, str) else "",
+            highlights=highlights,
+        )
+    return Snapshot(
+        id=s.id,
+        created_at=s.created_at,
+        content=s.content,
+        features=list(s.features or []),
+        content_insights=insights,
+    )
+
+
+def page_from_model(p: pc_models.Page) -> Page:
+    latest = p.latest_snapshot
+    return Page(
+        id=p.id,
+        url=p.url,
+        title=p.title,
+        icon=p.icon,
+        created_at=p.created_at,
+        last_checked_at=p.last_checked_at,
+        latest_snapshot=snapshot_from_model(latest) if latest else None,
+    )

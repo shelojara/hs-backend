@@ -18,6 +18,7 @@ from pagechecker.schemas import (
     ListPagesResponse,
     UpdatePageRequest,
     UpdatePageResponse,
+    page_from_model,
 )
 
 router = Router()
@@ -26,19 +27,19 @@ router = Router()
 @router.post("/v1.PageChecker.ListPages", response=ListPagesResponse)
 def list_pages(request, payload: ListPagesRequest):
     pages = services.list_pages(limit=payload.limit, offset=payload.offset)
-    return ListPagesResponse(pages=pages)
+    return ListPagesResponse(pages=[page_from_model(p) for p in pages])
 
 
 @router.post("/v1.PageChecker.GetPage", response=GetPageResponse)
 def get_page(request, payload: GetPageRequest):
     page = services.get_page(page_id=payload.page_id)
-    return GetPageResponse(page=page)
+    return GetPageResponse(page=page_from_model(page))
 
 
 @router.post("/v1.PageChecker.CreatePage", response=CreatePageResponse)
 def create_page(request, payload: CreatePageRequest):
     page = services.create_page(url=payload.url)
-    return CreatePageResponse(page=page)
+    return CreatePageResponse(page=page_from_model(page))
 
 
 @router.post("/v1.PageChecker.UpdatePage", response=UpdatePageResponse)
@@ -51,7 +52,7 @@ def update_page(request, payload: UpdatePageRequest):
         )
     except ObjectDoesNotExist:
         raise HttpError(404, "Page not found.")
-    return UpdatePageResponse(page=page)
+    return UpdatePageResponse(page=page_from_model(page))
 
 
 @router.post("/v1.PageChecker.DeletePage", response=DeletePageResponse)
