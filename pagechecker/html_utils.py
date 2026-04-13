@@ -1,7 +1,7 @@
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
-from markdownify import markdownify as _markdownify
+from markdownify import markdownify
 
 
 def extract_body_text(html: str) -> str:
@@ -30,7 +30,7 @@ def html_to_markdown(html: str) -> str:
     fragment = html or ""
     if not fragment.strip():
         return ""
-    return _markdownify(fragment, heading_style="ATX").strip()
+    return markdownify(fragment, heading_style="ATX").strip()
 
 
 def extract_metadata(html: str, page_url: str) -> dict[str, str]:
