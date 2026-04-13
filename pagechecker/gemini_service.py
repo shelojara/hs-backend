@@ -27,20 +27,25 @@ SINGLE_SNAPSHOT_SYSTEM_INSTRUCTION = (
 )
 
 INSIGHTS_SYSTEM_INSTRUCTION = (
-    "You infer what a web page is about from its visible text snapshot (and URL for context). "
-    "Use only information supported by the snapshot; if something is unclear, omit that highlight "
-    "or leave its value empty. "
-    "Field page_kind: short snake_case label for the dominant page type "
+    "You infer what a web page is about from its visible text snapshot (URL is weak context only). "
+    "Ground every claim in the snapshot; never invent prices, genres, or availability. "
+    "Field page_kind: one short snake_case label for the dominant page type "
     "(e.g. ecommerce_product, news_article, documentation, blog_post, manga_series, anime_streaming, "
     "forum_thread, landing_marketing, other). "
-    "Field about: one or two sentences describing the main topic or purpose. "
-    "Field highlights: zero to eight objects, each with label (short snake_case key, e.g. price, "
-    "currency, product_category, genre, author, studio, release_year, rating) and value "
-    "(concise human-readable string from the page, or empty string if unknown). "
-    "For shopping pages, prefer price/currency/category/seller when present in the text. "
-    "For manga/anime/media catalog pages, prefer genre, title, author/creator, studio, format, "
-    "rating, release or chapter info when present. "
-    "Omit highlights that add nothing beyond about; do not invent prices or genres."
+    "Field about: one or two sentences on the main topic or purpose—concrete, not generic marketing fluff. "
+    "Field highlights: exactly three objects, ordered most useful first for a human skimming the page. "
+    "Each object: label = short snake_case facet name; value = one tight phrase copied or paraphrased "
+    "strictly from visible text (include currency with price when both appear). "
+    "The three highlights must be three different facets (no duplicate labels; do not repeat page_kind "
+    "as a label). "
+    "Choose the three facts that best disambiguate this page vs similar pages: "
+    "e-commerce → prefer price, product_category or product_name, then stock/seller/rating/size only if "
+    "clearly in text; manga/anime/media → prefer genre, series_title or work_title, then author/studio/"
+    "volume_chapter/format/rating whichever is most specific in the text; news/blog → headline angle, "
+    "entity, date or section; docs → product or topic, audience, version if stated. "
+    "Always output exactly three highlights; if a third strong facet is missing, pick the next-best "
+    "distinct facet still grounded in the text (e.g. site_section, language, content_format). "
+    "Use an empty value string only when the label applies but the snapshot has no corresponding string."
 )
 
 
@@ -52,7 +57,7 @@ class SnapshotHighlight(BaseModel):
 class SnapshotContentInsightsResponse(BaseModel):
     about: str = Field(min_length=1, max_length=1200)
     page_kind: str = Field(min_length=1, max_length=120)
-    highlights: list[SnapshotHighlight] = Field(default_factory=list, max_length=12)
+    highlights: list[SnapshotHighlight] = Field(default_factory=list, max_length=3)
 
 
 def _get_client() -> genai.Client:
@@ -78,7 +83,9 @@ def extract_content_insights(*, page_url: str, text: str) -> dict:
         f"## Page URL\n\n{page_url}\n\n"
         f"## Snapshot text (may be truncated)\n\n{snippet}\n\n"
         "## Task\n\n"
-        "Return JSON matching the schema: about, page_kind, highlights."
+        "Return JSON: about, page_kind, highlights. "
+        "highlights must be an array of exactly three {label, value} objects, "
+        "ordered by importance, following the system rules."
     )
 
     try:
@@ -146,7 +153,7 @@ def _normalize_highlights(items: list) -> list[dict[str, str]]:
             val = val[:509] + "..."
         out.append({"label": label_key, "value": val})
         seen.add(label_key)
-        if len(out) >= 8:
+        if len(out) >= 3:
             break
     return out
 
@@ -173,7 +180,7 @@ def legacy_feature_tags_from_insights(insights: dict) -> list[str]:
     pk = insights.get("page_kind")
     if isinstance(pk, str) and pk.strip():
         raw.append(pk.replace("_", " "))
-    for h in (insights.get("highlights") or [])[:4]:
+    for h in (insights.get("highlights") or [])[:3]:
         if isinstance(h, dict) and isinstance(h.get("label"), str):
             raw.append(h["label"].replace("_", " "))
     return _normalize_feature_words(raw)[:3]

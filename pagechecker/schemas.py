@@ -103,6 +103,8 @@ def snapshot_from_model(s: pc_models.Snapshot) -> Snapshot:
         highlights: list[SnapshotHighlight] = []
         if isinstance(hl_raw, list):
             for item in hl_raw:
+                if len(highlights) >= 3:
+                    break
                 if isinstance(item, dict) and isinstance(item.get("label"), str):
                     val = item.get("value")
                     highlights.append(
