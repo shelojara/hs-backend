@@ -4,7 +4,12 @@ from django.db.models import Exists, OuterRef, Subquery
 from django.utils import timezone
 
 from pagechecker import gemini_service
-from pagechecker.html_utils import extract_body_html, extract_body_text, extract_metadata
+from pagechecker.html_utils import (
+    extract_body_html,
+    extract_body_text,
+    extract_metadata,
+    html_to_markdown,
+)
 from pagechecker.models import Page, Snapshot
 
 
@@ -70,6 +75,7 @@ def check_page(page_id: int) -> bool:
     has_changed = latest_snapshot is None or latest_snapshot.content != current_text
 
     body_html = extract_body_html(response.text)
+    md_content = html_to_markdown(body_html)
     features = gemini_service.extract_snapshot_features(
         page_url=str(page.url),
         html=body_html,
@@ -78,6 +84,7 @@ def check_page(page_id: int) -> bool:
         page=page,
         content=current_text,
         html_content=body_html,
+        md_content=md_content,
         features=features,
     )
 

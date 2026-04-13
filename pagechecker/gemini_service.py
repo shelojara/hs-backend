@@ -141,12 +141,12 @@ def compare_snapshots(
     snapshot_b = Snapshot.objects.select_related("page").get(id=snapshot_b_id)
 
     content_a = (
-        snapshot_a.html_content or snapshot_a.content
+        (snapshot_a.md_content or snapshot_a.html_content or snapshot_a.content)
         if use_html
         else snapshot_a.content
     )
     content_b = (
-        snapshot_b.html_content or snapshot_b.content
+        (snapshot_b.md_content or snapshot_b.html_content or snapshot_b.content)
         if use_html
         else snapshot_b.content
     )
@@ -182,7 +182,7 @@ def answer_question_about_snapshot(
     """Send one snapshot to Gemini and return its answer to *question*."""
     snapshot = Snapshot.objects.select_related("page").get(id=snapshot_id)
     content = (
-        (snapshot.html_content or snapshot.content)
+        (snapshot.md_content or snapshot.html_content or snapshot.content)
         if use_html
         else snapshot.content
     )
