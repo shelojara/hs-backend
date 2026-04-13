@@ -6,6 +6,7 @@ class Snapshot(Schema):
     id: int
     created_at: datetime
     content: str
+    features: list[str] = []
 
 
 class Page(Schema):
