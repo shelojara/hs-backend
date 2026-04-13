@@ -25,7 +25,11 @@ router = Router()
 
 @router.post("/v1.PageChecker.ListPages", response=ListPagesResponse)
 def list_pages(request, payload: ListPagesRequest):
-    pages = services.list_pages(limit=payload.limit, offset=payload.offset)
+    pages = services.list_pages(
+        limit=payload.limit,
+        offset=payload.offset,
+        feature=payload.feature,
+    )
     return ListPagesResponse(pages=pages)
 
 
