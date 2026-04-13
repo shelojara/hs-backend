@@ -30,14 +30,14 @@ FEATURES_SYSTEM_INSTRUCTION = (
     "You summarise a web page's visible text snapshot. "
     "Return exactly three short content descriptors: concrete phrases about "
     "what the page offers or covers (e.g. 'wireless earbuds', 'free shipping', "
-    "'api documentation'). Prefer noun phrases or short clauses over mood "
+    "'api documentation'). Prefer noun phrases over mood "
     "adjectives like 'professional' or 'minimal'. "
     "If the snapshot clearly states a product or service price (including "
     "currency symbol or code), use one of the three slots for that price "
     "exactly as written in the snapshot (normalise only obvious whitespace). "
     "If no price is present, all three must be non-price content descriptors. "
     "Base every item only on the snapshot text. No duplicates; trim whitespace; "
-    "each item at most 12 words."
+    "each item at most 3 words."
 )
 
 
@@ -103,8 +103,8 @@ def extract_snapshot_features(*, page_url: str, text: str) -> list[str]:
     return []
 
 
-_FEATURE_ITEM_MAX_CHARS = 200
-_FEATURE_ITEM_MAX_WORDS = 12
+_FEATURE_ITEM_MAX_CHARS = 120
+_FEATURE_ITEM_MAX_WORDS = 3
 
 
 def _normalize_features(items: list[str]) -> list[str]:
