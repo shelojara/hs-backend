@@ -75,10 +75,13 @@ def check_page(page_id: int) -> bool:
     latest_snapshot = Snapshot.objects.filter(page=page).order_by("-created_at").first()
     has_changed = latest_snapshot is None or latest_snapshot.md_content != md_content
 
-    features = gemini_service.extract_snapshot_features(
-        page_url=str(page.url),
-        md_content=md_content,
-    )
+    if latest_snapshot is None:
+        features = gemini_service.extract_snapshot_features(
+            page_url=str(page.url),
+            md_content=md_content,
+        )
+    else:
+        features = list(latest_snapshot.features)
     Snapshot.objects.create(
         page=page,
         html_content=body_html,
