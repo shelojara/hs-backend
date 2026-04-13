@@ -11,3 +11,4 @@ wheels/
 
 # Django
 db.sqlite3
+staticfiles/
