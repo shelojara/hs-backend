@@ -72,7 +72,7 @@ def check_page(page_id: int) -> bool:
     body_html = extract_body_html(response.text)
     features = gemini_service.extract_snapshot_features(
         page_url=str(page.url),
-        text=current_text,
+        html=body_html,
     )
     Snapshot.objects.create(
         page=page,

@@ -10,9 +10,6 @@ from pagechecker.models import Snapshot
 
 logger = logging.getLogger(__name__)
 
-# Bound prompt size for feature extraction (plain-text body snapshot).
-_FEATURE_TEXT_MAX_CHARS = 12_000
-
 SYSTEM_INSTRUCTION = (
     "You are an expert at analysing web-page content snapshots. "
     "The user will provide two snapshots of the same page taken at different times "
@@ -27,16 +24,17 @@ SINGLE_SNAPSHOT_SYSTEM_INSTRUCTION = (
 )
 
 FEATURES_SYSTEM_INSTRUCTION = (
-    "You summarise a web page's visible text snapshot. "
+    "You summarise a web page from its body HTML (scripts/styles already removed). "
+    "Infer visible meaning from structure and text nodes. "
     "Return exactly three short content descriptors: concrete phrases about "
     "what the page offers or covers (e.g. 'wireless earbuds', 'free shipping', "
     "'api documentation'). Prefer noun phrases over mood "
     "adjectives like 'professional' or 'minimal'. "
-    "If the snapshot clearly states a product or service price (including "
+    "If the page clearly states a product or service price (including "
     "currency symbol or code), use one of the three slots for that price "
-    "exactly as written in the snapshot (normalise only obvious whitespace). "
+    "exactly as written in the content (normalise only obvious whitespace). "
     "If no price is present, all three must be non-price content descriptors. "
-    "Base every item only on the snapshot text. No duplicates; trim whitespace; "
+    "Base every item only on the provided HTML. No duplicates; trim whitespace; "
     "each item at most 3 words."
 )
 
@@ -55,21 +53,21 @@ def _get_client() -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
-def extract_snapshot_features(*, page_url: str, text: str) -> list[str]:
+def extract_snapshot_features(*, page_url: str, html: str) -> list[str]:
     """Ask Gemini for three content descriptors (price slot if visible); empty if unavailable."""
     if not os.environ.get("GEMINI_API_KEY"):
         return []
 
-    snippet = (text or "")[:_FEATURE_TEXT_MAX_CHARS]
-    if not snippet.strip():
+    body_html = html or ""
+    if not body_html.strip():
         return []
 
     prompt = (
         f"## Page URL\n\n{page_url}\n\n"
-        f"## Snapshot text (may be truncated)\n\n{snippet}\n\n"
+        f"## Body HTML\n\n{body_html}\n\n"
         "## Task\n\n"
         "Return exactly three content descriptors (and include a clear price in "
-        "one slot when the snapshot shows one), as specified in the system instruction."
+        "one slot when the page shows one), as specified in the system instruction."
     )
 
     try:
