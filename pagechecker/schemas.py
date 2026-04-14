@@ -134,3 +134,13 @@ class AssociateQuestionsWithPageRequest(Schema):
 
 class AssociateQuestionsWithPageResponse(Schema):
     pass
+
+
+class LoginRequest(Schema):
+    username: str
+    password: str
+
+
+class LoginResponse(Schema):
+    access_token: str
+    token_type: str = "Bearer"

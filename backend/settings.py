@@ -171,3 +171,9 @@ if cors_allowed_origins:
 elif DEBUG:
     # Development default: allow requests from any local/frontend origin.
     CORS_ALLOW_ALL_ORIGINS = True
+
+# JWT access tokens (login: `/api/v1.PageChecker.Login`)
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "").strip() or SECRET_KEY
+JWT_ALGORITHM = "HS256"
+JWT_SIGNING_KEY = JWT_SECRET_KEY
+JWT_ACCESS_TOKEN_LIFETIME_SECONDS = int(os.getenv("JWT_ACCESS_TOKEN_LIFETIME_SECONDS", "3600"))
