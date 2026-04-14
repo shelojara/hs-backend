@@ -100,6 +100,21 @@ class CompareSnapshotsResponse(Schema):
     answer: str
 
 
+class Question(Schema):
+    id: int
+    text: str
+    created_at: datetime
+
+
+class ListQuestionsRequest(Schema):
+    limit: int = 20
+    offset: int = 0
+
+
+class ListQuestionsResponse(Schema):
+    questions: list[Question]
+
+
 class CreateQuestionRequest(Schema):
     text: Annotated[str, AfterValidator(_strip_nonempty_question_text)]
 

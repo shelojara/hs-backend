@@ -102,6 +102,10 @@ def create_question(text: str) -> Question:
     return Question.objects.create(text=text)
 
 
+def list_questions(limit: int = 20, offset: int = 0) -> list[Question]:
+    return list(Question.objects.order_by("-created_at")[offset : offset + limit])
+
+
 def delete_question(question_id: int) -> None:
     Question.objects.filter(id=question_id).delete()
 
