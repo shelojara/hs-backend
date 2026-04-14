@@ -32,6 +32,12 @@ class Page(models.Model):
     title = models.CharField(max_length=512, blank=True, default="")
     icon = models.URLField(max_length=2048, blank=True, default="")
 
+    questions = models.ManyToManyField(
+        "Question",
+        related_name="pages",
+        blank=True,
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     last_checked_at = models.DateTimeField(null=True)

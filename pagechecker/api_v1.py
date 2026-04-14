@@ -4,6 +4,8 @@ from ninja.errors import HttpError
 
 from pagechecker import services
 from pagechecker.schemas import (
+    AssociateQuestionsWithPageRequest,
+    AssociateQuestionsWithPageResponse,
     CheckPageRequest,
     CheckPageResponse,
     CompareSnapshotsRequest,
@@ -66,6 +68,21 @@ def list_questions(request):
 def delete_question(request, payload: DeleteQuestionRequest):
     services.delete_question(question_id=payload.question_id)
     return DeleteQuestionResponse()
+
+
+@router.post(
+    "/v1.PageChecker.AssociateQuestionsWithPage",
+    response=AssociateQuestionsWithPageResponse,
+)
+def associate_questions_with_page(request, payload: AssociateQuestionsWithPageRequest):
+    try:
+        page = services.associate_questions_with_page(
+            page_id=payload.page_id,
+            question_ids=payload.question_ids,
+        )
+    except ObjectDoesNotExist:
+        raise HttpError(404, "Page not found.")
+    return AssociateQuestionsWithPageResponse(page=page)
 
 
 @router.post("/v1.PageChecker.UpdatePage", response=UpdatePageResponse)
