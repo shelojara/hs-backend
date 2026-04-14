@@ -14,8 +14,8 @@ class Snapshot(models.Model):
         return f"{self.page.url} - {self.created_at}"
 
 
-class PageQuestion(models.Model):
-    """Question text shared across all monitored pages (not per-page)."""
+class Question(models.Model):
+    """Question."""
 
     text = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
