@@ -82,8 +82,6 @@ def associate_questions_with_page(request, payload: AssociateQuestionsWithPageRe
         )
     except ObjectDoesNotExist:
         raise HttpError(404, "Page not found.")
-    except ValueError as exc:
-        raise HttpError(400, str(exc))
     return AssociateQuestionsWithPageResponse(page=page)
 
 

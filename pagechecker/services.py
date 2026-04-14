@@ -110,18 +110,13 @@ def delete_question(question_id: int) -> None:
 
 @transaction.atomic
 def associate_questions_with_page(page_id: int, question_ids: list[int]) -> Page:
-    """Link many questions to one page. Duplicate ids ignored (order preserved). Idempotent."""
+    """Link existing questions to one page. Unknown ids skipped. Idempotent."""
     page = Page.objects.select_for_update().get(id=page_id)
-    ordered_ids = list(dict.fromkeys(question_ids))
-    if ordered_ids:
-        found = set(
-            Question.objects.filter(id__in=ordered_ids).values_list("id", flat=True)
+    if question_ids:
+        existing = Question.objects.filter(id__in=question_ids).values_list(
+            "id", flat=True
         )
-        missing = [pk for pk in ordered_ids if pk not in found]
-        if missing:
-            msg = f"Unknown question id(s): {missing}"
-            raise ValueError(msg)
-        page.questions.add(*ordered_ids)
+        page.questions.add(*existing)
     return Page.objects.prefetch_related("questions").get(id=page_id)
 
 
