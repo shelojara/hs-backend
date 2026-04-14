@@ -106,3 +106,11 @@ class CreateQuestionRequest(Schema):
 
 class CreateQuestionResponse(Schema):
     question_id: int
+
+
+class DeleteQuestionRequest(Schema):
+    question_id: int
+
+
+class DeleteQuestionResponse(Schema):
+    pass

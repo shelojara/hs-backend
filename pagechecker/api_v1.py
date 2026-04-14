@@ -12,6 +12,8 @@ from pagechecker.schemas import (
     CreatePageResponse,
     CreateQuestionRequest,
     CreateQuestionResponse,
+    DeleteQuestionRequest,
+    DeleteQuestionResponse,
     DeletePageRequest,
     DeletePageResponse,
     GetPageRequest,
@@ -51,6 +53,12 @@ def create_page(request, payload: CreatePageRequest):
 def create_question(request, payload: CreateQuestionRequest):
     q = services.create_question(text=payload.text)
     return CreateQuestionResponse(question_id=q.id)
+
+
+@router.post("/v1.PageChecker.DeleteQuestion", response=DeleteQuestionResponse)
+def delete_question(request, payload: DeleteQuestionRequest):
+    services.delete_question(question_id=payload.question_id)
+    return DeleteQuestionResponse()
 
 
 @router.post("/v1.PageChecker.UpdatePage", response=UpdatePageResponse)
