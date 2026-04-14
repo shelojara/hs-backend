@@ -1,10 +1,8 @@
-from django.contrib.auth import authenticate
 from django.core.exceptions import ObjectDoesNotExist
 from ninja import Router
 from ninja.errors import HttpError
 
 from pagechecker import services
-from pagechecker.jwt_tokens import encode_access_token
 from pagechecker.schemas import (
     AssociateQuestionsWithPageRequest,
     AssociateQuestionsWithPageResponse,
@@ -25,29 +23,11 @@ from pagechecker.schemas import (
     ListPagesRequest,
     ListPagesResponse,
     ListQuestionsResponse,
-    LoginRequest,
-    LoginResponse,
     UpdatePageRequest,
     UpdatePageResponse,
 )
 
 router = Router()
-
-
-@router.post("/v1.PageChecker.Login", response=LoginResponse)
-def login(request, payload: LoginRequest):
-    user = authenticate(
-        request,
-        username=payload.username,
-        password=payload.password,
-    )
-    if user is None or not user.is_active:
-        raise HttpError(401, "Invalid username or password.")
-    access_token = encode_access_token(
-        user_id=user.pk,
-        username=user.get_username(),
-    )
-    return LoginResponse(access_token=access_token)
 
 
 @router.post("/v1.PageChecker.ListPages", response=ListPagesResponse)

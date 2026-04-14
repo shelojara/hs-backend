@@ -12,7 +12,7 @@ def test_login_returns_jwt_for_valid_credentials():
     User.objects.create_user(username="alice", password="secret123")
     client = Client()
     res = client.post(
-        "/api/v1.PageChecker.Login",
+        "/api/v1.Auth.Login",
         data=json.dumps({"username": "alice", "password": "secret123"}),
         content_type="application/json",
     )
@@ -35,7 +35,7 @@ def test_login_401_for_bad_password():
     User.objects.create_user(username="bob", password="right")
     client = Client()
     res = client.post(
-        "/api/v1.PageChecker.Login",
+        "/api/v1.Auth.Login",
         data=json.dumps({"username": "bob", "password": "wrong"}),
         content_type="application/json",
     )
