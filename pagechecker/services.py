@@ -102,6 +102,10 @@ def create_question(text: str) -> Question:
     return Question.objects.create(text=text)
 
 
+def delete_question(question_id: int) -> None:
+    Question.objects.filter(id=question_id).delete()
+
+
 def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) -> str:
     """Answer a question about the page's snapshots using Gemini.
 
