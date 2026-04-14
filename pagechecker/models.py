@@ -14,6 +14,19 @@ class Snapshot(models.Model):
         return f"{self.page.url} - {self.created_at}"
 
 
+class Question(models.Model):
+    """Question."""
+
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        return self.text[:80] + ("…" if len(self.text) > 80 else "")
+
+
 class Page(models.Model):
     url = models.URLField(unique=True)
     title = models.CharField(max_length=512, blank=True, default="")
