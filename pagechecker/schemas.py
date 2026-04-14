@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from ninja import Schema
-from pydantic import computed_field
+from pydantic import computed_field, field_validator
 
 
 class Snapshot(Schema):
@@ -93,11 +93,18 @@ class CompareSnapshotsResponse(Schema):
 class CreateQuestionRequest(Schema):
     content: str
 
+    @field_validator("content")
+    @classmethod
+    def content_not_blank(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            msg = "Question content must not be empty."
+            raise ValueError(msg)
+        return s
+
 
 class QuestionOut(Schema):
     id: int
-    content: str
-    created_at: datetime
 
 
 class CreateQuestionResponse(Schema):

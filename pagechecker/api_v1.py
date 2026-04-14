@@ -50,13 +50,8 @@ def create_page(request, payload: CreatePageRequest):
 
 @router.post("/v1.PageChecker.CreateQuestion", response=CreateQuestionResponse)
 def create_question(request, payload: CreateQuestionRequest):
-    try:
-        q = services.create_question(content=payload.content)
-    except ValueError as exc:
-        raise HttpError(400, str(exc))
-    return CreateQuestionResponse(
-        question=QuestionOut(id=q.id, content=q.text, created_at=q.created_at)
-    )
+    q = services.create_question(content=payload.content)
+    return CreateQuestionResponse(question=QuestionOut(id=q.id))
 
 
 @router.post("/v1.PageChecker.UpdatePage", response=UpdatePageResponse)

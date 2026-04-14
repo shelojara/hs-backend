@@ -99,10 +99,7 @@ def check_page(page_id: int) -> bool:
 
 
 def create_question(content: str) -> Question:
-    text = content.strip()
-    if not text:
-        raise ValueError("Question content must not be empty.")
-    return Question.objects.create(text=text)
+    return Question.objects.create(text=content)
 
 
 def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) -> str:
