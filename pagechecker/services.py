@@ -109,13 +109,16 @@ def delete_question(question_id: int) -> None:
 
 @transaction.atomic
 def associate_questions_with_page(page_id: int, question_ids: list[int]) -> None:
-    """Link existing questions to one page. Unknown ids skipped. Idempotent."""
+    """Replace page's question links. Unknown ids omitted. Empty list clears all."""
     page = Page.objects.select_for_update().get(id=page_id)
-    if question_ids:
-        existing = Question.objects.filter(id__in=question_ids).values_list(
-            "id", flat=True
+    existing_ids = (
+        list(
+            Question.objects.filter(id__in=question_ids).values_list("id", flat=True)
         )
-        page.questions.add(*existing)
+        if question_ids
+        else []
+    )
+    page.questions.set(existing_ids)
 
 
 def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) -> str:
