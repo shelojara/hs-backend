@@ -9,7 +9,7 @@ from pagechecker.html_utils import (
     extract_metadata,
     html_to_markdown,
 )
-from pagechecker.models import Page, Snapshot
+from pagechecker.models import Page, Question, Snapshot
 
 
 def list_pages(limit: int = 20, offset: int = 0, feature: str | None = None) -> list[Page]:
@@ -96,6 +96,10 @@ def check_page(page_id: int) -> bool:
     page.save(update_fields=["last_checked_at", "title", "icon"])
 
     return has_changed
+
+
+def create_question(text: str) -> Question:
+    return Question.objects.create(text=text)
 
 
 def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) -> str:

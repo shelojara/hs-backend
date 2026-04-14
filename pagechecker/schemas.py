@@ -1,7 +1,17 @@
 from datetime import datetime
 
+from typing import Annotated
+
 from ninja import Schema
-from pydantic import computed_field
+from pydantic import AfterValidator, computed_field
+
+
+def _strip_nonempty_question_text(v: str) -> str:
+    s = v.strip()
+    if not s:
+        msg = "Question text must not be empty."
+        raise ValueError(msg)
+    return s
 
 
 class Snapshot(Schema):
@@ -88,3 +98,11 @@ class CompareSnapshotsRequest(Schema):
 
 class CompareSnapshotsResponse(Schema):
     answer: str
+
+
+class CreateQuestionRequest(Schema):
+    text: Annotated[str, AfterValidator(_strip_nonempty_question_text)]
+
+
+class CreateQuestionResponse(Schema):
+    question_id: int
