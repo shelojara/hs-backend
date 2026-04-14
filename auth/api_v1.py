@@ -1,24 +1,20 @@
-from django.contrib.auth import authenticate
 from ninja import Router
 from ninja.errors import HttpError
 
-from .jwt_tokens import encode_access_token
 from .schemas import LoginRequest, LoginResponse
+from .services import InvalidLogin, login as login_service
 
 router = Router()
 
 
 @router.post("/v1.Auth.Login", response=LoginResponse)
 def login(request, payload: LoginRequest):
-    user = authenticate(
-        request,
-        username=payload.username,
-        password=payload.password,
-    )
-    if user is None or not user.is_active:
-        raise HttpError(401, "Invalid username or password.")
-    access_token = encode_access_token(
-        user_id=user.pk,
-        username=user.get_username(),
-    )
+    try:
+        access_token = login_service(
+            request,
+            username=payload.username,
+            password=payload.password,
+        )
+    except InvalidLogin:
+        raise HttpError(401, "Invalid username or password.") from None
     return LoginResponse(access_token=access_token)
