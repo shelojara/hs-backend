@@ -10,12 +10,15 @@ from pagechecker.schemas import (
     CompareSnapshotsResponse,
     CreatePageRequest,
     CreatePageResponse,
+    CreateQuestionRequest,
+    CreateQuestionResponse,
     DeletePageRequest,
     DeletePageResponse,
     GetPageRequest,
     GetPageResponse,
     ListPagesRequest,
     ListPagesResponse,
+    QuestionOut,
     UpdatePageRequest,
     UpdatePageResponse,
 )
@@ -43,6 +46,17 @@ def get_page(request, payload: GetPageRequest):
 def create_page(request, payload: CreatePageRequest):
     page = services.create_page(url=payload.url)
     return CreatePageResponse(page=page)
+
+
+@router.post("/v1.PageChecker.CreateQuestion", response=CreateQuestionResponse)
+def create_question(request, payload: CreateQuestionRequest):
+    try:
+        q = services.create_question(content=payload.content)
+    except ValueError as exc:
+        raise HttpError(400, str(exc))
+    return CreateQuestionResponse(
+        question=QuestionOut(id=q.id, content=q.text, created_at=q.created_at)
+    )
 
 
 @router.post("/v1.PageChecker.UpdatePage", response=UpdatePageResponse)

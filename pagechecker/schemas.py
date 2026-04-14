@@ -88,3 +88,17 @@ class CompareSnapshotsRequest(Schema):
 
 class CompareSnapshotsResponse(Schema):
     answer: str
+
+
+class CreateQuestionRequest(Schema):
+    content: str
+
+
+class QuestionOut(Schema):
+    id: int
+    content: str
+    created_at: datetime
+
+
+class CreateQuestionResponse(Schema):
+    question: QuestionOut
