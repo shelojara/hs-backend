@@ -94,7 +94,7 @@ class UpdatePageRequest(Schema):
 
 
 class UpdatePageResponse(Schema):
-    page_id: int
+    pass
 
 
 class CompareSnapshotsRequest(Schema):
@@ -133,4 +133,4 @@ class AssociateQuestionsWithPageRequest(Schema):
 
 
 class AssociateQuestionsWithPageResponse(Schema):
-    page_id: int
+    pass
