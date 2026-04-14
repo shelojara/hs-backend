@@ -49,7 +49,7 @@ class CreatePageRequest(Schema):
 
 
 class CreatePageResponse(Schema):
-    page: Page
+    page_id: int
 
 
 class CheckPageRequest(Schema):
@@ -94,7 +94,7 @@ class UpdatePageRequest(Schema):
 
 
 class UpdatePageResponse(Schema):
-    page: Page
+    page_id: int
 
 
 class CompareSnapshotsRequest(Schema):
@@ -133,4 +133,4 @@ class AssociateQuestionsWithPageRequest(Schema):
 
 
 class AssociateQuestionsWithPageResponse(Schema):
-    page: Page
+    page_id: int
