@@ -27,6 +27,12 @@ class Snapshot(Schema):
         return self.md_content
 
 
+class Question(Schema):
+    id: int
+    text: str
+    created_at: datetime
+
+
 class Page(Schema):
     id: int
     url: str
@@ -35,6 +41,7 @@ class Page(Schema):
     created_at: datetime
     last_checked_at: datetime | None = None
     latest_snapshot: Snapshot | None = None
+    questions: list[Question] = []
 
 
 class CreatePageRequest(Schema):
@@ -100,12 +107,6 @@ class CompareSnapshotsResponse(Schema):
     answer: str
 
 
-class Question(Schema):
-    id: int
-    text: str
-    created_at: datetime
-
-
 class ListQuestionsResponse(Schema):
     questions: list[Question]
 
@@ -124,3 +125,12 @@ class DeleteQuestionRequest(Schema):
 
 class DeleteQuestionResponse(Schema):
     pass
+
+
+class AssociateQuestionsWithPageRequest(Schema):
+    page_id: int
+    question_ids: list[int]
+
+
+class AssociateQuestionsWithPageResponse(Schema):
+    page: Page

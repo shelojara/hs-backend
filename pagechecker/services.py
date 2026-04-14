@@ -13,7 +13,7 @@ from pagechecker.models import Page, Question, Snapshot
 
 
 def list_pages(limit: int = 20, offset: int = 0, feature: str | None = None) -> list[Page]:
-    qs = Page.objects.order_by("-created_at")
+    qs = Page.objects.order_by("-created_at").prefetch_related("questions")
     token = (feature or "").strip()
     if token:
         latest_id = (
@@ -33,14 +33,13 @@ def list_pages(limit: int = 20, offset: int = 0, feature: str | None = None) -> 
 
 
 def get_page(page_id: int) -> Page:
-    return Page.objects.get(id=page_id)
+    return Page.objects.prefetch_related("questions").get(id=page_id)
 
 
 def create_page(url: str) -> Page:
     page = Page.objects.create(url=url)
     check_page(page.id)
-    page.refresh_from_db()
-    return page
+    return Page.objects.prefetch_related("questions").get(id=page.id)
 
 
 @transaction.atomic
@@ -54,8 +53,7 @@ def update_page(page_id: int, url: str, *, keep_snapshots: bool = False) -> Page
         page.snapshots.all().delete()
 
     check_page(page.id)
-    page.refresh_from_db()
-    return page
+    return Page.objects.prefetch_related("questions").get(id=page_id)
 
 
 def delete_page(page_id: int) -> None:
@@ -108,6 +106,23 @@ def list_questions(*, max_count: int = 20) -> list[Question]:
 
 def delete_question(question_id: int) -> None:
     Question.objects.filter(id=question_id).delete()
+
+
+@transaction.atomic
+def associate_questions_with_page(page_id: int, question_ids: list[int]) -> Page:
+    """Link many questions to one page. Duplicate ids ignored (order preserved). Idempotent."""
+    page = Page.objects.select_for_update().get(id=page_id)
+    ordered_ids = list(dict.fromkeys(question_ids))
+    if ordered_ids:
+        found = set(
+            Question.objects.filter(id__in=ordered_ids).values_list("id", flat=True)
+        )
+        missing = [pk for pk in ordered_ids if pk not in found]
+        if missing:
+            msg = f"Unknown question id(s): {missing}"
+            raise ValueError(msg)
+        page.questions.add(*ordered_ids)
+    return Page.objects.prefetch_related("questions").get(id=page_id)
 
 
 def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) -> str:
