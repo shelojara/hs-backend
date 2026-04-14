@@ -36,14 +36,14 @@ def get_page(page_id: int) -> Page:
     return Page.objects.prefetch_related("questions").get(id=page_id)
 
 
-def create_page(url: str) -> Page:
+def create_page(url: str) -> int:
     page = Page.objects.create(url=url)
     check_page(page.id)
-    return Page.objects.prefetch_related("questions").get(id=page.id)
+    return page.id
 
 
 @transaction.atomic
-def update_page(page_id: int, url: str, *, keep_snapshots: bool = False) -> Page:
+def update_page(page_id: int, url: str, *, keep_snapshots: bool = False) -> None:
     """Update a page's URL, re-extract title/icon, and optionally clear old snapshots."""
     page = Page.objects.select_for_update().get(id=page_id)
     page.url = url
@@ -53,7 +53,6 @@ def update_page(page_id: int, url: str, *, keep_snapshots: bool = False) -> Page
         page.snapshots.all().delete()
 
     check_page(page.id)
-    return Page.objects.prefetch_related("questions").get(id=page_id)
 
 
 def delete_page(page_id: int) -> None:
@@ -109,7 +108,7 @@ def delete_question(question_id: int) -> None:
 
 
 @transaction.atomic
-def associate_questions_with_page(page_id: int, question_ids: list[int]) -> Page:
+def associate_questions_with_page(page_id: int, question_ids: list[int]) -> None:
     """Link existing questions to one page. Unknown ids skipped. Idempotent."""
     page = Page.objects.select_for_update().get(id=page_id)
     if question_ids:
@@ -117,7 +116,6 @@ def associate_questions_with_page(page_id: int, question_ids: list[int]) -> Page
             "id", flat=True
         )
         page.questions.add(*existing)
-    return Page.objects.prefetch_related("questions").get(id=page_id)
 
 
 def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) -> str:

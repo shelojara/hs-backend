@@ -48,8 +48,8 @@ def get_page(request, payload: GetPageRequest):
 
 @router.post("/v1.PageChecker.CreatePage", response=CreatePageResponse)
 def create_page(request, payload: CreatePageRequest):
-    page = services.create_page(url=payload.url)
-    return CreatePageResponse(page=page)
+    page_id = services.create_page(url=payload.url)
+    return CreatePageResponse(page_id=page_id)
 
 
 @router.post("/v1.PageChecker.CreateQuestion", response=CreateQuestionResponse)
@@ -76,26 +76,26 @@ def delete_question(request, payload: DeleteQuestionRequest):
 )
 def associate_questions_with_page(request, payload: AssociateQuestionsWithPageRequest):
     try:
-        page = services.associate_questions_with_page(
+        services.associate_questions_with_page(
             page_id=payload.page_id,
             question_ids=payload.question_ids,
         )
     except ObjectDoesNotExist:
         raise HttpError(404, "Page not found.")
-    return AssociateQuestionsWithPageResponse(page=page)
+    return AssociateQuestionsWithPageResponse()
 
 
 @router.post("/v1.PageChecker.UpdatePage", response=UpdatePageResponse)
 def update_page(request, payload: UpdatePageRequest):
     try:
-        page = services.update_page(
+        services.update_page(
             page_id=payload.page_id,
             url=payload.url,
             keep_snapshots=payload.keep_snapshots,
         )
     except ObjectDoesNotExist:
         raise HttpError(404, "Page not found.")
-    return UpdatePageResponse(page=page)
+    return UpdatePageResponse()
 
 
 @router.post("/v1.PageChecker.DeletePage", response=DeletePageResponse)
