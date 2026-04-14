@@ -1,7 +1,17 @@
 from datetime import datetime
 
+from typing import Annotated
+
 from ninja import Schema
-from pydantic import computed_field, field_validator
+from pydantic import AfterValidator, computed_field
+
+
+def _strip_nonempty_question_content(v: str) -> str:
+    s = v.strip()
+    if not s:
+        msg = "Question content must not be empty."
+        raise ValueError(msg)
+    return s
 
 
 class Snapshot(Schema):
@@ -91,21 +101,8 @@ class CompareSnapshotsResponse(Schema):
 
 
 class CreateQuestionRequest(Schema):
-    content: str
-
-    @field_validator("content")
-    @classmethod
-    def content_not_blank(cls, v: str) -> str:
-        s = v.strip()
-        if not s:
-            msg = "Question content must not be empty."
-            raise ValueError(msg)
-        return s
-
-
-class QuestionOut(Schema):
-    id: int
+    content: Annotated[str, AfterValidator(_strip_nonempty_question_content)]
 
 
 class CreateQuestionResponse(Schema):
-    question: QuestionOut
+    id: int
