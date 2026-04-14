@@ -49,8 +49,8 @@ def create_page(request, payload: CreatePageRequest):
 
 @router.post("/v1.PageChecker.CreateQuestion", response=CreateQuestionResponse)
 def create_question(request, payload: CreateQuestionRequest):
-    q = services.create_question(content=payload.content)
-    return CreateQuestionResponse(id=q.id)
+    q = services.create_question(text=payload.text)
+    return CreateQuestionResponse(question_id=q.id)
 
 
 @router.post("/v1.PageChecker.UpdatePage", response=UpdatePageResponse)

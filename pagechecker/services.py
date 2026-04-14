@@ -98,8 +98,8 @@ def check_page(page_id: int) -> bool:
     return has_changed
 
 
-def create_question(content: str) -> Question:
-    return Question.objects.create(text=content)
+def create_question(text: str) -> Question:
+    return Question.objects.create(text=text)
 
 
 def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) -> str:

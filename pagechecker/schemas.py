@@ -6,10 +6,10 @@ from ninja import Schema
 from pydantic import AfterValidator, computed_field
 
 
-def _strip_nonempty_question_content(v: str) -> str:
+def _strip_nonempty_question_text(v: str) -> str:
     s = v.strip()
     if not s:
-        msg = "Question content must not be empty."
+        msg = "Question text must not be empty."
         raise ValueError(msg)
     return s
 
@@ -101,8 +101,8 @@ class CompareSnapshotsResponse(Schema):
 
 
 class CreateQuestionRequest(Schema):
-    content: Annotated[str, AfterValidator(_strip_nonempty_question_content)]
+    text: Annotated[str, AfterValidator(_strip_nonempty_question_text)]
 
 
 class CreateQuestionResponse(Schema):
-    id: int
+    question_id: int
