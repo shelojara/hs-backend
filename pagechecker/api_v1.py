@@ -20,7 +20,6 @@ from pagechecker.schemas import (
     GetPageResponse,
     ListPagesRequest,
     ListPagesResponse,
-    ListQuestionsRequest,
     ListQuestionsResponse,
     UpdatePageRequest,
     UpdatePageResponse,
@@ -58,8 +57,8 @@ def create_question(request, payload: CreateQuestionRequest):
 
 
 @router.post("/v1.PageChecker.ListQuestions", response=ListQuestionsResponse)
-def list_questions(request, payload: ListQuestionsRequest):
-    questions = services.list_questions(limit=payload.limit, offset=payload.offset)
+def list_questions(request):
+    questions = services.list_questions()
     return ListQuestionsResponse(questions=questions)
 
 

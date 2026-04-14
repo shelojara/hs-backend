@@ -106,11 +106,6 @@ class Question(Schema):
     created_at: datetime
 
 
-class ListQuestionsRequest(Schema):
-    limit: int = 20
-    offset: int = 0
-
-
 class ListQuestionsResponse(Schema):
     questions: list[Question]
 
