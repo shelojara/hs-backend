@@ -43,8 +43,12 @@ def update_page(
     keep_snapshots: bool = False,
     category_id: int | None = None,
 ) -> None:
-    """Update a page's URL, re-extract title/icon, and optionally clear old snapshots."""
+    """Update URL/category/flags; purge snapshots unless *keep_snapshots*.
+
+    When URL changes, runs *check_page* to refresh title/icon and add snapshot.
+    """
     page = Page.objects.select_for_update().get(id=page_id)
+    old_url = page.url
     page.url = url
     page.category_id = category_id
     page.should_report_daily = should_report_daily
@@ -53,7 +57,8 @@ def update_page(
     if not keep_snapshots:
         page.snapshots.all().delete()
 
-    check_page(page.id)
+    if old_url != url:
+        check_page(page.id)
 
 
 def delete_page(page_id: int) -> None:
