@@ -10,6 +10,7 @@ from pagechecker.models import Category, Page, Question, Snapshot
 from pagechecker.services import (
     MonitoredUrlNotFoundError,
     associate_questions_with_page,
+    change_page_url,
     check_page,
     create_category,
     list_categories,
@@ -79,12 +80,11 @@ def test_create_category_persists_gemini_emoji(mock_emoji):
 
 @pytest.mark.django_db
 @patch("pagechecker.services.check_page")
-def test_update_page_skips_check_when_url_unchanged(mock_check):
+def test_change_page_url_skips_check_when_url_unchanged(mock_check):
     page = Page.objects.create(url="https://example.com/same-url")
-    update_page(page.id, "https://example.com/same-url", should_report_daily=True)
+    change_page_url(page.id, "https://example.com/same-url")
     page.refresh_from_db()
     assert page.url == "https://example.com/same-url"
-    assert page.should_report_daily is True
     mock_check.assert_not_called()
 
 
@@ -93,15 +93,11 @@ def test_update_page_skips_check_when_url_unchanged(mock_check):
 def test_update_page_sets_category_when_category_id_given(mock_check):
     cat = Category.objects.create(name="Docs", emoji="📄")
     page = Page.objects.create(url="https://example.com/update-cat")
-    update_page(
-        page.id,
-        "https://example.com/update-cat-new",
-        category_id=cat.id,
-    )
+    update_page(page.id, category_id=cat.id)
     page.refresh_from_db()
-    assert page.url == "https://example.com/update-cat-new"
+    assert page.url == "https://example.com/update-cat"
     assert page.category_id == cat.id
-    mock_check.assert_called_once_with(page.id)
+    mock_check.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -109,14 +105,10 @@ def test_update_page_sets_category_when_category_id_given(mock_check):
 def test_update_page_preserves_category_when_same_category_id(mock_check):
     cat = Category.objects.create(name="Docs", emoji="📄")
     page = Page.objects.create(url="https://example.com/keep-cat", category=cat)
-    update_page(
-        page.id,
-        "https://example.com/keep-cat-new",
-        category_id=cat.id,
-    )
+    update_page(page.id, category_id=cat.id)
     page.refresh_from_db()
     assert page.category_id == cat.id
-    mock_check.assert_called_once_with(page.id)
+    mock_check.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -124,14 +116,10 @@ def test_update_page_preserves_category_when_same_category_id(mock_check):
 def test_update_page_category_id_none_clears_category(mock_check):
     cat = Category.objects.create(name="Docs", emoji="📄")
     page = Page.objects.create(url="https://example.com/clear-cat", category=cat)
-    update_page(
-        page.id,
-        "https://example.com/clear-cat-new",
-        category_id=None,
-    )
+    update_page(page.id, category_id=None)
     page.refresh_from_db()
     assert page.category_id is None
-    mock_check.assert_called_once_with(page.id)
+    mock_check.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -141,10 +129,10 @@ def test_update_page_should_report_daily_defaults_false_when_omitted(mock_check)
         url="https://example.com/daily-omit",
         should_report_daily=True,
     )
-    update_page(page.id, "https://example.com/daily-omit-new")
+    update_page(page.id)
     page.refresh_from_db()
     assert page.should_report_daily is False
-    mock_check.assert_called_once_with(page.id)
+    mock_check.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -154,13 +142,39 @@ def test_update_page_sets_should_report_daily(mock_check):
         url="https://example.com/daily-flag",
         should_report_daily=False,
     )
-    update_page(
-        page.id,
-        "https://example.com/daily-flag-new",
-        should_report_daily=True,
-    )
+    update_page(page.id, should_report_daily=True)
     page.refresh_from_db()
     assert page.should_report_daily is True
+    mock_check.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.check_page")
+def test_change_page_url_calls_check_when_url_changes(mock_check):
+    page = Page.objects.create(url="https://example.com/old")
+    change_page_url(page.id, "https://example.com/new")
+    page.refresh_from_db()
+    assert page.url == "https://example.com/new"
+    mock_check.assert_called_once_with(page.id)
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.check_page")
+def test_change_page_url_deletes_snapshots_unless_keep(mock_check):
+    page = Page.objects.create(url="https://example.com/url-snap")
+    Snapshot.objects.create(page=page, html_content="<p>a</p>", md_content="a")
+    change_page_url(page.id, "https://example.com/url-snap-new", keep_snapshots=False)
+    assert page.snapshots.count() == 0
+    mock_check.assert_called_once_with(page.id)
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.check_page")
+def test_change_page_url_keeps_snapshots_when_requested(mock_check):
+    page = Page.objects.create(url="https://example.com/url-keep")
+    Snapshot.objects.create(page=page, html_content="<p>a</p>", md_content="a")
+    change_page_url(page.id, "https://example.com/url-keep-new", keep_snapshots=True)
+    assert page.snapshots.count() == 1
     mock_check.assert_called_once_with(page.id)
 
 

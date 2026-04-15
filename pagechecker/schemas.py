@@ -102,13 +102,21 @@ class DeletePageResponse(Schema):
 
 class UpdatePageRequest(Schema):
     page_id: int
-    url: str
     should_report_daily: bool = False
-    keep_snapshots: bool = False
     category_id: int | None = None
 
 
 class UpdatePageResponse(Schema):
+    pass
+
+
+class ChangePageUrlRequest(Schema):
+    page_id: int
+    url: str
+    keep_snapshots: bool = False
+
+
+class ChangePageUrlResponse(Schema):
     pass
 
 

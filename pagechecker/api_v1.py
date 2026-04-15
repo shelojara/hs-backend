@@ -28,6 +28,8 @@ from pagechecker.schemas import (
     ListPagesResponse,
     ListCategoriesResponse,
     ListQuestionsResponse,
+    ChangePageUrlRequest,
+    ChangePageUrlResponse,
     UpdatePageRequest,
     UpdatePageResponse,
 )
@@ -112,16 +114,27 @@ def update_page(request, payload: UpdatePageRequest):
     try:
         services.update_page(
             page_id=payload.page_id,
-            url=payload.url,
             should_report_daily=payload.should_report_daily,
-            keep_snapshots=payload.keep_snapshots,
             category_id=payload.category_id,
+        )
+    except Page.DoesNotExist:
+        raise HttpError(404, "Page not found.")
+    return UpdatePageResponse()
+
+
+@router.post("/v1.PageChecker.ChangePageUrl", response=ChangePageUrlResponse)
+def change_page_url(request, payload: ChangePageUrlRequest):
+    try:
+        services.change_page_url(
+            page_id=payload.page_id,
+            url=payload.url,
+            keep_snapshots=payload.keep_snapshots,
         )
     except Page.DoesNotExist:
         raise HttpError(404, "Page not found.")
     except MonitoredUrlNotFoundError as exc:
         raise HttpError(404, str(exc)) from exc
-    return UpdatePageResponse()
+    return ChangePageUrlResponse()
 
 
 @router.post("/v1.PageChecker.DeletePage", response=DeletePageResponse)
