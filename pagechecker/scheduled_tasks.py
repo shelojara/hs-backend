@@ -24,5 +24,5 @@ def run_daily_page_check_dispatch() -> list[int]:
 
 
 def run_scheduled_page_check(page_id: int) -> None:
-    """Placeholder for per-page scheduled work (fetch/report)."""
-    _ = page_id
+    """Daily job: fetch page, run all linked questions, email report."""
+    services.run_daily_report_for_page(page_id)

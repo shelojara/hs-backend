@@ -5,7 +5,10 @@ from django.test import override_settings
 from django_q.models import Schedule
 
 from pagechecker.models import Page
-from pagechecker.scheduled_tasks import run_daily_page_check_dispatch
+from pagechecker.scheduled_tasks import (
+    run_daily_page_check_dispatch,
+    run_scheduled_page_check,
+)
 from pagechecker.services import page_ids_due_for_scheduled_check
 
 
@@ -80,3 +83,10 @@ def test_run_daily_page_check_dispatch_noop_when_timezone_not_santiago(mock_asyn
     )
     assert run_daily_page_check_dispatch() == []
     mock_async.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("pagechecker.scheduled_tasks.services.run_daily_report_for_page")
+def test_run_scheduled_page_check_delegates_to_daily_report(mock_report):
+    run_scheduled_page_check(42)
+    mock_report.assert_called_once_with(42)

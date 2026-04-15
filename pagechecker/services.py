@@ -1,7 +1,12 @@
+import logging
+import os
+from collections.abc import Sequence
+
 import httpx
 from django.db import transaction
 from django.utils import timezone
 
+from backend.email_services import send_email_via_gmail
 from pagechecker import gemini_service
 from pagechecker.html_utils import (
     extract_body_html,
@@ -9,6 +14,8 @@ from pagechecker.html_utils import (
     html_to_markdown,
 )
 from pagechecker.models import Category, Page, Question, Snapshot
+
+logger = logging.getLogger(__name__)
 
 
 def page_ids_due_for_scheduled_check() -> list[int]:
@@ -185,3 +192,91 @@ def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) ->
         snapshot_b_id=newer.id,
         question=question,
     )
+
+
+def _daily_report_recipient_emails() -> list[str]:
+    raw = os.getenv("PAGE_CHECKER_DAILY_REPORT_TO", "").strip()
+    if not raw:
+        return []
+    parts = [p.strip() for p in raw.replace(";", ",").split(",")]
+    return [p for p in parts if p]
+
+
+def run_daily_report_for_page(page_id: int) -> None:
+    """Fetch page, answer all linked questions via Gemini, email plain-text report.
+
+    Runs even when content unchanged. Skips mail when *PAGE_CHECKER_DAILY_REPORT_TO*
+    unset (comma-separated addresses).
+    """
+    try:
+        page = Page.objects.prefetch_related("questions").get(id=page_id)
+    except Page.DoesNotExist:
+        logger.warning("Daily report skipped: page id=%s does not exist.", page_id)
+        return
+
+    check_error: str | None = None
+    has_changed: bool | None = None
+    try:
+        has_changed = check_page(page_id)
+    except Exception as exc:
+        check_error = str(exc)
+        logger.exception("Daily report check_page failed for page id=%s", page_id)
+
+    page.refresh_from_db()
+    page_questions: Sequence[Question] = list(page.questions.all())
+
+    qa_lines: list[str] = []
+    for q in page_questions:
+        try:
+            answer = compare_snapshots(page_id, q.text)
+        except Exception as exc:
+            qa_lines.append(f"Q: {q.text}\nError: {exc}")
+            logger.exception(
+                "Daily report question failed page id=%s question id=%s",
+                page_id,
+                q.id,
+            )
+        else:
+            qa_lines.append(f"Q: {q.text}\nA: {answer}")
+
+    if has_changed is None:
+        status_line = f"Check: failed — {check_error}"
+    elif has_changed:
+        status_line = "Check: succeeded — content changed since previous snapshot."
+    else:
+        status_line = "Check: succeeded — no content change since previous snapshot."
+
+    body_parts = [
+        "Page Checker — daily report",
+        "",
+        f"URL: {page.url}",
+        f"Title: {page.title or '(none)'}",
+        "",
+        status_line,
+        "",
+        "Questions",
+        "-------",
+    ]
+    if qa_lines:
+        body_parts.append("\n\n".join(qa_lines))
+    else:
+        body_parts.append("(no questions linked to this page)")
+
+    body = "\n".join(body_parts)
+
+    recipients = _daily_report_recipient_emails()
+    if not recipients:
+        logger.warning(
+            "Daily report for page id=%s not emailed: "
+            "PAGE_CHECKER_DAILY_REPORT_TO is empty.",
+            page_id,
+        )
+        return
+
+    label = page.title.strip() or page.url
+    subject = f"Page Checker daily report: {label}"
+
+    try:
+        send_email_via_gmail(to_addrs=recipients, subject=subject, body=body)
+    except Exception:
+        logger.exception("Daily report email send failed for page id=%s", page_id)
