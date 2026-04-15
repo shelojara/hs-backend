@@ -10,8 +10,6 @@ from pagechecker.html_utils import (
 )
 from pagechecker.models import Category, Page, Question, Snapshot
 
-_UNSET_CATEGORY_ID = object()
-
 
 def list_pages(limit: int = 20, offset: int = 0) -> list[Page]:
     qs = (
@@ -42,13 +40,14 @@ def update_page(
     url: str,
     *,
     keep_snapshots: bool = False,
-    category_id: int | None | object = _UNSET_CATEGORY_ID,
+    update_category: bool = False,
+    category_id: int | None = None,
 ) -> None:
     """Update a page's URL, re-extract title/icon, and optionally clear old snapshots."""
     page = Page.objects.select_for_update().get(id=page_id)
     page.url = url
     update_fields = ["url"]
-    if category_id is not _UNSET_CATEGORY_ID:
+    if update_category:
         if category_id is None:
             page.category = None
         else:

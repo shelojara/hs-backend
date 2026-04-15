@@ -58,6 +58,7 @@ def test_update_page_sets_category_when_category_id_given(mock_check):
     update_page(
         page.id,
         "https://example.com/update-cat-new",
+        update_category=True,
         category_id=cat.id,
     )
     page.refresh_from_db()
@@ -82,7 +83,12 @@ def test_update_page_omitting_category_kwarg_leaves_category(mock_check):
 def test_update_page_category_id_none_clears_category(mock_check):
     cat = Category.objects.create(name="Docs", emoji="📄")
     page = Page.objects.create(url="https://example.com/clear-cat", category=cat)
-    update_page(page.id, "https://example.com/clear-cat-new", category_id=None)
+    update_page(
+        page.id,
+        "https://example.com/clear-cat-new",
+        update_category=True,
+        category_id=None,
+    )
     page.refresh_from_db()
     assert page.category_id is None
     mock_check.assert_called_once_with(page.id)
@@ -93,7 +99,12 @@ def test_update_page_category_id_none_clears_category(mock_check):
 def test_update_page_invalid_category_id_raises(mock_check):
     page = Page.objects.create(url="https://example.com/bad-cat")
     with pytest.raises(Category.DoesNotExist):
-        update_page(page.id, "https://example.com/bad-cat-new", category_id=999_999)
+        update_page(
+            page.id,
+            "https://example.com/bad-cat-new",
+            update_category=True,
+            category_id=999_999,
+        )
     mock_check.assert_not_called()
 
 

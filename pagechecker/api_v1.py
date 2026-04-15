@@ -88,14 +88,12 @@ def associate_questions_with_page(request, payload: AssociateQuestionsWithPageRe
 @router.post("/v1.PageChecker.UpdatePage", response=UpdatePageResponse)
 def update_page(request, payload: UpdatePageRequest):
     try:
-        kwargs = {}
-        if "category_id" in payload.model_fields_set:
-            kwargs["category_id"] = payload.category_id
         services.update_page(
             page_id=payload.page_id,
             url=payload.url,
             keep_snapshots=payload.keep_snapshots,
-            **kwargs,
+            update_category="category_id" in payload.model_fields_set,
+            category_id=payload.category_id,
         )
     except Page.DoesNotExist:
         raise HttpError(404, "Page not found.")
