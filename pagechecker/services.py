@@ -78,18 +78,14 @@ def _categories_with_examples_for_gemini(*, exclude_page_id: int) -> list[dict]:
 
 
 def _assign_page_category_via_gemini(page: Page) -> None:
-    """If categories exist, ask Gemini to pick one from snapshot + peer examples."""
+    """If categories exist, ask Gemini to pick one from URL/title + peer examples."""
     blocks = _categories_with_examples_for_gemini(exclude_page_id=page.id)
     if not blocks:
-        return
-    latest = Snapshot.objects.filter(page_id=page.id).order_by("-created_at").first()
-    if not latest:
         return
     try:
         category_id = gemini_service.suggest_page_category_id(
             page_url=page.url,
             page_title=page.title or "",
-            page_content_excerpt=latest.md_content or "",
             categories=blocks,
         )
     except RuntimeError:

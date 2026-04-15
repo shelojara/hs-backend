@@ -100,7 +100,7 @@ def _fake_check_page_with_snapshot(page_id: int) -> bool:
 @pytest.mark.django_db
 @patch("pagechecker.services.gemini_service.suggest_page_category_id", return_value=None)
 @patch("pagechecker.services.check_page", side_effect=_fake_check_page_with_snapshot)
-def test_create_page_passes_categories_and_excerpt_to_gemini(mock_check, mock_suggest):
+def test_create_page_passes_categories_and_url_title_to_gemini(mock_check, mock_suggest):
     cat = Category.objects.create(name="Docs", emoji="📄")
     Page.objects.create(
         url="https://example.com/existing-doc",
@@ -117,7 +117,7 @@ def test_create_page_passes_categories_and_excerpt_to_gemini(mock_check, mock_su
     kwargs = mock_suggest.call_args.kwargs
     assert kwargs["page_url"] == "https://example.com/new-doc"
     assert kwargs["page_title"] == "Titled"
-    assert kwargs["page_content_excerpt"] == "# snapshot body"
+    assert "page_content_excerpt" not in kwargs
     assert kwargs["categories"]
     docs_block = next(b for b in kwargs["categories"] if b["id"] == cat.id)
     assert docs_block["name"] == "Docs"

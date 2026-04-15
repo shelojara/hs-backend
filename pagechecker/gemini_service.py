@@ -30,13 +30,11 @@ CATEGORY_EMOJI_SYSTEM_INSTRUCTION = (
 PAGE_CATEGORY_SYSTEM_INSTRUCTION = (
     "You assign monitored web pages to existing categories. Each category has a name "
     "and example pages (URL and title) already placed in that category. "
-    "Pick the single category id that best fits the new page by matching topic, audience, "
-    "and content type to those examples. If none fit, reply NONE. "
+    "Pick the single category id that best fits the new page using only its URL and title "
+    "and how they align with those examples (paths, hostnames, wording). If none fit, reply NONE. "
     "Output only: a decimal integer (one of the listed ids) or the word NONE. No punctuation, "
     "no explanation, no markdown."
 )
-
-_MAX_PAGE_CATEGORY_EXCERPT = 12_000
 
 
 def _parse_category_id_choice(raw: str | None, valid_ids: set[int]) -> int | None:
@@ -155,10 +153,9 @@ def suggest_page_category_id(
     *,
     page_url: str,
     page_title: str,
-    page_content_excerpt: str,
     categories: list[dict],
 ) -> int | None:
-    """Ask Gemini which existing category id fits *page_*; return None if NONE or invalid."""
+    """Ask Gemini which existing category id fits *page_* from URL/title only."""
     if not categories:
         return None
     valid_ids = {int(c["id"]) for c in categories}
@@ -180,16 +177,12 @@ def suggest_page_category_id(
         else:
             lines.append("(no example pages in this category yet)")
         lines.append("")
-    excerpt = (page_content_excerpt or "")[:_MAX_PAGE_CATEGORY_EXCERPT]
     lines.extend(
         [
             "---",
-            "New page to classify:",
+            "New page to classify (URL and title only):",
             f"URL: {page_url}",
             f"Title: {page_title or '(none)'}",
-            "",
-            "Content excerpt (markdown, may be truncated):",
-            excerpt if excerpt else "(empty)",
         ]
     )
     prompt = "\n".join(lines)
