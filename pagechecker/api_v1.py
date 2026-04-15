@@ -32,6 +32,8 @@ from pagechecker.schemas import (
     ChangePageUrlResponse,
     UpdatePageRequest,
     UpdatePageResponse,
+    SetPageShouldReportDailyRequest,
+    SetPageShouldReportDailyResponse,
 )
 
 router = Router()
@@ -120,6 +122,21 @@ def update_page(request, payload: UpdatePageRequest):
     except Page.DoesNotExist:
         raise HttpError(404, "Page not found.")
     return UpdatePageResponse()
+
+
+@router.post(
+    "/v1.PageChecker.SetPageShouldReportDaily",
+    response=SetPageShouldReportDailyResponse,
+)
+def set_page_should_report_daily(request, payload: SetPageShouldReportDailyRequest):
+    try:
+        services.set_page_should_report_daily(
+            page_id=payload.page_id,
+            should_report_daily=payload.should_report_daily,
+        )
+    except Page.DoesNotExist:
+        raise HttpError(404, "Page not found.")
+    return SetPageShouldReportDailyResponse()
 
 
 @router.post("/v1.PageChecker.ChangePageUrl", response=ChangePageUrlResponse)

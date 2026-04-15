@@ -15,6 +15,7 @@ from pagechecker.services import (
     create_category,
     list_categories,
     list_pages,
+    set_page_should_report_daily,
     update_page,
 )
 
@@ -145,6 +146,22 @@ def test_update_page_sets_should_report_daily(mock_check):
     update_page(page.id, should_report_daily=True)
     page.refresh_from_db()
     assert page.should_report_daily is True
+    mock_check.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.check_page")
+def test_set_page_should_report_daily_updates_flag_only(mock_check):
+    cat = Category.objects.create(name="Docs", emoji="📄")
+    page = Page.objects.create(
+        url="https://example.com/daily-only",
+        category=cat,
+        should_report_daily=False,
+    )
+    set_page_should_report_daily(page.id, should_report_daily=True)
+    page.refresh_from_db()
+    assert page.should_report_daily is True
+    assert page.category_id == cat.id
     mock_check.assert_not_called()
 
 

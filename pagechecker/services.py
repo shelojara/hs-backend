@@ -78,6 +78,14 @@ def update_page(
     page.save(update_fields=["category_id", "should_report_daily"])
 
 
+@transaction.atomic
+def set_page_should_report_daily(page_id: int, *, should_report_daily: bool) -> None:
+    """Set daily-report flag only; leaves category and other fields unchanged."""
+    page = Page.objects.select_for_update().get(id=page_id)
+    page.should_report_daily = should_report_daily
+    page.save(update_fields=["should_report_daily"])
+
+
 def delete_page(page_id: int) -> None:
     Page.objects.filter(id=page_id).delete()
 
