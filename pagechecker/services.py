@@ -98,6 +98,12 @@ def list_categories() -> list[Category]:
     return list(Category.objects.order_by("name", "id"))
 
 
+def create_category(name: str) -> Category:
+    """Persist category; *emoji* from Gemini suggestion for *name*."""
+    emoji = gemini_service.suggest_category_emoji(name)
+    return Category.objects.create(name=name, emoji=emoji)
+
+
 def delete_question(question_id: int) -> None:
     Question.objects.filter(id=question_id).delete()
 

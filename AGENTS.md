@@ -19,6 +19,7 @@ This is a Django-based **Page Checker** API (Django Ninja) that monitors web pag
 
 - **uv must be installed** (`curl -LsSf https://astral.sh/uv/install.sh | sh`). It is not a system package — it lives in `~/.local/bin` which is sourced via `~/.bashrc`.
 - The API uses RPC-style POST endpoints at `/api/v1.PageChecker.<Method>` (e.g., `CreatePage`, `ListPages`, `GetPage`, `CheckPage`, `DeletePage`). There is no REST-style routing.
+- Design follows **CQS** (Command Query Separation): methods named like `List*`, `Get*` are queries (read-only toward persisted domain state); methods like `Create*`, `Update*`, `Delete*`, `Check*`, `Associate*` are commands (may write or trigger side effects such as fetches and snapshots). Same HTTP verb (POST) for transport; intent is in the RPC method name.
 - Django Ninja auto-generates interactive API docs at `/api/docs`.
 - `check_page` makes outbound HTTP requests to fetch monitored URLs — network access is required.
 - The SQLite database file (`db.sqlite3`) is created in the project root after running migrations. It is gitignored.

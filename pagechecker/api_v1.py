@@ -13,6 +13,8 @@ from pagechecker.schemas import (
     CompareSnapshotsResponse,
     CreatePageRequest,
     CreatePageResponse,
+    CreateCategoryRequest,
+    CreateCategoryResponse,
     CreateQuestionRequest,
     CreateQuestionResponse,
     DeleteQuestionRequest,
@@ -69,6 +71,15 @@ def list_questions(request):
 def list_categories(request):
     categories = services.list_categories()
     return ListCategoriesResponse(categories=categories)
+
+
+@router.post("/v1.PageChecker.CreateCategory", response=CreateCategoryResponse)
+def create_category(request, payload: CreateCategoryRequest):
+    try:
+        cat = services.create_category(name=payload.name)
+    except RuntimeError as exc:
+        raise HttpError(500, str(exc)) from exc
+    return CreateCategoryResponse(category_id=cat.id)
 
 
 @router.post("/v1.PageChecker.DeleteQuestion", response=DeleteQuestionResponse)

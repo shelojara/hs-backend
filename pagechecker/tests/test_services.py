@@ -5,6 +5,7 @@ import pytest
 from pagechecker.models import Category, Page, Question, Snapshot
 from pagechecker.services import (
     associate_questions_with_page,
+    create_category,
     list_categories,
     list_pages,
     update_page,
@@ -56,6 +57,16 @@ def test_list_categories_sorted_by_name_then_id():
     b = Category.objects.create(name="B", emoji="🐝")
     a = Category.objects.create(name="A", emoji="🐜")
     assert [c.id for c in list_categories()] == [a.id, b.id]
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.gemini_service.suggest_category_emoji", return_value="📰")
+def test_create_category_persists_gemini_emoji(mock_emoji):
+    cat = create_category("News")
+    cat.refresh_from_db()
+    assert cat.name == "News"
+    assert cat.emoji == "📰"
+    mock_emoji.assert_called_once_with("News")
 
 
 @pytest.mark.django_db

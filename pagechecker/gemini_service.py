@@ -21,6 +21,11 @@ SINGLE_SNAPSHOT_SYSTEM_INSTRUCTION = (
     "Answer concisely and accurately based only on the provided snapshot."
 )
 
+CATEGORY_EMOJI_SYSTEM_INSTRUCTION = (
+    "You pick one Unicode emoji that best represents a short category label "
+    "for organizing monitored web pages. Reply with exactly one emoji and no other text."
+)
+
 
 def _get_client() -> genai.Client:
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -91,3 +96,23 @@ def answer_question_about_snapshot(
         ),
     )
     return response.text
+
+
+def suggest_category_emoji(category_name: str) -> str:
+    """Ask Gemini for a single emoji representing *category_name*."""
+    prompt = f"Category name: {category_name!r}\n\nSuggest one emoji for this category."
+
+    client = _get_client()
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=CATEGORY_EMOJI_SYSTEM_INSTRUCTION,
+            temperature=0.4,
+        ),
+    )
+    text = (response.text or "").strip().strip("\"'")
+    if not text:
+        logger.warning("Gemini returned empty emoji for category %r", category_name)
+        return "📁"
+    return text[:64]
