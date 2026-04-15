@@ -177,3 +177,15 @@ class AssociateQuestionsWithPageRequest(Schema):
 
 class AssociateQuestionsWithPageResponse(Schema):
     pass
+
+
+class SendTestEmailRequest(Schema):
+    """Temporary RPC payload for manual SMTP verification."""
+
+    to: str
+    subject: str = "Page Checker test email"
+    body: str = "This is a test message from Page Checker API."
+
+
+class SendTestEmailResponse(Schema):
+    pass

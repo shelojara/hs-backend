@@ -2,6 +2,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from ninja import Router
 from ninja.errors import HttpError
 
+from backend.email_services import send_email_via_gmail
 from pagechecker import services
 from pagechecker.services import MonitoredUrlNotFoundError
 from pagechecker.models import Page
@@ -12,6 +13,8 @@ from pagechecker.schemas import (
     CheckPageResponse,
     CompareSnapshotsRequest,
     CompareSnapshotsResponse,
+    SendTestEmailRequest,
+    SendTestEmailResponse,
     CreatePageRequest,
     CreatePageResponse,
     CreateCategoryRequest,
@@ -183,3 +186,19 @@ def compare_snapshots(request, payload: CompareSnapshotsRequest):
     except RuntimeError as exc:
         raise HttpError(500, str(exc))
     return CompareSnapshotsResponse(answer=answer)
+
+
+@router.post("/v1.PageChecker.SendTestEmail", response=SendTestEmailResponse)
+def send_test_email(request, payload: SendTestEmailRequest):
+    """Temporary: sends one plain-text message via configured Gmail SMTP."""
+    try:
+        send_email_via_gmail(
+            to_addrs=payload.to,
+            subject=payload.subject,
+            body=payload.body,
+        )
+    except ValueError as exc:
+        raise HttpError(500, str(exc)) from exc
+    except OSError as exc:
+        raise HttpError(502, f"SMTP send failed: {exc}") from exc
+    return SendTestEmailResponse()
