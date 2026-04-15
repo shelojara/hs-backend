@@ -77,7 +77,6 @@ def test_update_page_sets_category_when_category_id_given(mock_check):
     update_page(
         page.id,
         "https://example.com/update-cat-new",
-        should_report_daily=False,
         category_id=cat.id,
     )
     page.refresh_from_db()
@@ -94,7 +93,6 @@ def test_update_page_preserves_category_when_same_category_id(mock_check):
     update_page(
         page.id,
         "https://example.com/keep-cat-new",
-        should_report_daily=False,
         category_id=cat.id,
     )
     page.refresh_from_db()
@@ -110,11 +108,23 @@ def test_update_page_category_id_none_clears_category(mock_check):
     update_page(
         page.id,
         "https://example.com/clear-cat-new",
-        should_report_daily=False,
         category_id=None,
     )
     page.refresh_from_db()
     assert page.category_id is None
+    mock_check.assert_called_once_with(page.id)
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.check_page")
+def test_update_page_should_report_daily_defaults_false_when_omitted(mock_check):
+    page = Page.objects.create(
+        url="https://example.com/daily-omit",
+        should_report_daily=True,
+    )
+    update_page(page.id, "https://example.com/daily-omit-new")
+    page.refresh_from_db()
+    assert page.should_report_daily is False
     mock_check.assert_called_once_with(page.id)
 
 
