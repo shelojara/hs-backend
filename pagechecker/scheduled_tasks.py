@@ -9,9 +9,13 @@ from pagechecker import services
 EXPECTED_APP_TIME_ZONE = "America/Santiago"
 
 
-def run_daily_page_check_dispatch() -> list[int]:
-    """Enqueue one background task per daily-report page (only if TIME_ZONE matches)."""
-    if settings.TIME_ZONE != EXPECTED_APP_TIME_ZONE:
+def enqueue_daily_report_jobs(*, skip_time_zone_check: bool = False) -> list[int]:
+    """Enqueue one background task per daily-report page.
+
+    When *skip_time_zone_check* is false, no-op unless *TIME_ZONE* is the app default
+    (same guard as the cron dispatcher).
+    """
+    if not skip_time_zone_check and settings.TIME_ZONE != EXPECTED_APP_TIME_ZONE:
         return []
     page_ids = services.page_ids_due_for_scheduled_check()
     for page_id in page_ids:
@@ -21,6 +25,11 @@ def run_daily_page_check_dispatch() -> list[int]:
             task_name=f"scheduled_page_check:{page_id}",
         )
     return page_ids
+
+
+def run_daily_page_check_dispatch() -> list[int]:
+    """Enqueue one background task per daily-report page (only if TIME_ZONE matches)."""
+    return enqueue_daily_report_jobs(skip_time_zone_check=False)
 
 
 def run_scheduled_page_check(page_id: int) -> None:
