@@ -8,7 +8,7 @@ from pagechecker.html_utils import (
     extract_metadata,
     html_to_markdown,
 )
-from pagechecker.models import Page, Question, Snapshot
+from pagechecker.models import Category, Page, Question, Snapshot
 
 
 def list_pages(limit: int = 20, offset: int = 0) -> list[Page]:
@@ -35,11 +35,21 @@ def create_page(url: str) -> int:
 
 
 @transaction.atomic
-def update_page(page_id: int, url: str, *, keep_snapshots: bool = False) -> None:
+def update_page(
+    page_id: int,
+    url: str,
+    *,
+    keep_snapshots: bool = False,
+    category_id: int | None = None,
+) -> None:
     """Update a page's URL, re-extract title/icon, and optionally clear old snapshots."""
     page = Page.objects.select_for_update().get(id=page_id)
     page.url = url
-    page.save(update_fields=["url"])
+    update_fields = ["url"]
+    if category_id is not None:
+        page.category = Category.objects.get(id=category_id)
+        update_fields.append("category")
+    page.save(update_fields=update_fields)
 
     if not keep_snapshots:
         page.snapshots.all().delete()

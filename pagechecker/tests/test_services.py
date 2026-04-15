@@ -1,7 +1,13 @@
+from unittest.mock import patch
+
 import pytest
 
 from pagechecker.models import Category, Page, Question, Snapshot
-from pagechecker.services import associate_questions_with_page, list_pages
+from pagechecker.services import (
+    associate_questions_with_page,
+    list_pages,
+    update_page,
+)
 
 
 @pytest.mark.django_db
@@ -42,6 +48,42 @@ def test_category_name_and_emoji():
     assert cat.name == "News"
     assert cat.emoji == "📰"
     assert str(cat) == "News"
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.check_page")
+def test_update_page_sets_category_when_category_id_given(mock_check):
+    cat = Category.objects.create(name="Docs", emoji="📄")
+    page = Page.objects.create(url="https://example.com/update-cat")
+    update_page(
+        page.id,
+        "https://example.com/update-cat-new",
+        category_id=cat.id,
+    )
+    page.refresh_from_db()
+    assert page.url == "https://example.com/update-cat-new"
+    assert page.category_id == cat.id
+    mock_check.assert_called_once_with(page.id)
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.check_page")
+def test_update_page_without_category_id_leaves_category(mock_check):
+    cat = Category.objects.create(name="Docs", emoji="📄")
+    page = Page.objects.create(url="https://example.com/keep-cat", category=cat)
+    update_page(page.id, "https://example.com/keep-cat-new")
+    page.refresh_from_db()
+    assert page.category_id == cat.id
+    mock_check.assert_called_once_with(page.id)
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.check_page")
+def test_update_page_invalid_category_id_raises(mock_check):
+    page = Page.objects.create(url="https://example.com/bad-cat")
+    with pytest.raises(Category.DoesNotExist):
+        update_page(page.id, "https://example.com/bad-cat-new", category_id=999_999)
+    mock_check.assert_not_called()
 
 
 @pytest.mark.django_db
