@@ -14,6 +14,14 @@ def _strip_nonempty_question_text(v: str) -> str:
     return s
 
 
+def _strip_nonempty_category_name(v: str) -> str:
+    s = v.strip()
+    if not s:
+        msg = "Category name must not be empty."
+        raise ValueError(msg)
+    return s
+
+
 class Snapshot(Schema):
     id: int
     created_at: datetime
@@ -118,6 +126,14 @@ class ListQuestionsResponse(Schema):
 
 class ListCategoriesResponse(Schema):
     categories: list[Category]
+
+
+class CreateCategoryRequest(Schema):
+    name: Annotated[str, AfterValidator(_strip_nonempty_category_name)]
+
+
+class CreateCategoryResponse(Schema):
+    category: Category
 
 
 class CreateQuestionRequest(Schema):
