@@ -32,7 +32,7 @@ class Question(Schema):
     created_at: datetime
 
 
-class CategoryOut(Schema):
+class Category(Schema):
     id: int
     name: str
     emoji: str
@@ -43,7 +43,7 @@ class Page(Schema):
     url: str
     title: str = ""
     icon: str = ""
-    category: CategoryOut | None = None
+    category: Category | None = None
     created_at: datetime
     last_checked_at: datetime | None = None
     latest_snapshot: Snapshot | None = None
