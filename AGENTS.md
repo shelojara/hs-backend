@@ -11,6 +11,8 @@ This is a Django-based **Page Checker** API (Django Ninja) that monitors web pag
 | Install deps | `uv sync` |
 | Run migrations | `uv run manage.py migrate` |
 | Start dev server | `make run` (or `uv run manage.py runserver`) |
+| Start worker | `make worker` (or `uv run manage.py qcluster`) |
+| Start all (web + worker) | `make serve` (or `uv run honcho start`) |
 | Lint | `uv run ruff check .` |
 | Tests | `uv run pytest` |
 | Make migrations | `make migrations` |

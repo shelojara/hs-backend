@@ -1,6 +1,12 @@
 run:
 	uv run manage.py runserver
 
+worker:
+	uv run manage.py qcluster
+
+serve:
+	uv run honcho start
+
 migrate:
 	uv run manage.py migrate
 
