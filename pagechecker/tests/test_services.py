@@ -1,6 +1,6 @@
 import pytest
 
-from pagechecker.models import Page, Question, Snapshot
+from pagechecker.models import Category, Page, Question, Snapshot
 from pagechecker.services import associate_questions_with_page, list_pages
 
 
@@ -33,6 +33,15 @@ def test_list_pages_newest_first():
     older = Page.objects.create(url="https://example.com/list-pages-older")
     newer = Page.objects.create(url="https://example.com/list-pages-newer")
     assert [p.id for p in list_pages(limit=10, offset=0)] == [newer.id, older.id]
+
+
+@pytest.mark.django_db
+def test_category_name_and_emoji():
+    cat = Category.objects.create(name="News", emoji="📰")
+    cat.refresh_from_db()
+    assert cat.name == "News"
+    assert cat.emoji == "📰"
+    assert str(cat) == "News"
 
 
 @pytest.mark.django_db
