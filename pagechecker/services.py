@@ -11,6 +11,13 @@ from pagechecker.html_utils import (
 from pagechecker.models import Category, Page, Question, Snapshot
 
 
+class MonitoredUrlNotFoundError(Exception):
+    """Monitored URL responded with HTTP 404."""
+
+    def __init__(self, message: str = "The monitored URL returned HTTP 404 (Not Found).") -> None:
+        super().__init__(message)
+
+
 def list_pages(limit: int = 20, offset: int = 0) -> list[Page]:
     qs = (
         Page.objects.order_by("-created_at")
@@ -70,6 +77,8 @@ def check_page(page_id: int) -> bool:
     page = Page.objects.get(id=page_id)
 
     response = httpx.get(str(page.url), verify=False)
+    if response.status_code == 404:
+        raise MonitoredUrlNotFoundError()
     response.raise_for_status()
 
     body_html = extract_body_html(response.text)

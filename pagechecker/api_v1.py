@@ -3,6 +3,7 @@ from ninja import Router
 from ninja.errors import HttpError
 
 from pagechecker import services
+from pagechecker.services import MonitoredUrlNotFoundError
 from pagechecker.models import Page
 from pagechecker.schemas import (
     AssociateQuestionsWithPageRequest,
@@ -51,7 +52,10 @@ def get_page(request, payload: GetPageRequest):
 
 @router.post("/v1.PageChecker.CreatePage", response=CreatePageResponse)
 def create_page(request, payload: CreatePageRequest):
-    page_id = services.create_page(url=payload.url)
+    try:
+        page_id = services.create_page(url=payload.url)
+    except MonitoredUrlNotFoundError as exc:
+        raise HttpError(404, str(exc)) from exc
     return CreatePageResponse(page_id=page_id)
 
 
@@ -115,6 +119,8 @@ def update_page(request, payload: UpdatePageRequest):
         )
     except Page.DoesNotExist:
         raise HttpError(404, "Page not found.")
+    except MonitoredUrlNotFoundError as exc:
+        raise HttpError(404, str(exc)) from exc
     return UpdatePageResponse()
 
 
@@ -126,7 +132,10 @@ def delete_page(request, payload: DeletePageRequest):
 
 @router.post("/v1.PageChecker.CheckPage", response=CheckPageResponse)
 def check_page(request, payload: CheckPageRequest):
-    has_changed = services.check_page(page_id=payload.page_id)
+    try:
+        has_changed = services.check_page(page_id=payload.page_id)
+    except MonitoredUrlNotFoundError as exc:
+        raise HttpError(404, str(exc)) from exc
     return CheckPageResponse(has_changed=has_changed)
 
 
