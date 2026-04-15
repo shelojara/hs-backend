@@ -109,6 +109,7 @@ def update_page(request, payload: UpdatePageRequest):
         services.update_page(
             page_id=payload.page_id,
             url=payload.url,
+            should_report_daily=payload.should_report_daily,
             keep_snapshots=payload.keep_snapshots,
             category_id=payload.category_id,
         )
