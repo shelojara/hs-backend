@@ -10,11 +10,13 @@ from django.utils import timezone
 from pagechecker.models import Category, Page, Question, Snapshot
 from pagechecker.services import (
     MonitoredUrlNotFoundError,
+    QuestionInUseError,
     associate_questions_with_page,
     change_page_url,
     check_page,
     create_category,
     create_page,
+    delete_question,
     list_categories,
     list_pages,
     run_daily_report_for_page,
@@ -48,6 +50,28 @@ def test_associate_questions_with_page_replaces_skips_unknown_clears_empty():
     associate_questions_with_page(page.id, [])
     page.refresh_from_db()
     assert list(page.questions.values_list("id", flat=True)) == []
+
+
+@pytest.mark.django_db
+def test_delete_question_blocked_when_linked_to_page():
+    page = Page.objects.create(url="https://example.com/q-guard")
+    q = Question.objects.create(text="linked")
+    associate_questions_with_page(page.id, [q.id])
+    with pytest.raises(QuestionInUseError):
+        delete_question(q.id)
+    assert Question.objects.filter(id=q.id).exists()
+
+
+@pytest.mark.django_db
+def test_delete_question_ok_when_not_linked():
+    q = Question.objects.create(text="orphan")
+    delete_question(q.id)
+    assert not Question.objects.filter(id=q.id).exists()
+
+
+@pytest.mark.django_db
+def test_delete_question_noop_when_missing_id():
+    delete_question(999_999)
 
 
 @pytest.mark.django_db
