@@ -1,7 +1,7 @@
-from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
+from django.test import override_settings
 from django_q.models import Schedule
 
 from pagechecker.models import Page
@@ -10,35 +10,23 @@ from pagechecker.services import page_ids_due_for_scheduled_check
 
 
 @pytest.mark.django_db
-def test_page_ids_due_for_scheduled_check_respects_flag_and_cutoff():
-    ref = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
-    today_early = datetime(2024, 6, 15, 1, 0, 0, tzinfo=UTC)
-    yesterday = datetime(2024, 6, 14, 23, 0, 0, tzinfo=UTC)
-
-    p_never = Page.objects.create(
-        url="https://example.com/daily-never-checked",
+def test_page_ids_due_for_scheduled_check_all_daily_flag_pages():
+    p_a = Page.objects.create(
+        url="https://example.com/daily-a",
         should_report_daily=True,
-        last_checked_at=None,
     )
-    p_stale = Page.objects.create(
-        url="https://example.com/daily-stale",
+    p_b = Page.objects.create(
+        url="https://example.com/daily-b",
         should_report_daily=True,
-        last_checked_at=yesterday,
     )
-    p_fresh = Page.objects.create(
-        url="https://example.com/daily-fresh",
-        should_report_daily=True,
-        last_checked_at=today_early,
-    )
-    Page.objects.create(
+    p_off = Page.objects.create(
         url="https://example.com/no-daily",
         should_report_daily=False,
-        last_checked_at=None,
     )
 
-    ids = page_ids_due_for_scheduled_check(now=ref)
-    assert set(ids) == {p_never.id, p_stale.id}
-    assert p_fresh.id not in ids
+    ids = page_ids_due_for_scheduled_check()
+    assert set(ids) == {p_a.id, p_b.id}
+    assert p_off.id not in ids
 
 
 @pytest.mark.django_db
@@ -76,5 +64,19 @@ def test_run_daily_page_check_dispatch_enqueues_per_page(mock_async):
 
 
 @pytest.mark.django_db
-def test_daily_dispatcher_schedule_created_by_migration():
-    assert Schedule.objects.filter(name="daily_page_check_dispatcher").exists()
+def test_daily_dispatcher_schedule_cron_9am_santiago():
+    row = Schedule.objects.get(name="daily_page_check_dispatcher")
+    assert row.schedule_type == Schedule.CRON
+    assert row.cron == "0 9 * * *"
+
+
+@pytest.mark.django_db
+@patch("pagechecker.scheduled_tasks.async_task")
+@override_settings(TIME_ZONE="Europe/Berlin")
+def test_run_daily_page_check_dispatch_noop_when_timezone_not_santiago(mock_async):
+    Page.objects.create(
+        url="https://example.com/daily-wrong-tz",
+        should_report_daily=True,
+    )
+    assert run_daily_page_check_dispatch() == []
+    mock_async.assert_not_called()
