@@ -31,8 +31,8 @@ class QuestionAdmin(admin.ModelAdmin):
 
 @admin.register(Page)
 class PageAdmin(admin.ModelAdmin):
-    list_display = ("url", "title", "created_at", "last_checked_at")
-    list_filter = ("created_at", "last_checked_at")
+    list_display = ("url", "title", "category", "created_at", "last_checked_at")
+    list_filter = ("created_at", "last_checked_at", "category")
     search_fields = ("url", "title")
     readonly_fields = ("created_at",)
     inlines = (SnapshotInline,)
