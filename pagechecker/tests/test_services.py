@@ -262,39 +262,39 @@ def test_check_page_api_returns_clear_detail_on_remote_404():
 def test_run_daily_report_for_page_emails_check_status_and_answers(
     mock_check, mock_compare, mock_send,
 ):
-    monkey = pytest.MonkeyPatch()
-    monkey.setenv("PAGE_CHECKER_DAILY_REPORT_TO", "ops@example.com")
-    try:
-        page = Page.objects.create(
-            url="https://example.com/daily-report",
-            title="Daily Page",
-            should_report_daily=True,
-        )
-        q1 = Question.objects.create(text="What changed?")
-        q2 = Question.objects.create(text="Any risks?")
-        associate_questions_with_page(page.id, [q1.id, q2.id])
+    User.objects.create_user(
+        username="daily_reader",
+        password="pw",
+        email="reader@example.com",
+    )
+    page = Page.objects.create(
+        url="https://example.com/daily-report",
+        title="Daily Page",
+        should_report_daily=True,
+    )
+    q1 = Question.objects.create(text="What changed?")
+    q2 = Question.objects.create(text="Any risks?")
+    associate_questions_with_page(page.id, [q1.id, q2.id])
 
-        mock_check.return_value = False
-        mock_compare.side_effect = ["Nothing major.", "No risks."]
+    mock_check.return_value = False
+    mock_compare.side_effect = ["Nothing major.", "No risks."]
 
-        run_daily_report_for_page(page.id)
+    run_daily_report_for_page(page.id)
 
-        mock_check.assert_called_once_with(page.id)
-        assert mock_compare.call_count == 2
-        assert {(c.args[0], c.args[1]) for c in mock_compare.call_args_list} == {
-            (page.id, q1.text),
-            (page.id, q2.text),
-        }
-        mock_send.assert_called_once()
-        kwargs = mock_send.call_args.kwargs
-        assert kwargs["to_addrs"] == ["ops@example.com"]
-        assert "Daily Page" in kwargs["subject"]
-        body = kwargs["body"]
-        assert "no content change" in body
-        assert "Q: What changed?" in body and "A: Nothing major." in body
-        assert "Q: Any risks?" in body and "A: No risks." in body
-    finally:
-        monkey.undo()
+    mock_check.assert_called_once_with(page.id)
+    assert mock_compare.call_count == 2
+    assert {(c.args[0], c.args[1]) for c in mock_compare.call_args_list} == {
+        (page.id, q1.text),
+        (page.id, q2.text),
+    }
+    mock_send.assert_called_once()
+    kwargs = mock_send.call_args.kwargs
+    assert kwargs["to_addrs"] == ["reader@example.com"]
+    assert "Daily Page" in kwargs["subject"]
+    body = kwargs["body"]
+    assert "no content change" in body
+    assert "Q: What changed?" in body and "A: Nothing major." in body
+    assert "Q: Any risks?" in body and "A: No risks." in body
 
 
 @pytest.mark.django_db
@@ -304,24 +304,31 @@ def test_run_daily_report_for_page_emails_check_status_and_answers(
 def test_run_daily_report_for_page_check_failure_still_runs_questions_and_emails(
     mock_check, mock_compare, mock_send,
 ):
-    monkey = pytest.MonkeyPatch()
-    monkey.setenv("PAGE_CHECKER_DAILY_REPORT_TO", "a@example.com,b@example.com")
-    try:
-        page = Page.objects.create(url="https://example.com/daily-fail")
-        q = Question.objects.create(text="Still ask?")
-        associate_questions_with_page(page.id, [q.id])
-        mock_check.side_effect = RuntimeError("network down")
-        mock_compare.return_value = "ok"
+    User.objects.create_user(
+        username="u_a",
+        password="pw",
+        email="a@example.com",
+    )
+    User.objects.create_user(
+        username="u_b",
+        password="pw",
+        email="b@example.com",
+    )
+    page = Page.objects.create(url="https://example.com/daily-fail")
+    q = Question.objects.create(text="Still ask?")
+    associate_questions_with_page(page.id, [q.id])
+    mock_check.side_effect = RuntimeError("network down")
+    mock_compare.return_value = "ok"
 
-        run_daily_report_for_page(page.id)
+    run_daily_report_for_page(page.id)
 
-        mock_compare.assert_called_once()
-        mock_send.assert_called_once()
-        body = mock_send.call_args.kwargs["body"]
-        assert "failed" in body and "network down" in body
-        assert "A: ok" in body
-    finally:
-        monkey.undo()
+    mock_compare.assert_called_once()
+    mock_send.assert_called_once()
+    kwargs = mock_send.call_args.kwargs
+    assert set(kwargs["to_addrs"]) == {"a@example.com", "b@example.com"}
+    body = kwargs["body"]
+    assert "failed" in body and "network down" in body
+    assert "A: ok" in body
 
 
 @pytest.mark.django_db
@@ -331,33 +338,38 @@ def test_run_daily_report_for_page_check_failure_still_runs_questions_and_emails
 def test_run_daily_report_for_page_question_error_in_body(
     mock_check, mock_compare, mock_send,
 ):
-    monkey = pytest.MonkeyPatch()
-    monkey.setenv("PAGE_CHECKER_DAILY_REPORT_TO", "x@example.com")
-    try:
-        page = Page.objects.create(url="https://example.com/daily-qerr")
-        q = Question.objects.create(text="Bad?")
-        associate_questions_with_page(page.id, [q.id])
-        mock_check.return_value = True
-        mock_compare.side_effect = ValueError("no snapshots")
+    User.objects.create_user(
+        username="qerr_reader",
+        password="pw",
+        email="x@example.com",
+    )
+    page = Page.objects.create(url="https://example.com/daily-qerr")
+    q = Question.objects.create(text="Bad?")
+    associate_questions_with_page(page.id, [q.id])
+    mock_check.return_value = True
+    mock_compare.side_effect = ValueError("no snapshots")
 
-        run_daily_report_for_page(page.id)
+    run_daily_report_for_page(page.id)
 
-        mock_send.assert_called_once()
-        assert "Error: no snapshots" in mock_send.call_args.kwargs["body"]
-    finally:
-        monkey.undo()
+    mock_send.assert_called_once()
+    assert "Error: no snapshots" in mock_send.call_args.kwargs["body"]
 
 
 @pytest.mark.django_db
 @patch("pagechecker.services.send_email_via_gmail")
 @patch("pagechecker.services.compare_snapshots")
 @patch("pagechecker.services.check_page")
-def test_run_daily_report_for_page_skips_email_when_recipients_unset(
+def test_run_daily_report_for_page_skips_email_when_no_user_emails_and_no_env(
     mock_check, mock_compare, mock_send,
 ):
     monkey = pytest.MonkeyPatch()
     monkey.delenv("PAGE_CHECKER_DAILY_REPORT_TO", raising=False)
     try:
+        User.objects.create_user(
+            username="no_email_user",
+            password="pw",
+            email="",
+        )
         page = Page.objects.create(url="https://example.com/daily-no-mail")
         mock_check.return_value = False
 
@@ -366,3 +378,51 @@ def test_run_daily_report_for_page_skips_email_when_recipients_unset(
         mock_send.assert_not_called()
     finally:
         monkey.undo()
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.send_email_via_gmail")
+@patch("pagechecker.services.compare_snapshots")
+@patch("pagechecker.services.check_page")
+def test_run_daily_report_merges_user_emails_with_env_extra_deduped(
+    mock_check, mock_compare, mock_send,
+):
+    monkey = pytest.MonkeyPatch()
+    monkey.setenv("PAGE_CHECKER_DAILY_REPORT_TO", "extra@example.com,reader@example.com")
+    try:
+        User.objects.create_user(
+            username="dup_reader",
+            password="pw",
+            email="reader@example.com",
+        )
+        page = Page.objects.create(url="https://example.com/daily-merge")
+        mock_check.return_value = False
+
+        run_daily_report_for_page(page.id)
+
+        mock_send.assert_called_once()
+        assert mock_send.call_args.kwargs["to_addrs"] == [
+            "reader@example.com",
+            "extra@example.com",
+        ]
+    finally:
+        monkey.undo()
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.send_email_via_gmail")
+@patch("pagechecker.services.compare_snapshots")
+@patch("pagechecker.services.check_page")
+def test_run_daily_report_ignores_inactive_users(mock_check, mock_compare, mock_send):
+    User.objects.create_user(
+        username="inactive",
+        password="pw",
+        email="gone@example.com",
+        is_active=False,
+    )
+    page = Page.objects.create(url="https://example.com/daily-inactive-only")
+    mock_check.return_value = False
+
+    run_daily_report_for_page(page.id)
+
+    mock_send.assert_not_called()

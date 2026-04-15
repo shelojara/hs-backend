@@ -3,6 +3,7 @@ import os
 from collections.abc import Sequence
 
 import httpx
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 
@@ -194,7 +195,7 @@ def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) ->
     )
 
 
-def _daily_report_recipient_emails() -> list[str]:
+def _env_daily_report_extra_emails() -> list[str]:
     raw = os.getenv("PAGE_CHECKER_DAILY_REPORT_TO", "").strip()
     if not raw:
         return []
@@ -202,11 +203,36 @@ def _daily_report_recipient_emails() -> list[str]:
     return [p for p in parts if p]
 
 
+def _daily_report_recipient_emails() -> list[str]:
+    """Active users with non-blank *email*, plus optional *PAGE_CHECKER_DAILY_REPORT_TO*."""
+    User = get_user_model()
+    ordered: list[str] = []
+    seen: set[str] = set()
+    qs = (
+        User.objects.filter(is_active=True)
+        .exclude(email__isnull=True)
+        .exclude(email="")
+        .order_by("id")
+        .values_list("email", flat=True)
+    )
+    for raw in qs:
+        addr = str(raw).strip()
+        if addr and addr not in seen:
+            seen.add(addr)
+            ordered.append(addr)
+    for addr in _env_daily_report_extra_emails():
+        if addr not in seen:
+            seen.add(addr)
+            ordered.append(addr)
+    return ordered
+
+
 def run_daily_report_for_page(page_id: int) -> None:
     """Fetch page, answer all linked questions via Gemini, email plain-text report.
 
-    Runs even when content unchanged. Skips mail when *PAGE_CHECKER_DAILY_REPORT_TO*
-    unset (comma-separated addresses).
+    Runs even when content unchanged. Recipients: every active user with an email
+    address, plus optional *PAGE_CHECKER_DAILY_REPORT_TO* (comma-separated).
+    Skips mail when that combined list is empty.
     """
     try:
         page = Page.objects.prefetch_related("questions").get(id=page_id)
@@ -267,8 +293,8 @@ def run_daily_report_for_page(page_id: int) -> None:
     recipients = _daily_report_recipient_emails()
     if not recipients:
         logger.warning(
-            "Daily report for page id=%s not emailed: "
-            "PAGE_CHECKER_DAILY_REPORT_TO is empty.",
+            "Daily report for page id=%s not emailed: no recipient addresses "
+            "(active users need email, or set PAGE_CHECKER_DAILY_REPORT_TO).",
             page_id,
         )
         return
