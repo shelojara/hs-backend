@@ -30,8 +30,8 @@ from pagechecker.schemas import (
     ListQuestionsResponse,
     ChangePageUrlRequest,
     ChangePageUrlResponse,
-    UpdatePageRequest,
-    UpdatePageResponse,
+    SetPageCategoryRequest,
+    SetPageCategoryResponse,
     SetPageShouldReportDailyRequest,
     SetPageShouldReportDailyResponse,
 )
@@ -111,17 +111,16 @@ def associate_questions_with_page(request, payload: AssociateQuestionsWithPageRe
     return AssociateQuestionsWithPageResponse()
 
 
-@router.post("/v1.PageChecker.UpdatePage", response=UpdatePageResponse)
-def update_page(request, payload: UpdatePageRequest):
+@router.post("/v1.PageChecker.SetPageCategory", response=SetPageCategoryResponse)
+def set_page_category(request, payload: SetPageCategoryRequest):
     try:
-        services.update_page(
+        services.set_page_category(
             page_id=payload.page_id,
-            should_report_daily=payload.should_report_daily,
             category_id=payload.category_id,
         )
     except Page.DoesNotExist:
         raise HttpError(404, "Page not found.")
-    return UpdatePageResponse()
+    return SetPageCategoryResponse()
 
 
 @router.post(
