@@ -58,9 +58,63 @@ def get_page(page_id: int) -> Page:
     )
 
 
+def _categories_with_examples_for_gemini(*, exclude_page_id: int) -> list[dict]:
+    """Category id, name, and up to 5 other pages per category (for Gemini matching)."""
+    out: list[dict] = []
+    for cat in Category.objects.order_by("name", "id"):
+        pages = list(
+            Page.objects.filter(category=cat)
+            .exclude(id=exclude_page_id)
+            .order_by("-created_at")[:5]
+        )
+        out.append(
+            {
+                "id": cat.id,
+                "name": cat.name,
+                "examples": [{"url": p.url, "title": p.title or ""} for p in pages],
+            }
+        )
+    return out
+
+
+def _assign_page_category_via_gemini(page: Page) -> None:
+    """If categories exist, ask Gemini to pick one from URL/title + peer examples."""
+    blocks = _categories_with_examples_for_gemini(exclude_page_id=page.id)
+    if not blocks:
+        return
+    try:
+        category_id = gemini_service.suggest_page_category_id(
+            page_url=page.url,
+            page_title=page.title or "",
+            categories=blocks,
+        )
+    except RuntimeError:
+        logger.warning(
+            "Skipped Gemini page category: GEMINI_API_KEY not set (page id=%s).",
+            page.id,
+        )
+        return
+    except Exception:
+        logger.exception("Gemini page category failed for page id=%s", page.id)
+        return
+    if category_id is None:
+        return
+    if not Category.objects.filter(id=category_id).exists():
+        logger.warning(
+            "Gemini returned unknown category_id=%s for page id=%s",
+            category_id,
+            page.id,
+        )
+        return
+    page.category_id = category_id
+    page.save(update_fields=["category_id"])
+
+
 def create_page(url: str) -> int:
     page = Page.objects.create(url=url)
     check_page(page.id)
+    page.refresh_from_db()
+    _assign_page_category_via_gemini(page)
     return page.id
 
 
