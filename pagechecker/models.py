@@ -57,6 +57,8 @@ class Page(models.Model):
 
     last_checked_at = models.DateTimeField(null=True)
 
+    should_report_daily = models.BooleanField(default=False)
+
     def __str__(self):
         return self.url
 
