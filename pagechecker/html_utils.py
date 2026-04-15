@@ -6,6 +6,15 @@ from markdownify import markdownify
 
 _CHROME_ROLE = frozenset({"navigation", "contentinfo"})
 
+
+def _tag_get(tag: Tag, key: str, default=None):
+    """bs4 Tag.get assumes attrs dict; rare malformed trees leave attrs None."""
+    attrs = getattr(tag, "attrs", None)
+    if attrs is None:
+        return default
+    return attrs.get(key, default)
+
+
 # id/class substrings → treat as nav or footer chrome (lowercased match)
 _CHROME_ID_CLASS_MARKERS = (
     "navbar",
@@ -33,10 +42,10 @@ _CHROME_ID_CLASS_MARKERS = (
 
 def _chrome_id_class_blob(tag: Tag) -> str:
     parts: list[str] = []
-    tid = tag.get("id")
+    tid = _tag_get(tag, "id")
     if isinstance(tid, str):
         parts.append(tid)
-    classes = tag.get("class")
+    classes = _tag_get(tag, "class")
     if isinstance(classes, list):
         parts.extend(str(c) for c in classes)
     elif isinstance(classes, str):
@@ -49,8 +58,11 @@ def _strip_nav_and_footer(body: Tag) -> None:
     for tag in body.find_all(["nav", "footer"]):
         tag.decompose()
 
-    for tag in body.find_all(attrs={"role": True}):
-        role = (tag.get("role") or "").strip().lower()
+    # Avoid attrs={"role": True}: bs4 matcher calls Tag.get; attrs can be None on bad markup.
+    for tag in body.find_all(True):
+        if not isinstance(tag, Tag):
+            continue
+        role = (_tag_get(tag, "role") or "").strip().lower()
         if role in _CHROME_ROLE:
             tag.decompose()
 
@@ -100,17 +112,39 @@ def extract_metadata(html: str, page_url: str) -> dict[str, str]:
     soup = BeautifulSoup(html, "html.parser")
 
     title = ""
-    og_title = soup.find("meta", attrs={"property": "og:title"})
-    if og_title and og_title.get("content"):
-        title = og_title["content"].strip()
-    elif soup.title and soup.title.string:
+    for meta in soup.find_all("meta"):
+        prop = (_tag_get(meta, "property") or "").strip().lower()
+        if prop != "og:title":
+            continue
+        content = _tag_get(meta, "content")
+        if content:
+            title = str(content).strip()
+            break
+    if not title and soup.title and soup.title.string:
         title = soup.title.string.strip()
+
+    def _link_rel_matches(tag: Tag, want: list[str]) -> bool:
+        raw = _tag_get(tag, "rel")
+        if raw is None:
+            return False
+        if isinstance(raw, list):
+            have = {str(x).lower() for x in raw}
+        else:
+            have = {x.lower() for x in str(raw).split()}
+        return {w.lower() for w in want} <= have
 
     icon = ""
     for rel in (["icon"], ["shortcut", "icon"], ["apple-touch-icon"]):
-        link = soup.find("link", rel=rel)
-        if link and link.get("href"):
-            icon = urljoin(page_url, link["href"])
+        for link in soup.find_all("link"):
+            if not isinstance(link, Tag):
+                continue
+            if not _link_rel_matches(link, rel):
+                continue
+            href = _tag_get(link, "href")
+            if href:
+                icon = urljoin(page_url, str(href))
+                break
+        if icon:
             break
 
     if not icon:
