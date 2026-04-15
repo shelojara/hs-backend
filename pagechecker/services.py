@@ -11,6 +11,15 @@ from pagechecker.html_utils import (
 from pagechecker.models import Category, Page, Question, Snapshot
 
 
+def page_ids_due_for_scheduled_check() -> list[int]:
+    """All pages with *should_report_daily* (for daily scheduled dispatch)."""
+    return list(
+        Page.objects.filter(should_report_daily=True)
+        .order_by("id")
+        .values_list("id", flat=True)
+    )
+
+
 class MonitoredUrlNotFoundError(Exception):
     """Monitored URL responded with HTTP 404."""
 
