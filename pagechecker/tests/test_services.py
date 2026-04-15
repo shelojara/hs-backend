@@ -5,6 +5,7 @@ import httpx
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
+from django.utils import timezone
 
 from pagechecker.models import Category, Page, Question, Snapshot
 from pagechecker.services import (
@@ -13,6 +14,7 @@ from pagechecker.services import (
     change_page_url,
     check_page,
     create_category,
+    create_page,
     list_categories,
     list_pages,
     run_daily_report_for_page,
@@ -79,6 +81,106 @@ def test_create_category_persists_gemini_emoji(mock_emoji):
     assert cat.name == "News"
     assert cat.emoji == "📰"
     mock_emoji.assert_called_once_with("News")
+
+
+def _fake_check_page_with_snapshot(page_id: int) -> bool:
+    page = Page.objects.get(id=page_id)
+    Snapshot.objects.create(
+        page=page,
+        html_content="<p>x</p>",
+        md_content="# snapshot body",
+    )
+    Page.objects.filter(id=page_id).update(
+        title="Titled",
+        last_checked_at=timezone.now(),
+    )
+    return True
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.gemini_service.suggest_page_category_id", return_value=None)
+@patch("pagechecker.services.check_page", side_effect=_fake_check_page_with_snapshot)
+def test_create_page_passes_categories_and_excerpt_to_gemini(mock_check, mock_suggest):
+    cat = Category.objects.create(name="Docs", emoji="📄")
+    Page.objects.create(
+        url="https://example.com/existing-doc",
+        title="API Reference",
+        category=cat,
+    )
+
+    page_id = create_page("https://example.com/new-doc")
+
+    mock_check.assert_called_once_with(page_id)
+    page = Page.objects.get(id=page_id)
+    assert page.category_id is None
+    mock_suggest.assert_called_once()
+    kwargs = mock_suggest.call_args.kwargs
+    assert kwargs["page_url"] == "https://example.com/new-doc"
+    assert kwargs["page_title"] == "Titled"
+    assert kwargs["page_content_excerpt"] == "# snapshot body"
+    assert kwargs["categories"]
+    docs_block = next(b for b in kwargs["categories"] if b["id"] == cat.id)
+    assert docs_block["name"] == "Docs"
+    assert any(
+        ex["url"] == "https://example.com/existing-doc"
+        for ex in docs_block["examples"]
+    )
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.gemini_service.suggest_page_category_id", return_value=None)
+@patch("pagechecker.services.check_page", side_effect=_fake_check_page_with_snapshot)
+def test_create_page_new_page_excluded_from_peer_examples(mock_check, mock_suggest):
+    cat = Category.objects.create(name="Docs", emoji="📄")
+    Page.objects.create(
+        url="https://example.com/peer",
+        title="Peer",
+        category=cat,
+    )
+    new_url = "https://example.com/brand-new"
+    create_page(new_url)
+
+    kwargs = mock_suggest.call_args.kwargs
+    block = next(b for b in kwargs["categories"] if b["id"] == cat.id)
+    urls = {ex["url"] for ex in block["examples"]}
+    assert "https://example.com/peer" in urls
+    assert new_url not in urls
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.gemini_service.suggest_page_category_id")
+@patch("pagechecker.services.check_page", side_effect=_fake_check_page_with_snapshot)
+def test_create_page_no_categories_skips_gemini(mock_check, mock_suggest):
+    page_id = create_page("https://example.com/lone")
+
+    mock_check.assert_called_once_with(page_id)
+    mock_suggest.assert_not_called()
+    assert Page.objects.get(id=page_id).category_id is None
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.gemini_service.suggest_page_category_id", return_value=None)
+@patch("pagechecker.services.check_page", side_effect=_fake_check_page_with_snapshot)
+def test_create_page_gemini_none_leaves_uncategorized(mock_check, mock_suggest):
+    Category.objects.create(name="Docs", emoji="📄")
+    page_id = create_page("https://example.com/none-cat")
+
+    mock_suggest.assert_called_once()
+    assert Page.objects.get(id=page_id).category_id is None
+
+
+@pytest.mark.django_db
+@patch(
+    "pagechecker.services.gemini_service.suggest_page_category_id",
+    return_value=None,
+)
+@patch("pagechecker.services.check_page", side_effect=_fake_check_page_with_snapshot)
+def test_create_page_sets_category_when_gemini_returns_id(mock_check, mock_suggest):
+    cat = Category.objects.create(name="Docs", emoji="📄")
+    mock_suggest.return_value = cat.id
+    page_id = create_page("https://example.com/assigned")
+
+    assert Page.objects.get(id=page_id).category_id == cat.id
 
 
 @pytest.mark.django_db

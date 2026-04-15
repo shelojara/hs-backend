@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 
 from google import genai
 from google.genai import types
@@ -25,6 +26,38 @@ CATEGORY_EMOJI_SYSTEM_INSTRUCTION = (
     "You pick one Unicode emoji that best represents a short category label "
     "for organizing monitored web pages. Reply with exactly one emoji and no other text."
 )
+
+PAGE_CATEGORY_SYSTEM_INSTRUCTION = (
+    "You assign monitored web pages to existing categories. Each category has a name "
+    "and example pages (URL and title) already placed in that category. "
+    "Pick the single category id that best fits the new page by matching topic, audience, "
+    "and content type to those examples. If none fit, reply NONE. "
+    "Output only: a decimal integer (one of the listed ids) or the word NONE. No punctuation, "
+    "no explanation, no markdown."
+)
+
+_MAX_PAGE_CATEGORY_EXCERPT = 12_000
+
+
+def _parse_category_id_choice(raw: str | None, valid_ids: set[int]) -> int | None:
+    """Interpret Gemini reply as one of *valid_ids* or no assignment."""
+    if not raw:
+        return None
+    t = raw.strip()
+    if not t:
+        return None
+    head = t.splitlines()[0].strip().strip("\"'`")
+    upper = head.upper()
+    if upper in frozenset({"NONE", "NULL", "NO", "N/A", "UNSURE"}):
+        return None
+    try:
+        n = int(head)
+    except ValueError:
+        m = re.search(r"\b(\d+)\b", t)
+        if not m:
+            return None
+        n = int(m.group(1))
+    return n if n in valid_ids else None
 
 
 def _get_client() -> genai.Client:
@@ -116,3 +149,64 @@ def suggest_category_emoji(category_name: str) -> str:
         logger.warning("Gemini returned empty emoji for category %r", category_name)
         return "📁"
     return text[:64]
+
+
+def suggest_page_category_id(
+    *,
+    page_url: str,
+    page_title: str,
+    page_content_excerpt: str,
+    categories: list[dict],
+) -> int | None:
+    """Ask Gemini which existing category id fits *page_*; return None if NONE or invalid."""
+    if not categories:
+        return None
+    valid_ids = {int(c["id"]) for c in categories}
+    lines: list[str] = [
+        "Existing categories — reply with exactly one id from the list below, or NONE.",
+        "",
+    ]
+    for c in categories:
+        cid = int(c["id"])
+        name = str(c.get("name", ""))
+        lines.append(f"### id={cid} name={name!r}")
+        examples = c.get("examples") or []
+        if examples:
+            lines.append("Example pages already in this category:")
+            for ex in examples:
+                u = str(ex.get("url", ""))
+                tit = str(ex.get("title", "")).strip() or "(no title)"
+                lines.append(f"- {u} — {tit}")
+        else:
+            lines.append("(no example pages in this category yet)")
+        lines.append("")
+    excerpt = (page_content_excerpt or "")[:_MAX_PAGE_CATEGORY_EXCERPT]
+    lines.extend(
+        [
+            "---",
+            "New page to classify:",
+            f"URL: {page_url}",
+            f"Title: {page_title or '(none)'}",
+            "",
+            "Content excerpt (markdown, may be truncated):",
+            excerpt if excerpt else "(empty)",
+        ]
+    )
+    prompt = "\n".join(lines)
+
+    client = _get_client()
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=PAGE_CATEGORY_SYSTEM_INSTRUCTION,
+            temperature=0.2,
+        ),
+    )
+    choice = _parse_category_id_choice(response.text, valid_ids)
+    if choice is None and (response.text or "").strip():
+        logger.warning(
+            "Gemini page category reply not mapped to a category id: %r",
+            (response.text or "")[:200],
+        )
+    return choice
