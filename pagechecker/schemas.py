@@ -51,6 +51,7 @@ class Page(Schema):
     url: str
     title: str = ""
     icon: str = ""
+    should_report_daily: bool = False
     category: Category | None = None
     created_at: datetime
     last_checked_at: datetime | None = None
