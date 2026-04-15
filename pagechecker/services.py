@@ -39,6 +39,7 @@ def update_page(
     page_id: int,
     url: str,
     *,
+    should_report_daily: bool = False,
     keep_snapshots: bool = False,
     category_id: int | None = None,
 ) -> None:
@@ -46,7 +47,8 @@ def update_page(
     page = Page.objects.select_for_update().get(id=page_id)
     page.url = url
     page.category_id = category_id
-    page.save(update_fields=["url", "category_id"])
+    page.should_report_daily = should_report_daily
+    page.save(update_fields=["url", "category_id", "should_report_daily"])
 
     if not keep_snapshots:
         page.snapshots.all().delete()
