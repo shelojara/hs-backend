@@ -258,13 +258,10 @@ def test_check_page_api_returns_clear_detail_on_remote_404():
 
 @pytest.mark.django_db
 @patch("pagechecker.scheduled_tasks.enqueue_daily_report_jobs")
-def test_send_daily_reports_passes_force_to_enqueue(mock_enqueue):
+def test_send_daily_reports_delegates_to_enqueue(mock_enqueue):
     mock_enqueue.return_value = [7, 8]
-    assert send_daily_reports(force=False) == [7, 8]
-    mock_enqueue.assert_called_once_with(skip_time_zone_check=False)
-    mock_enqueue.reset_mock()
-    assert send_daily_reports(force=True) == [7, 8]
-    mock_enqueue.assert_called_once_with(skip_time_zone_check=True)
+    assert send_daily_reports() == [7, 8]
+    mock_enqueue.assert_called_once_with()
 
 
 @pytest.mark.django_db
@@ -286,13 +283,13 @@ def test_send_daily_reports_api_enqueues_and_returns_ids():
     with patch("pagechecker.services.send_daily_reports", return_value=[p.id]) as mock_send:
         resp = api_client.post(
             "/api/v1.PageChecker.SendDailyReports",
-            data=json.dumps({"force": True}),
+            data=json.dumps({}),
             content_type="application/json",
             HTTP_AUTHORIZATION=f"Bearer {token}",
         )
     assert resp.status_code == 200
     assert resp.json() == {"enqueued_page_ids": [p.id]}
-    mock_send.assert_called_once_with(force=True)
+    mock_send.assert_called_once_with()
 
 
 @pytest.mark.django_db

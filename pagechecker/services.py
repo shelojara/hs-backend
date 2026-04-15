@@ -27,14 +27,11 @@ def page_ids_due_for_scheduled_check() -> list[int]:
     )
 
 
-def send_daily_reports(*, force: bool = False) -> list[int]:
-    """Enqueue daily-report jobs for all *should_report_daily* pages.
-
-    *force* true skips the TIME_ZONE guard (for manual/API trigger outside Santiago TZ).
-    """
+def send_daily_reports() -> list[int]:
+    """Enqueue daily-report jobs for all *should_report_daily* pages."""
     from pagechecker import scheduled_tasks
 
-    return scheduled_tasks.enqueue_daily_report_jobs(skip_time_zone_check=force)
+    return scheduled_tasks.enqueue_daily_report_jobs()
 
 
 class MonitoredUrlNotFoundError(Exception):

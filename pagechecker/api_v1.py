@@ -13,7 +13,6 @@ from pagechecker.schemas import (
     CheckPageResponse,
     CompareSnapshotsRequest,
     CompareSnapshotsResponse,
-    SendDailyReportsRequest,
     SendDailyReportsResponse,
     SendTestEmailRequest,
     SendTestEmailResponse,
@@ -207,6 +206,6 @@ def send_test_email(request, payload: SendTestEmailRequest):
 
 
 @router.post("/v1.PageChecker.SendDailyReports", response=SendDailyReportsResponse)
-def send_daily_reports(request, payload: SendDailyReportsRequest):
-    enqueued_page_ids = services.send_daily_reports(force=payload.force)
+def send_daily_reports(request):
+    enqueued_page_ids = services.send_daily_reports()
     return SendDailyReportsResponse(enqueued_page_ids=enqueued_page_ids)

@@ -191,11 +191,5 @@ class SendTestEmailResponse(Schema):
     pass
 
 
-class SendDailyReportsRequest(Schema):
-    """Trigger daily-report dispatch; *force* bypasses TIME_ZONE guard."""
-
-    force: bool = False
-
-
 class SendDailyReportsResponse(Schema):
     enqueued_page_ids: list[int]
