@@ -42,30 +42,40 @@ def create_page(url: str) -> int:
 
 
 @transaction.atomic
-def update_page(
+def change_page_url(
     page_id: int,
     url: str,
     *,
-    should_report_daily: bool = False,
     keep_snapshots: bool = False,
-    category_id: int | None = None,
 ) -> None:
-    """Update URL/category/flags; purge snapshots unless *keep_snapshots*.
+    """Set page URL; purge snapshots unless *keep_snapshots*.
 
-    When URL changes, runs *check_page* to refresh title/icon and add snapshot.
+    When URL value changes, runs *check_page* to refresh title/icon and add snapshot.
     """
     page = Page.objects.select_for_update().get(id=page_id)
     old_url = page.url
     page.url = url
-    page.category_id = category_id
-    page.should_report_daily = should_report_daily
-    page.save(update_fields=["url", "category_id", "should_report_daily"])
+    page.save(update_fields=["url"])
 
     if not keep_snapshots:
         page.snapshots.all().delete()
 
     if old_url != url:
         check_page(page.id)
+
+
+@transaction.atomic
+def update_page(
+    page_id: int,
+    *,
+    should_report_daily: bool = False,
+    category_id: int | None = None,
+) -> None:
+    """Update category and reporting flag only (no URL / snapshot side effects)."""
+    page = Page.objects.select_for_update().get(id=page_id)
+    page.category_id = category_id
+    page.should_report_daily = should_report_daily
+    page.save(update_fields=["category_id", "should_report_daily"])
 
 
 def delete_page(page_id: int) -> None:
