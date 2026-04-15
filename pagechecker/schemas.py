@@ -32,12 +32,18 @@ class Question(Schema):
     created_at: datetime
 
 
+class CategoryOut(Schema):
+    id: int
+    name: str
+    emoji: str
+
+
 class Page(Schema):
     id: int
     url: str
     title: str = ""
     icon: str = ""
-    category_id: int | None = None
+    category: CategoryOut | None = None
     created_at: datetime
     last_checked_at: datetime | None = None
     latest_snapshot: Snapshot | None = None
