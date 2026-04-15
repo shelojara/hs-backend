@@ -26,6 +26,14 @@ class Question(models.Model):
         return self.text[:80] + ("…" if len(self.text) > 80 else "")
 
 
+class Category(models.Model):
+    name = models.TextField()
+    emoji = models.CharField(max_length=64)
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class Page(models.Model):
     url = models.URLField(unique=True)
     title = models.CharField(max_length=512, blank=True, default="")
