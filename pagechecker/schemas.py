@@ -116,6 +116,10 @@ class ListQuestionsResponse(Schema):
     questions: list[Question]
 
 
+class ListCategoriesResponse(Schema):
+    categories: list[Category]
+
+
 class CreateQuestionRequest(Schema):
     text: Annotated[str, AfterValidator(_strip_nonempty_question_text)]
 

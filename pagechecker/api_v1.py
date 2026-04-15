@@ -23,6 +23,7 @@ from pagechecker.schemas import (
     GetPageResponse,
     ListPagesRequest,
     ListPagesResponse,
+    ListCategoriesResponse,
     ListQuestionsResponse,
     UpdatePageRequest,
     UpdatePageResponse,
@@ -62,6 +63,12 @@ def create_question(request, payload: CreateQuestionRequest):
 def list_questions(request):
     questions = services.list_questions()
     return ListQuestionsResponse(questions=questions)
+
+
+@router.post("/v1.PageChecker.ListCategories", response=ListCategoriesResponse)
+def list_categories(request):
+    categories = services.list_categories()
+    return ListCategoriesResponse(categories=categories)
 
 
 @router.post("/v1.PageChecker.DeleteQuestion", response=DeleteQuestionResponse)

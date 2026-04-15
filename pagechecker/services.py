@@ -8,7 +8,7 @@ from pagechecker.html_utils import (
     extract_metadata,
     html_to_markdown,
 )
-from pagechecker.models import Page, Question, Snapshot
+from pagechecker.models import Category, Page, Question, Snapshot
 
 
 def list_pages(limit: int = 20, offset: int = 0) -> list[Page]:
@@ -92,6 +92,10 @@ def create_question(text: str) -> Question:
 
 def list_questions(*, max_count: int = 20) -> list[Question]:
     return list(Question.objects.order_by("-created_at")[:max_count])
+
+
+def list_categories() -> list[Category]:
+    return list(Category.objects.order_by("name", "id"))
 
 
 def delete_question(question_id: int) -> None:

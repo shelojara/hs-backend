@@ -5,6 +5,7 @@ import pytest
 from pagechecker.models import Category, Page, Question, Snapshot
 from pagechecker.services import (
     associate_questions_with_page,
+    list_categories,
     list_pages,
     update_page,
 )
@@ -48,6 +49,13 @@ def test_category_name_and_emoji():
     assert cat.name == "News"
     assert cat.emoji == "📰"
     assert str(cat) == "News"
+
+
+@pytest.mark.django_db
+def test_list_categories_sorted_by_name_then_id():
+    b = Category.objects.create(name="B", emoji="🐝")
+    a = Category.objects.create(name="A", emoji="🐜")
+    assert [c.id for c in list_categories()] == [a.id, b.id]
 
 
 @pytest.mark.django_db
