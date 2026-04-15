@@ -1,9 +1,21 @@
-# Generated manually for django-q2 daily dispatcher schedule.
+# django-q2 dispatcher: cron 9:00 America/Santiago (align with settings.TIME_ZONE).
+
+from datetime import UTC, timedelta
+from zoneinfo import ZoneInfo
 
 from django.db import migrations
 from django.utils import timezone
 
 SCHEDULE_NAME = "daily_page_check_dispatcher"
+SANTIAGO = ZoneInfo("America/Santiago")
+
+
+def _next_run_9am_santiago() -> timezone.datetime:
+    now_local = timezone.now().astimezone(SANTIAGO)
+    run_local = now_local.replace(hour=9, minute=0, second=0, microsecond=0)
+    if run_local <= now_local:
+        run_local += timedelta(days=1)
+    return run_local.astimezone(UTC)
 
 
 def create_daily_schedule(apps, schema_editor):
@@ -13,9 +25,10 @@ def create_daily_schedule(apps, schema_editor):
     Schedule.objects.create(
         name=SCHEDULE_NAME,
         func="pagechecker.scheduled_tasks.run_daily_page_check_dispatch",
-        schedule_type="D",
+        schedule_type="C",
+        cron="0 9 * * *",
         repeats=-1,
-        next_run=timezone.now(),
+        next_run=_next_run_9am_santiago(),
     )
 
 
