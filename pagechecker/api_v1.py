@@ -13,6 +13,7 @@ from pagechecker.schemas import (
     CheckPageResponse,
     CompareSnapshotsRequest,
     CompareSnapshotsResponse,
+    SendDailyReportsResponse,
     SendTestEmailRequest,
     SendTestEmailResponse,
     CreatePageRequest,
@@ -202,3 +203,9 @@ def send_test_email(request, payload: SendTestEmailRequest):
     except OSError as exc:
         raise HttpError(502, f"SMTP send failed: {exc}") from exc
     return SendTestEmailResponse()
+
+
+@router.post("/v1.PageChecker.SendDailyReports", response=SendDailyReportsResponse)
+def send_daily_reports(request):
+    enqueued_page_ids = services.send_daily_reports()
+    return SendDailyReportsResponse(enqueued_page_ids=enqueued_page_ids)

@@ -16,6 +16,7 @@ from pagechecker.services import (
     list_categories,
     list_pages,
     run_daily_report_for_page,
+    send_daily_reports,
     set_page_category,
     set_page_should_report_daily,
 )
@@ -253,6 +254,42 @@ def test_check_page_api_returns_clear_detail_on_remote_404():
     assert "detail" in body
     assert "404" in body["detail"]
     assert "Not Found" in body["detail"]
+
+
+@pytest.mark.django_db
+@patch("pagechecker.scheduled_tasks.enqueue_daily_report_jobs")
+def test_send_daily_reports_delegates_to_enqueue(mock_enqueue):
+    mock_enqueue.return_value = [7, 8]
+    assert send_daily_reports() == [7, 8]
+    mock_enqueue.assert_called_once_with()
+
+
+@pytest.mark.django_db
+def test_send_daily_reports_api_enqueues_and_returns_ids():
+    User.objects.create_user(username="dailyapi", password="pw")
+    p = Page.objects.create(
+        url="https://example.com/daily-api",
+        should_report_daily=True,
+    )
+    api_client = Client()
+    login_resp = api_client.post(
+        "/api/v1.Auth.Login",
+        data=json.dumps({"username": "dailyapi", "password": "pw"}),
+        content_type="application/json",
+    )
+    assert login_resp.status_code == 200
+    token = login_resp.json()["access_token"]
+
+    with patch("pagechecker.services.send_daily_reports", return_value=[p.id]) as mock_send:
+        resp = api_client.post(
+            "/api/v1.PageChecker.SendDailyReports",
+            data=json.dumps({}),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+    assert resp.status_code == 200
+    assert resp.json() == {"enqueued_page_ids": [p.id]}
+    mock_send.assert_called_once_with()
 
 
 @pytest.mark.django_db

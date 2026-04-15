@@ -6,6 +6,7 @@ from django_q.models import Schedule
 
 from pagechecker.models import Page
 from pagechecker.scheduled_tasks import (
+    enqueue_daily_report_jobs,
     run_daily_page_check_dispatch,
     run_scheduled_page_check,
 )
@@ -76,13 +77,34 @@ def test_daily_dispatcher_schedule_cron_9am_santiago():
 @pytest.mark.django_db
 @patch("pagechecker.scheduled_tasks.async_task")
 @override_settings(TIME_ZONE="Europe/Berlin")
-def test_run_daily_page_check_dispatch_noop_when_timezone_not_santiago(mock_async):
-    Page.objects.create(
-        url="https://example.com/daily-wrong-tz",
+def test_enqueue_daily_report_jobs_enqueues_regardless_of_time_zone(mock_async):
+    p = Page.objects.create(
+        url="https://example.com/daily-any-tz",
         should_report_daily=True,
     )
-    assert run_daily_page_check_dispatch() == []
-    mock_async.assert_not_called()
+    out = enqueue_daily_report_jobs()
+    assert out == [p.id]
+    mock_async.assert_called_once_with(
+        "pagechecker.scheduled_tasks.run_scheduled_page_check",
+        p.id,
+        task_name=f"scheduled_page_check:{p.id}",
+    )
+
+
+@pytest.mark.django_db
+@patch("pagechecker.scheduled_tasks.async_task")
+@override_settings(TIME_ZONE="Europe/Berlin")
+def test_run_daily_page_check_dispatch_enqueues_regardless_of_time_zone(mock_async):
+    p = Page.objects.create(
+        url="https://example.com/dispatch-any-tz",
+        should_report_daily=True,
+    )
+    assert run_daily_page_check_dispatch() == [p.id]
+    mock_async.assert_called_once_with(
+        "pagechecker.scheduled_tasks.run_scheduled_page_check",
+        p.id,
+        task_name=f"scheduled_page_check:{p.id}",
+    )
 
 
 @pytest.mark.django_db

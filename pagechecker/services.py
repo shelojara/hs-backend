@@ -27,6 +27,13 @@ def page_ids_due_for_scheduled_check() -> list[int]:
     )
 
 
+def send_daily_reports() -> list[int]:
+    """Enqueue daily-report jobs for all *should_report_daily* pages."""
+    from pagechecker import scheduled_tasks
+
+    return scheduled_tasks.enqueue_daily_report_jobs()
+
+
 class MonitoredUrlNotFoundError(Exception):
     """Monitored URL responded with HTTP 404."""
 
