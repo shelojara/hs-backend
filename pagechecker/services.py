@@ -41,6 +41,16 @@ class MonitoredUrlNotFoundError(Exception):
         super().__init__(message)
 
 
+class QuestionInUseError(Exception):
+    """Question still linked to at least one page; delete blocked."""
+
+    def __init__(
+        self,
+        message: str = "Cannot delete question while it is linked to one or more pages.",
+    ) -> None:
+        super().__init__(message)
+
+
 def list_pages(limit: int = 20, offset: int = 0) -> list[Page]:
     qs = (
         Page.objects.order_by("-created_at")
@@ -210,7 +220,13 @@ def create_category(name: str) -> Category:
 
 
 def delete_question(question_id: int) -> None:
-    Question.objects.filter(id=question_id).delete()
+    try:
+        question = Question.objects.get(id=question_id)
+    except Question.DoesNotExist:
+        return
+    if question.pages.exists():
+        raise QuestionInUseError()
+    question.delete()
 
 
 @transaction.atomic

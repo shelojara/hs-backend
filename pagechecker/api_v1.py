@@ -4,7 +4,7 @@ from ninja.errors import HttpError
 
 from backend.email_services import send_email_via_gmail
 from pagechecker import services
-from pagechecker.services import MonitoredUrlNotFoundError
+from pagechecker.services import MonitoredUrlNotFoundError, QuestionInUseError
 from pagechecker.models import Page
 from pagechecker.schemas import (
     AssociateQuestionsWithPageRequest,
@@ -96,7 +96,10 @@ def create_category(request, payload: CreateCategoryRequest):
 
 @router.post("/v1.PageChecker.DeleteQuestion", response=DeleteQuestionResponse)
 def delete_question(request, payload: DeleteQuestionRequest):
-    services.delete_question(question_id=payload.question_id)
+    try:
+        services.delete_question(question_id=payload.question_id)
+    except QuestionInUseError as exc:
+        raise HttpError(409, str(exc)) from exc
     return DeleteQuestionResponse()
 
 
