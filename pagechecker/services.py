@@ -1,6 +1,5 @@
 import httpx
 from django.db import transaction
-from django.db.models import Exists, OuterRef, Subquery
 from django.utils import timezone
 
 from pagechecker import gemini_service
@@ -12,23 +11,8 @@ from pagechecker.html_utils import (
 from pagechecker.models import Page, Question, Snapshot
 
 
-def list_pages(limit: int = 20, offset: int = 0, feature: str | None = None) -> list[Page]:
+def list_pages(limit: int = 20, offset: int = 0) -> list[Page]:
     qs = Page.objects.order_by("-created_at").prefetch_related("questions")
-    token = (feature or "").strip()
-    if token:
-        latest_id = (
-            Snapshot.objects.filter(page_id=OuterRef("pk"))
-            .order_by("-created_at", "-id")
-            .values("id")[:1]
-        )
-        qs = qs.annotate(_latest_snapshot_id=Subquery(latest_id)).filter(
-            Exists(
-                Snapshot.objects.filter(
-                    id=OuterRef("_latest_snapshot_id"),
-                    features__contains=[token],
-                )
-            )
-        )
     return list(qs[offset : offset + limit])
 
 
@@ -72,18 +56,10 @@ def check_page(page_id: int) -> bool:
     latest_snapshot = Snapshot.objects.filter(page=page).order_by("-created_at").first()
     has_changed = latest_snapshot is None or latest_snapshot.md_content != md_content
 
-    if latest_snapshot is None:
-        features = gemini_service.extract_snapshot_features(
-            page_url=str(page.url),
-            md_content=md_content,
-        )
-    else:
-        features = list(latest_snapshot.features)
     Snapshot.objects.create(
         page=page,
         html_content=body_html,
         md_content=md_content,
-        features=features,
     )
 
     metadata = extract_metadata(response.text, str(page.url))

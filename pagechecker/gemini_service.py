@@ -1,10 +1,8 @@
-import json
 import logging
 import os
 
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, Field
 
 from pagechecker.models import Snapshot
 
@@ -23,26 +21,6 @@ SINGLE_SNAPSHOT_SYSTEM_INSTRUCTION = (
     "Answer concisely and accurately based only on the provided snapshot."
 )
 
-FEATURES_SYSTEM_INSTRUCTION = (
-    "You summarise a web page from a Markdown rendering of its body "
-    "(scripts/styles already removed in the conversion). "
-    "Infer visible meaning from structure and text. "
-    "Return exactly three short content descriptors: concrete phrases about "
-    "what the page offers or covers (e.g. 'wireless earbuds', 'free shipping', "
-    "'api documentation'). Prefer noun phrases over mood "
-    "adjectives like 'professional' or 'minimal'. "
-    "If the page clearly states a product or service price (including "
-    "currency symbol or code), use one of the three slots for that price "
-    "exactly as written in the snapshot (normalise only obvious whitespace). "
-    "If no price is present, all three must be non-price content descriptors. "
-    "Base every item only on the provided Markdown. No duplicates; trim whitespace; "
-    "each item at most 3 words."
-)
-
-
-class SnapshotFeaturesResponse(BaseModel):
-    features: list[str] = Field(min_length=3, max_length=3)
-
 
 def _get_client() -> genai.Client:
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -52,82 +30,6 @@ def _get_client() -> genai.Client:
             "Please set it to a valid Gemini API key."
         )
     return genai.Client(api_key=api_key)
-
-
-def extract_snapshot_features(*, page_url: str, md_content: str) -> list[str]:
-    """Ask Gemini for three content descriptors (price slot if visible); empty if unavailable."""
-    if not os.environ.get("GEMINI_API_KEY"):
-        return []
-
-    body_md = md_content or ""
-    if not body_md.strip():
-        return []
-
-    prompt = (
-        f"## Page URL\n\n{page_url}\n\n"
-        f"## Body Markdown\n\n{body_md}\n\n"
-        "## Task\n\n"
-        "Return exactly three content descriptors (and include a clear price in "
-        "one slot when the page shows one), as specified in the system instruction."
-    )
-
-    try:
-        client = _get_client()
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=FEATURES_SYSTEM_INSTRUCTION,
-                temperature=0.3,
-                response_mime_type="application/json",
-                response_schema=SnapshotFeaturesResponse,
-            ),
-        )
-        parsed = response.parsed
-        if isinstance(parsed, SnapshotFeaturesResponse):
-            return _normalize_features(parsed.features)
-        if isinstance(parsed, dict):
-            raw = parsed.get("features", [])
-            if isinstance(raw, list):
-                return _normalize_features(raw)
-        text_out = response.text
-        if text_out:
-            data = json.loads(text_out)
-            raw = data.get("features", [])
-            if isinstance(raw, list):
-                return _normalize_features(raw)
-    except Exception:
-        logger.exception("Gemini snapshot feature extraction failed")
-
-    return []
-
-
-_FEATURE_ITEM_MAX_CHARS = 120
-_FEATURE_ITEM_MAX_WORDS = 3
-
-
-def _normalize_features(items: list[str]) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for raw in items:
-        if not isinstance(raw, str):
-            continue
-        s = " ".join(raw.strip().split())
-        if not s:
-            continue
-        words = s.split()
-        if len(words) > _FEATURE_ITEM_MAX_WORDS:
-            s = " ".join(words[:_FEATURE_ITEM_MAX_WORDS])
-        if len(s) > _FEATURE_ITEM_MAX_CHARS:
-            s = s[:_FEATURE_ITEM_MAX_CHARS].rstrip()
-        key = s.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(s)
-        if len(out) >= 3:
-            break
-    return out[:3]
 
 
 def compare_snapshots(

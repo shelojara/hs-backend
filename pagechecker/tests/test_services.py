@@ -1,7 +1,7 @@
 import pytest
 
-from pagechecker.models import Page, Question
-from pagechecker.services import associate_questions_with_page
+from pagechecker.models import Page, Question, Snapshot
+from pagechecker.services import associate_questions_with_page, list_pages
 
 
 @pytest.mark.django_db
@@ -26,3 +26,22 @@ def test_associate_questions_with_page_replaces_skips_unknown_clears_empty():
     associate_questions_with_page(page.id, [])
     page.refresh_from_db()
     assert list(page.questions.values_list("id", flat=True)) == []
+
+
+@pytest.mark.django_db
+def test_list_pages_newest_first():
+    older = Page.objects.create(url="https://example.com/list-pages-older")
+    newer = Page.objects.create(url="https://example.com/list-pages-newer")
+    assert [p.id for p in list_pages(limit=10, offset=0)] == [newer.id, older.id]
+
+
+@pytest.mark.django_db
+def test_snapshot_has_no_features_field():
+    page = Page.objects.create(url="https://example.com/snapshot-no-features")
+    snap = Snapshot.objects.create(
+        page=page,
+        html_content="<p>x</p>",
+        md_content="# x",
+    )
+    assert snap.md_content == "# x"
+    assert "features" not in [f.name for f in Snapshot._meta.get_fields()]
