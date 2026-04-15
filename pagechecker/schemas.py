@@ -100,13 +100,12 @@ class DeletePageResponse(Schema):
     pass
 
 
-class UpdatePageRequest(Schema):
+class SetPageCategoryRequest(Schema):
     page_id: int
-    should_report_daily: bool = False
     category_id: int | None = None
 
 
-class UpdatePageResponse(Schema):
+class SetPageCategoryResponse(Schema):
     pass
 
 

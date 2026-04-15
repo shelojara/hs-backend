@@ -65,17 +65,11 @@ def change_page_url(
 
 
 @transaction.atomic
-def update_page(
-    page_id: int,
-    *,
-    should_report_daily: bool = False,
-    category_id: int | None = None,
-) -> None:
-    """Update category and reporting flag only (no URL / snapshot side effects)."""
+def set_page_category(page_id: int, *, category_id: int | None = None) -> None:
+    """Set page category FK only; does not touch daily-report flag or URL."""
     page = Page.objects.select_for_update().get(id=page_id)
     page.category_id = category_id
-    page.should_report_daily = should_report_daily
-    page.save(update_fields=["category_id", "should_report_daily"])
+    page.save(update_fields=["category_id"])
 
 
 @transaction.atomic
