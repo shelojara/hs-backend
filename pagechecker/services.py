@@ -1,5 +1,8 @@
 import httpx
+from datetime import datetime
+
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from pagechecker import gemini_service
@@ -9,6 +12,27 @@ from pagechecker.html_utils import (
     html_to_markdown,
 )
 from pagechecker.models import Category, Page, Question, Snapshot
+
+
+def start_of_local_day(now: datetime | None = None) -> datetime:
+    """Midnight at start of calendar day for *now* in default timezone (see settings.TIME_ZONE)."""
+    aware = now if now is not None else timezone.now()
+    local = timezone.localtime(aware)
+    return local.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def page_ids_due_for_scheduled_check(now: datetime | None = None) -> list[int]:
+    """Pages flagged for daily report not yet checked since local day start.
+
+    *should_report_daily* and (*last_checked_at* null or before today's local midnight).
+    """
+    cutoff = start_of_local_day(now)
+    return list(
+        Page.objects.filter(should_report_daily=True)
+        .filter(Q(last_checked_at__isnull=True) | Q(last_checked_at__lt=cutoff))
+        .order_by("id")
+        .values_list("id", flat=True)
+    )
 
 
 class MonitoredUrlNotFoundError(Exception):
