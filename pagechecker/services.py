@@ -2,6 +2,7 @@ import httpx
 from django.db import transaction
 from django.utils import timezone
 
+from pagechecker import gemini_service
 from pagechecker.html_utils import (
     extract_body_html,
     extract_metadata,
@@ -103,8 +104,6 @@ def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) ->
     the single latest snapshot only. *use_html* is ignored (kept for API compatibility);
     prompts always use Markdown snapshots.
     """
-    from pagechecker import gemini_service
-
     page = get_page(page_id=page_id)
 
     snapshots = list(page.snapshots.order_by("-created_at")[:2])
