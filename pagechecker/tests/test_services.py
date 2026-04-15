@@ -71,6 +71,17 @@ def test_create_category_persists_gemini_emoji(mock_emoji):
 
 @pytest.mark.django_db
 @patch("pagechecker.services.check_page")
+def test_update_page_skips_check_when_url_unchanged(mock_check):
+    page = Page.objects.create(url="https://example.com/same-url")
+    update_page(page.id, "https://example.com/same-url", should_report_daily=True)
+    page.refresh_from_db()
+    assert page.url == "https://example.com/same-url"
+    assert page.should_report_daily is True
+    mock_check.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.check_page")
 def test_update_page_sets_category_when_category_id_given(mock_check):
     cat = Category.objects.create(name="Docs", emoji="📄")
     page = Page.objects.create(url="https://example.com/update-cat")
