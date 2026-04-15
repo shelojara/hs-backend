@@ -110,6 +110,15 @@ class UpdatePageResponse(Schema):
     pass
 
 
+class SetPageShouldReportDailyRequest(Schema):
+    page_id: int
+    should_report_daily: bool
+
+
+class SetPageShouldReportDailyResponse(Schema):
+    pass
+
+
 class ChangePageUrlRequest(Schema):
     page_id: int
     url: str
