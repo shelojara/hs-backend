@@ -133,7 +133,7 @@ class CreateCategoryRequest(Schema):
 
 
 class CreateCategoryResponse(Schema):
-    category: Category
+    category_id: int
 
 
 class CreateQuestionRequest(Schema):

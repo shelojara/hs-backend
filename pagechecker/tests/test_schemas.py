@@ -1,7 +1,12 @@
 import pytest
 
 from pagechecker.models import Category, Page
-from pagechecker.schemas import Page as PageSchema
+from pagechecker.schemas import CreateCategoryResponse, Page as PageSchema
+
+
+def test_create_category_response_only_category_id():
+    out = CreateCategoryResponse(category_id=42)
+    assert out.model_dump() == {"category_id": 42}
 
 
 @pytest.mark.django_db

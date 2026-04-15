@@ -79,7 +79,7 @@ def create_category(request, payload: CreateCategoryRequest):
         cat = services.create_category(name=payload.name)
     except RuntimeError as exc:
         raise HttpError(500, str(exc)) from exc
-    return CreateCategoryResponse(category=cat)
+    return CreateCategoryResponse(category_id=cat.id)
 
 
 @router.post("/v1.PageChecker.DeleteQuestion", response=DeleteQuestionResponse)
