@@ -18,6 +18,8 @@ dependencies = [
     "pytest>=9.0.3",
     "ruff>=0.15.10",
     "whitenoise>=6.9.0",
+    "django-q2>=1.9.0",
+    "honcho>=2.0.0",
 ]
 
 [tool.pytest.ini_options]

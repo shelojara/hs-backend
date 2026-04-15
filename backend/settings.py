@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django_q",
     "auth.apps.AuthConfig",
     "pagechecker",
 ]
@@ -180,3 +181,16 @@ JWT_SIGNING_KEY = JWT_SECRET_KEY
 JWT_ACCESS_TOKEN_LIFETIME_SECONDS = int(
     os.getenv("JWT_ACCESS_TOKEN_LIFETIME_SECONDS", str(7 * 24 * 3600))
 )
+
+# django-q2 task queue — ORM broker (uses the default SQLite database)
+Q_CLUSTER = {
+    "name": "pagechecker",
+    "workers": int(os.getenv("Q_WORKERS", "2")),
+    "timeout": 120,
+    "retry": 180,
+    "orm": "default",
+    "catch_up": False,
+    "ack_failures": True,
+    "max_attempts": 3,
+    "label": "Task Queue",
+}

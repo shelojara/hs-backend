@@ -1,0 +1,2 @@
+[start]
+cmd = "uv run honcho start"
