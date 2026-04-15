@@ -12,12 +12,20 @@ from pagechecker.models import Page, Question, Snapshot
 
 
 def list_pages(limit: int = 20, offset: int = 0) -> list[Page]:
-    qs = Page.objects.order_by("-created_at").prefetch_related("questions")
+    qs = (
+        Page.objects.order_by("-created_at")
+        .select_related("category")
+        .prefetch_related("questions")
+    )
     return list(qs[offset : offset + limit])
 
 
 def get_page(page_id: int) -> Page:
-    return Page.objects.prefetch_related("questions").get(id=page_id)
+    return (
+        Page.objects.select_related("category")
+        .prefetch_related("questions")
+        .get(id=page_id)
+    )
 
 
 def create_page(url: str) -> int:

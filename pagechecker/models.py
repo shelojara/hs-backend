@@ -39,6 +39,14 @@ class Page(models.Model):
     title = models.CharField(max_length=512, blank=True, default="")
     icon = models.URLField(max_length=2048, blank=True, default="")
 
+    category = models.ForeignKey(
+        Category,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="pages",
+    )
+
     questions = models.ManyToManyField(
         "Question",
         related_name="pages",

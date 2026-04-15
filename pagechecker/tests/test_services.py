@@ -45,6 +45,20 @@ def test_category_name_and_emoji():
 
 
 @pytest.mark.django_db
+def test_page_category_nullable_and_set():
+    page = Page.objects.create(url="https://example.com/page-category")
+    page.refresh_from_db()
+    assert page.category_id is None
+
+    cat = Category.objects.create(name="Tech", emoji="💻")
+    page.category = cat
+    page.save()
+    page.refresh_from_db()
+    assert page.category_id == cat.id
+    assert page.category.name == "Tech"
+
+
+@pytest.mark.django_db
 def test_snapshot_has_no_features_field():
     page = Page.objects.create(url="https://example.com/snapshot-no-features")
     snap = Snapshot.objects.create(

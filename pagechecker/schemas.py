@@ -37,6 +37,7 @@ class Page(Schema):
     url: str
     title: str = ""
     icon: str = ""
+    category_id: int | None = None
     created_at: datetime
     last_checked_at: datetime | None = None
     latest_snapshot: Snapshot | None = None
