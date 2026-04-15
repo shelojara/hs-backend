@@ -1,5 +1,4 @@
 import logging
-import os
 from collections.abc import Sequence
 
 import httpx
@@ -195,16 +194,8 @@ def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) ->
     )
 
 
-def _env_daily_report_extra_emails() -> list[str]:
-    raw = os.getenv("PAGE_CHECKER_DAILY_REPORT_TO", "").strip()
-    if not raw:
-        return []
-    parts = [p.strip() for p in raw.replace(";", ",").split(",")]
-    return [p for p in parts if p]
-
-
 def _daily_report_recipient_emails() -> list[str]:
-    """Active users with non-blank *email*, plus optional *PAGE_CHECKER_DAILY_REPORT_TO*."""
+    """Distinct emails of active users with non-blank *email* (stable by user id)."""
     User = get_user_model()
     ordered: list[str] = []
     seen: set[str] = set()
@@ -220,19 +211,14 @@ def _daily_report_recipient_emails() -> list[str]:
         if addr and addr not in seen:
             seen.add(addr)
             ordered.append(addr)
-    for addr in _env_daily_report_extra_emails():
-        if addr not in seen:
-            seen.add(addr)
-            ordered.append(addr)
     return ordered
 
 
 def run_daily_report_for_page(page_id: int) -> None:
     """Fetch page, answer all linked questions via Gemini, email plain-text report.
 
-    Runs even when content unchanged. Recipients: every active user with an email
-    address, plus optional *PAGE_CHECKER_DAILY_REPORT_TO* (comma-separated).
-    Skips mail when that combined list is empty.
+    Runs even when content unchanged. Recipients: every active user with a
+    non-blank email. Skips mail when that list is empty.
     """
     try:
         page = Page.objects.prefetch_related("questions").get(id=page_id)
@@ -293,8 +279,7 @@ def run_daily_report_for_page(page_id: int) -> None:
     recipients = _daily_report_recipient_emails()
     if not recipients:
         logger.warning(
-            "Daily report for page id=%s not emailed: no recipient addresses "
-            "(active users need email, or set PAGE_CHECKER_DAILY_REPORT_TO).",
+            "Daily report for page id=%s not emailed: no active users with email.",
             page_id,
         )
         return

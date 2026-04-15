@@ -359,54 +359,46 @@ def test_run_daily_report_for_page_question_error_in_body(
 @patch("pagechecker.services.send_email_via_gmail")
 @patch("pagechecker.services.compare_snapshots")
 @patch("pagechecker.services.check_page")
-def test_run_daily_report_for_page_skips_email_when_no_user_emails_and_no_env(
+def test_run_daily_report_for_page_skips_email_when_no_user_emails(
     mock_check, mock_compare, mock_send,
 ):
-    monkey = pytest.MonkeyPatch()
-    monkey.delenv("PAGE_CHECKER_DAILY_REPORT_TO", raising=False)
-    try:
-        User.objects.create_user(
-            username="no_email_user",
-            password="pw",
-            email="",
-        )
-        page = Page.objects.create(url="https://example.com/daily-no-mail")
-        mock_check.return_value = False
+    User.objects.create_user(
+        username="no_email_user",
+        password="pw",
+        email="",
+    )
+    page = Page.objects.create(url="https://example.com/daily-no-mail")
+    mock_check.return_value = False
 
-        run_daily_report_for_page(page.id)
+    run_daily_report_for_page(page.id)
 
-        mock_send.assert_not_called()
-    finally:
-        monkey.undo()
+    mock_send.assert_not_called()
 
 
 @pytest.mark.django_db
 @patch("pagechecker.services.send_email_via_gmail")
 @patch("pagechecker.services.compare_snapshots")
 @patch("pagechecker.services.check_page")
-def test_run_daily_report_merges_user_emails_with_env_extra_deduped(
+def test_run_daily_report_dedupes_same_email_across_users(
     mock_check, mock_compare, mock_send,
 ):
-    monkey = pytest.MonkeyPatch()
-    monkey.setenv("PAGE_CHECKER_DAILY_REPORT_TO", "extra@example.com,reader@example.com")
-    try:
-        User.objects.create_user(
-            username="dup_reader",
-            password="pw",
-            email="reader@example.com",
-        )
-        page = Page.objects.create(url="https://example.com/daily-merge")
-        mock_check.return_value = False
+    User.objects.create_user(
+        username="dup_a",
+        password="pw",
+        email="reader@example.com",
+    )
+    User.objects.create_user(
+        username="dup_b",
+        password="pw",
+        email="reader@example.com",
+    )
+    page = Page.objects.create(url="https://example.com/daily-dedup")
+    mock_check.return_value = False
 
-        run_daily_report_for_page(page.id)
+    run_daily_report_for_page(page.id)
 
-        mock_send.assert_called_once()
-        assert mock_send.call_args.kwargs["to_addrs"] == [
-            "reader@example.com",
-            "extra@example.com",
-        ]
-    finally:
-        monkey.undo()
+    mock_send.assert_called_once()
+    assert mock_send.call_args.kwargs["to_addrs"] == ["reader@example.com"]
 
 
 @pytest.mark.django_db
