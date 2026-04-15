@@ -3,6 +3,7 @@ from ninja import Router
 from ninja.errors import HttpError
 
 from pagechecker import services
+from pagechecker.models import Page
 from pagechecker.schemas import (
     AssociateQuestionsWithPageRequest,
     AssociateQuestionsWithPageResponse,
@@ -91,8 +92,9 @@ def update_page(request, payload: UpdatePageRequest):
             page_id=payload.page_id,
             url=payload.url,
             keep_snapshots=payload.keep_snapshots,
+            category_id=payload.category_id,
         )
-    except ObjectDoesNotExist:
+    except Page.DoesNotExist:
         raise HttpError(404, "Page not found.")
     return UpdatePageResponse()
 

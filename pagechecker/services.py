@@ -35,11 +35,18 @@ def create_page(url: str) -> int:
 
 
 @transaction.atomic
-def update_page(page_id: int, url: str, *, keep_snapshots: bool = False) -> None:
+def update_page(
+    page_id: int,
+    url: str,
+    *,
+    keep_snapshots: bool = False,
+    category_id: int | None = None,
+) -> None:
     """Update a page's URL, re-extract title/icon, and optionally clear old snapshots."""
     page = Page.objects.select_for_update().get(id=page_id)
     page.url = url
-    page.save(update_fields=["url"])
+    page.category_id = category_id
+    page.save(update_fields=["url", "category_id"])
 
     if not keep_snapshots:
         page.snapshots.all().delete()

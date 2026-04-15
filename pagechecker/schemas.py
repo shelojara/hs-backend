@@ -95,6 +95,7 @@ class UpdatePageRequest(Schema):
     page_id: int
     url: str
     keep_snapshots: bool = False
+    category_id: int | None = None
 
 
 class UpdatePageResponse(Schema):
