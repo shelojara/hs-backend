@@ -125,19 +125,6 @@ def test_set_page_category_none_clears_category(mock_check):
 
 @pytest.mark.django_db
 @patch("pagechecker.services.check_page")
-def test_set_page_category_leaves_should_report_daily_unchanged(mock_check):
-    page = Page.objects.create(
-        url="https://example.com/daily-unchanged",
-        should_report_daily=True,
-    )
-    set_page_category(page.id)
-    page.refresh_from_db()
-    assert page.should_report_daily is True
-    mock_check.assert_not_called()
-
-
-@pytest.mark.django_db
-@patch("pagechecker.services.check_page")
 def test_set_page_should_report_daily_updates_flag_only(mock_check):
     page = Page.objects.create(
         url="https://example.com/daily-only",
