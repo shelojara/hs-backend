@@ -4,6 +4,7 @@ import jwt
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.http import HttpRequest
+from ninja.errors import AuthenticationError
 from ninja.security import HttpBearer
 
 User = get_user_model()
@@ -11,6 +12,12 @@ User = get_user_model()
 
 class JwtAccessBearer(HttpBearer):
     """Bearer JWT from `Auth.Login`; must be active access token for existing user."""
+
+    def __call__(self, request: HttpRequest) -> User:
+        user = super().__call__(request)
+        if user is None:
+            raise AuthenticationError(401, "Authentication required.")
+        return user
 
     def authenticate(self, request: HttpRequest, token: str) -> User | None:
         try:

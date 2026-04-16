@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django_q.models import Schedule
 
@@ -20,28 +21,36 @@ from pagechecker.services import (
     page_ids_due_for_weekly_scheduled_check,
 )
 
+User = get_user_model()
+
 
 @pytest.mark.django_db
 def test_page_ids_due_for_scheduled_check_daily_interval_only():
+    owner = User.objects.create_user(username="sched_daily", password="pw")
     p_a = Page.objects.create(
         url="https://example.com/daily-a",
         report_interval=ReportInterval.DAILY,
+        owner=owner,
     )
     p_b = Page.objects.create(
         url="https://example.com/daily-b",
         report_interval=ReportInterval.DAILY,
+        owner=owner,
     )
     p_no_interval = Page.objects.create(
         url="https://example.com/no-interval",
         report_interval=None,
+        owner=owner,
     )
     p_weekly = Page.objects.create(
         url="https://example.com/weekly",
         report_interval=ReportInterval.WEEKLY,
+        owner=owner,
     )
     p_off = Page.objects.create(
         url="https://example.com/no-daily",
         report_interval=None,
+        owner=owner,
     )
 
     ids = page_ids_due_for_scheduled_check()
@@ -53,17 +62,21 @@ def test_page_ids_due_for_scheduled_check_daily_interval_only():
 
 @pytest.mark.django_db
 def test_page_ids_due_for_weekly_scheduled_check_weekly_interval_only():
+    owner = User.objects.create_user(username="sched_weekly", password="pw")
     p_w = Page.objects.create(
         url="https://example.com/weekly-a",
         report_interval=ReportInterval.WEEKLY,
+        owner=owner,
     )
     p_daily = Page.objects.create(
         url="https://example.com/daily-not-weekly",
         report_interval=ReportInterval.DAILY,
+        owner=owner,
     )
     p_off = Page.objects.create(
         url="https://example.com/no-weekly",
         report_interval=None,
+        owner=owner,
     )
 
     ids = page_ids_due_for_weekly_scheduled_check()
@@ -74,17 +87,21 @@ def test_page_ids_due_for_weekly_scheduled_check_weekly_interval_only():
 
 @pytest.mark.django_db
 def test_page_ids_due_for_monthly_scheduled_check_monthly_interval_only():
+    owner = User.objects.create_user(username="sched_monthly", password="pw")
     p_m = Page.objects.create(
         url="https://example.com/monthly-a",
         report_interval=ReportInterval.MONTHLY,
+        owner=owner,
     )
     p_daily = Page.objects.create(
         url="https://example.com/daily-not-monthly",
         report_interval=ReportInterval.DAILY,
+        owner=owner,
     )
     p_off = Page.objects.create(
         url="https://example.com/no-monthly",
         report_interval=None,
+        owner=owner,
     )
 
     ids = page_ids_due_for_monthly_scheduled_check()
@@ -96,15 +113,18 @@ def test_page_ids_due_for_monthly_scheduled_check_monthly_interval_only():
 @pytest.mark.django_db
 @patch("pagechecker.scheduled_tasks.async_task")
 def test_run_daily_page_check_dispatch_enqueues_per_page(mock_async):
+    owner = User.objects.create_user(username="dispatch_daily", password="pw")
     p1 = Page.objects.create(
         url="https://example.com/dispatch-a",
         report_interval=ReportInterval.DAILY,
         last_checked_at=None,
+        owner=owner,
     )
     p2 = Page.objects.create(
         url="https://example.com/dispatch-b",
         report_interval=ReportInterval.DAILY,
         last_checked_at=None,
+        owner=owner,
     )
 
     with patch(
@@ -130,15 +150,18 @@ def test_run_daily_page_check_dispatch_enqueues_per_page(mock_async):
 @pytest.mark.django_db
 @patch("pagechecker.scheduled_tasks.async_task")
 def test_run_weekly_page_check_dispatch_enqueues_per_page(mock_async):
+    owner = User.objects.create_user(username="dispatch_weekly", password="pw")
     p1 = Page.objects.create(
         url="https://example.com/weekly-dispatch-a",
         report_interval=ReportInterval.WEEKLY,
         last_checked_at=None,
+        owner=owner,
     )
     p2 = Page.objects.create(
         url="https://example.com/weekly-dispatch-b",
         report_interval=ReportInterval.WEEKLY,
         last_checked_at=None,
+        owner=owner,
     )
 
     with patch(
@@ -164,15 +187,18 @@ def test_run_weekly_page_check_dispatch_enqueues_per_page(mock_async):
 @pytest.mark.django_db
 @patch("pagechecker.scheduled_tasks.async_task")
 def test_run_monthly_page_check_dispatch_enqueues_per_page(mock_async):
+    owner = User.objects.create_user(username="dispatch_monthly", password="pw")
     p1 = Page.objects.create(
         url="https://example.com/monthly-dispatch-a",
         report_interval=ReportInterval.MONTHLY,
         last_checked_at=None,
+        owner=owner,
     )
     p2 = Page.objects.create(
         url="https://example.com/monthly-dispatch-b",
         report_interval=ReportInterval.MONTHLY,
         last_checked_at=None,
+        owner=owner,
     )
 
     with patch(
@@ -220,9 +246,11 @@ def test_monthly_dispatcher_schedule_cron_5th_10am_santiago():
 @patch("pagechecker.scheduled_tasks.async_task")
 @override_settings(TIME_ZONE="Europe/Berlin")
 def test_enqueue_daily_report_jobs_enqueues_regardless_of_time_zone(mock_async):
+    owner = User.objects.create_user(username="tz_daily", password="pw")
     p = Page.objects.create(
         url="https://example.com/daily-any-tz",
         report_interval=ReportInterval.DAILY,
+        owner=owner,
     )
     out = enqueue_daily_report_jobs()
     assert out == [p.id]
@@ -237,9 +265,11 @@ def test_enqueue_daily_report_jobs_enqueues_regardless_of_time_zone(mock_async):
 @patch("pagechecker.scheduled_tasks.async_task")
 @override_settings(TIME_ZONE="Europe/Berlin")
 def test_enqueue_weekly_report_jobs_enqueues_regardless_of_time_zone(mock_async):
+    owner = User.objects.create_user(username="tz_weekly", password="pw")
     p = Page.objects.create(
         url="https://example.com/weekly-any-tz",
         report_interval=ReportInterval.WEEKLY,
+        owner=owner,
     )
     out = enqueue_weekly_report_jobs()
     assert out == [p.id]
@@ -254,9 +284,11 @@ def test_enqueue_weekly_report_jobs_enqueues_regardless_of_time_zone(mock_async)
 @patch("pagechecker.scheduled_tasks.async_task")
 @override_settings(TIME_ZONE="Europe/Berlin")
 def test_enqueue_monthly_report_jobs_enqueues_regardless_of_time_zone(mock_async):
+    owner = User.objects.create_user(username="tz_monthly", password="pw")
     p = Page.objects.create(
         url="https://example.com/monthly-any-tz",
         report_interval=ReportInterval.MONTHLY,
+        owner=owner,
     )
     out = enqueue_monthly_report_jobs()
     assert out == [p.id]
@@ -271,9 +303,11 @@ def test_enqueue_monthly_report_jobs_enqueues_regardless_of_time_zone(mock_async
 @patch("pagechecker.scheduled_tasks.async_task")
 @override_settings(TIME_ZONE="Europe/Berlin")
 def test_run_daily_page_check_dispatch_enqueues_regardless_of_time_zone(mock_async):
+    owner = User.objects.create_user(username="tz_dispatch_d", password="pw")
     p = Page.objects.create(
         url="https://example.com/dispatch-any-tz",
         report_interval=ReportInterval.DAILY,
+        owner=owner,
     )
     assert run_daily_page_check_dispatch() == [p.id]
     mock_async.assert_called_once_with(
@@ -287,9 +321,11 @@ def test_run_daily_page_check_dispatch_enqueues_regardless_of_time_zone(mock_asy
 @patch("pagechecker.scheduled_tasks.async_task")
 @override_settings(TIME_ZONE="Europe/Berlin")
 def test_run_weekly_page_check_dispatch_enqueues_regardless_of_time_zone(mock_async):
+    owner = User.objects.create_user(username="tz_dispatch_w", password="pw")
     p = Page.objects.create(
         url="https://example.com/weekly-dispatch-any-tz",
         report_interval=ReportInterval.WEEKLY,
+        owner=owner,
     )
     assert run_weekly_page_check_dispatch() == [p.id]
     mock_async.assert_called_once_with(
@@ -303,9 +339,11 @@ def test_run_weekly_page_check_dispatch_enqueues_regardless_of_time_zone(mock_as
 @patch("pagechecker.scheduled_tasks.async_task")
 @override_settings(TIME_ZONE="Europe/Berlin")
 def test_run_monthly_page_check_dispatch_enqueues_regardless_of_time_zone(mock_async):
+    owner = User.objects.create_user(username="tz_dispatch_m", password="pw")
     p = Page.objects.create(
         url="https://example.com/monthly-dispatch-any-tz",
         report_interval=ReportInterval.MONTHLY,
+        owner=owner,
     )
     assert run_monthly_page_check_dispatch() == [p.id]
     mock_async.assert_called_once_with(

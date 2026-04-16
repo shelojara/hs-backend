@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -22,6 +23,11 @@ class Snapshot(models.Model):
 class Question(models.Model):
     """Question."""
 
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="questions",
+    )
     text = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -41,7 +47,12 @@ class Category(models.Model):
 
 
 class Page(models.Model):
-    url = models.URLField(unique=True)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="pages",
+    )
+    url = models.URLField()
     title = models.CharField(max_length=512, blank=True, default="")
     icon = models.URLField(max_length=2048, blank=True, default="")
 
@@ -69,6 +80,14 @@ class Page(models.Model):
         null=True,
         blank=True,
     )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("owner", "url"),
+                name="pagechecker_page_owner_url_uniq",
+            ),
+        ]
 
     def __str__(self):
         return self.url
