@@ -5,7 +5,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from pagechecker.models import Category, Page, Question, Snapshot
+from pagechecker.models import Category, Page, Question, ReportInterval, Snapshot
 from pagechecker.services import (
     MonitoredUrlNotFoundError,
     QuestionInUseError,
@@ -23,7 +23,6 @@ from pagechecker.services import (
     send_weekly_reports,
     set_page_category,
     set_page_report_interval,
-    set_page_should_report_daily,
 )
 
 User = get_user_model()
@@ -254,19 +253,6 @@ def test_set_page_category_none_clears_category(mock_check):
 
 @pytest.mark.django_db
 @patch("pagechecker.services.check_page")
-def test_set_page_should_report_daily_updates_flag_only(mock_check):
-    page = Page.objects.create(
-        url="https://example.com/daily-only",
-        should_report_daily=False,
-    )
-    set_page_should_report_daily(page.id, should_report_daily=True)
-    page.refresh_from_db()
-    assert page.should_report_daily is True
-    mock_check.assert_not_called()
-
-
-@pytest.mark.django_db
-@patch("pagechecker.services.check_page")
 def test_change_page_url_calls_check_when_url_changes(mock_check):
     page = Page.objects.create(url="https://example.com/old")
     change_page_url(page.id, "https://example.com/new")
@@ -389,7 +375,7 @@ def test_run_daily_report_for_page_emails_check_status_and_answers(
     page = Page.objects.create(
         url="https://example.com/daily-report",
         title="Daily Page",
-        should_report_daily=True,
+        report_interval=ReportInterval.DAILY,
     )
     q1 = Question.objects.create(text="What changed?")
     q2 = Question.objects.create(text="Any risks?")

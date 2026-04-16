@@ -31,14 +31,12 @@ def test_page_ids_due_for_scheduled_check_daily_interval_only():
         url="https://example.com/daily-b",
         report_interval=ReportInterval.DAILY,
     )
-    p_flag_only = Page.objects.create(
-        url="https://example.com/flag-no-interval",
-        should_report_daily=True,
+    p_no_interval = Page.objects.create(
+        url="https://example.com/no-interval",
         report_interval=None,
     )
     p_weekly = Page.objects.create(
         url="https://example.com/weekly",
-        should_report_daily=True,
         report_interval=ReportInterval.WEEKLY,
     )
     p_off = Page.objects.create(
@@ -48,7 +46,7 @@ def test_page_ids_due_for_scheduled_check_daily_interval_only():
 
     ids = page_ids_due_for_scheduled_check()
     assert set(ids) == {p_a.id, p_b.id}
-    assert p_flag_only.id not in ids
+    assert p_no_interval.id not in ids
     assert p_weekly.id not in ids
     assert p_off.id not in ids
 

@@ -63,8 +63,6 @@ class Page(models.Model):
 
     last_checked_at = models.DateTimeField(null=True)
 
-    should_report_daily = models.BooleanField(default=False)
-
     report_interval = models.CharField(
         max_length=16,
         choices=ReportInterval.choices,
