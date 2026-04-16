@@ -5,8 +5,8 @@ from django_q.tasks import async_task
 from pagechecker import services
 
 
-def enqueue_daily_report_jobs() -> list[int]:
-    """Enqueue one background task per daily-report page."""
+def enqueue_scheduled_daily_check_jobs() -> list[int]:
+    """Enqueue one background task per DAILY *report_interval* page."""
     page_ids = services.page_ids_due_for_scheduled_check()
     for page_id in page_ids:
         async_task(
@@ -18,10 +18,10 @@ def enqueue_daily_report_jobs() -> list[int]:
 
 
 def run_daily_page_check_dispatch() -> list[int]:
-    """Enqueue one background task per daily-report page."""
-    return enqueue_daily_report_jobs()
+    """Cron entry: enqueue snapshot checks for all DAILY-interval pages."""
+    return enqueue_scheduled_daily_check_jobs()
 
 
 def run_scheduled_page_check(page_id: int) -> None:
-    """Daily job: fetch page, run all linked questions, email report."""
-    services.run_daily_report_for_page(page_id)
+    """Daily job: fetch page and snapshot (same as manual CheckPage)."""
+    services.check_page(page_id)

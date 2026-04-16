@@ -199,7 +199,3 @@ class SendTestEmailRequest(Schema):
 
 class SendTestEmailResponse(Schema):
     pass
-
-
-class SendDailyReportsResponse(Schema):
-    enqueued_page_ids: list[int]
