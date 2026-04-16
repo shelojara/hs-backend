@@ -28,57 +28,87 @@ from pagechecker.services import (
 User = get_user_model()
 
 
+def _owner(username: str = "owner", **kwargs):
+    return User.objects.create_user(username=username, password="pw", **kwargs)
+
+
 @pytest.mark.django_db
 def test_associate_questions_with_page_replaces_skips_unknown_clears_empty():
-    page = Page.objects.create(url="https://example.com/associate-m2m-test")
-    q1 = Question.objects.create(text="one")
-    q2 = Question.objects.create(text="two")
-    q3 = Question.objects.create(text="three")
+    user = _owner()
+    page = Page.objects.create(
+        url="https://example.com/associate-m2m-test",
+        owner=user,
+    )
+    q1 = Question.objects.create(text="one", owner=user)
+    q2 = Question.objects.create(text="two", owner=user)
+    q3 = Question.objects.create(text="three", owner=user)
 
-    associate_questions_with_page(page.id, [q1.id, q2.id])
+    associate_questions_with_page(page.id, [q1.id, q2.id], user_id=user.pk)
     page.refresh_from_db()
     assert set(page.questions.values_list("id", flat=True)) == {q1.id, q2.id}
 
-    associate_questions_with_page(page.id, [q2.id, q3.id])
+    associate_questions_with_page(page.id, [q2.id, q3.id], user_id=user.pk)
     page.refresh_from_db()
     assert set(page.questions.values_list("id", flat=True)) == {q2.id, q3.id}
 
-    associate_questions_with_page(page.id, [q1.id, 999_999])
+    associate_questions_with_page(page.id, [q1.id, 999_999], user_id=user.pk)
     page.refresh_from_db()
     assert set(page.questions.values_list("id", flat=True)) == {q1.id}
 
-    associate_questions_with_page(page.id, [])
+    associate_questions_with_page(page.id, [], user_id=user.pk)
     page.refresh_from_db()
     assert list(page.questions.values_list("id", flat=True)) == []
 
 
 @pytest.mark.django_db
 def test_delete_question_blocked_when_linked_to_page():
-    page = Page.objects.create(url="https://example.com/q-guard")
-    q = Question.objects.create(text="linked")
-    associate_questions_with_page(page.id, [q.id])
+    user = _owner()
+    page = Page.objects.create(url="https://example.com/q-guard", owner=user)
+    q = Question.objects.create(text="linked", owner=user)
+    associate_questions_with_page(page.id, [q.id], user_id=user.pk)
     with pytest.raises(QuestionInUseError):
-        delete_question(q.id)
+        delete_question(q.id, user_id=user.pk)
     assert Question.objects.filter(id=q.id).exists()
 
 
 @pytest.mark.django_db
 def test_delete_question_ok_when_not_linked():
-    q = Question.objects.create(text="orphan")
-    delete_question(q.id)
+    user = _owner()
+    q = Question.objects.create(text="orphan", owner=user)
+    delete_question(q.id, user_id=user.pk)
     assert not Question.objects.filter(id=q.id).exists()
 
 
 @pytest.mark.django_db
 def test_delete_question_noop_when_missing_id():
-    delete_question(999_999)
+    user = _owner()
+    delete_question(999_999, user_id=user.pk)
 
 
 @pytest.mark.django_db
 def test_list_pages_newest_first():
-    older = Page.objects.create(url="https://example.com/list-pages-older")
-    newer = Page.objects.create(url="https://example.com/list-pages-newer")
-    assert [p.id for p in list_pages(limit=10, offset=0)] == [newer.id, older.id]
+    user = _owner()
+    older = Page.objects.create(
+        url="https://example.com/list-pages-older",
+        owner=user,
+    )
+    newer = Page.objects.create(
+        url="https://example.com/list-pages-newer",
+        owner=user,
+    )
+    assert [p.id for p in list_pages(user_id=user.pk, limit=10, offset=0)] == [
+        newer.id,
+        older.id,
+    ]
+
+
+@pytest.mark.django_db
+def test_list_pages_scoped_to_owner():
+    a = _owner()
+    b = _owner(username="other")
+    pa = Page.objects.create(url="https://example.com/a-only", owner=a)
+    Page.objects.create(url="https://example.com/b-only", owner=b)
+    assert [p.id for p in list_pages(user_id=a.pk)] == [pa.id]
 
 
 @pytest.mark.django_db
@@ -125,14 +155,16 @@ def _fake_check_page_with_snapshot(page_id: int) -> bool:
 @patch("pagechecker.services.gemini_service.suggest_page_category_id", return_value=None)
 @patch("pagechecker.services.check_page", side_effect=_fake_check_page_with_snapshot)
 def test_create_page_passes_categories_and_url_title_to_gemini(mock_check, mock_suggest):
+    user = _owner()
     cat = Category.objects.create(name="Docs", emoji="📄")
     Page.objects.create(
         url="https://example.com/existing-doc",
         title="API Reference",
         category=cat,
+        owner=user,
     )
 
-    page_id = create_page("https://example.com/new-doc")
+    page_id = create_page("https://example.com/new-doc", user_id=user.pk)
 
     mock_check.assert_called_once_with(page_id)
     page = Page.objects.get(id=page_id)
@@ -155,14 +187,16 @@ def test_create_page_passes_categories_and_url_title_to_gemini(mock_check, mock_
 @patch("pagechecker.services.gemini_service.suggest_page_category_id", return_value=None)
 @patch("pagechecker.services.check_page", side_effect=_fake_check_page_with_snapshot)
 def test_create_page_new_page_excluded_from_peer_examples(mock_check, mock_suggest):
+    user = _owner()
     cat = Category.objects.create(name="Docs", emoji="📄")
     Page.objects.create(
         url="https://example.com/peer",
         title="Peer",
         category=cat,
+        owner=user,
     )
     new_url = "https://example.com/brand-new"
-    create_page(new_url)
+    create_page(new_url, user_id=user.pk)
 
     kwargs = mock_suggest.call_args.kwargs
     block = next(b for b in kwargs["categories"] if b["id"] == cat.id)
@@ -175,7 +209,8 @@ def test_create_page_new_page_excluded_from_peer_examples(mock_check, mock_sugge
 @patch("pagechecker.services.gemini_service.suggest_page_category_id")
 @patch("pagechecker.services.check_page", side_effect=_fake_check_page_with_snapshot)
 def test_create_page_no_categories_skips_gemini(mock_check, mock_suggest):
-    page_id = create_page("https://example.com/lone")
+    user = _owner()
+    page_id = create_page("https://example.com/lone", user_id=user.pk)
 
     mock_check.assert_called_once_with(page_id)
     mock_suggest.assert_not_called()
@@ -186,8 +221,9 @@ def test_create_page_no_categories_skips_gemini(mock_check, mock_suggest):
 @patch("pagechecker.services.gemini_service.suggest_page_category_id", return_value=None)
 @patch("pagechecker.services.check_page", side_effect=_fake_check_page_with_snapshot)
 def test_create_page_gemini_none_leaves_uncategorized(mock_check, mock_suggest):
+    user = _owner()
     Category.objects.create(name="Docs", emoji="📄")
-    page_id = create_page("https://example.com/none-cat")
+    page_id = create_page("https://example.com/none-cat", user_id=user.pk)
 
     mock_suggest.assert_called_once()
     assert Page.objects.get(id=page_id).category_id is None
@@ -200,9 +236,10 @@ def test_create_page_gemini_none_leaves_uncategorized(mock_check, mock_suggest):
 )
 @patch("pagechecker.services.check_page", side_effect=_fake_check_page_with_snapshot)
 def test_create_page_sets_category_when_gemini_returns_id(mock_check, mock_suggest):
+    user = _owner()
     cat = Category.objects.create(name="Docs", emoji="📄")
     mock_suggest.return_value = cat.id
-    page_id = create_page("https://example.com/assigned")
+    page_id = create_page("https://example.com/assigned", user_id=user.pk)
 
     assert Page.objects.get(id=page_id).category_id == cat.id
 
@@ -210,8 +247,9 @@ def test_create_page_sets_category_when_gemini_returns_id(mock_check, mock_sugge
 @pytest.mark.django_db
 @patch("pagechecker.services.check_page")
 def test_change_page_url_skips_check_when_url_unchanged(mock_check):
-    page = Page.objects.create(url="https://example.com/same-url")
-    change_page_url(page.id, "https://example.com/same-url")
+    user = _owner()
+    page = Page.objects.create(url="https://example.com/same-url", owner=user)
+    change_page_url(page.id, "https://example.com/same-url", user_id=user.pk)
     page.refresh_from_db()
     assert page.url == "https://example.com/same-url"
     mock_check.assert_not_called()
@@ -220,9 +258,10 @@ def test_change_page_url_skips_check_when_url_unchanged(mock_check):
 @pytest.mark.django_db
 @patch("pagechecker.services.check_page")
 def test_set_page_category_sets_category_when_category_id_given(mock_check):
+    user = _owner()
     cat = Category.objects.create(name="Docs", emoji="📄")
-    page = Page.objects.create(url="https://example.com/update-cat")
-    set_page_category(page.id, category_id=cat.id)
+    page = Page.objects.create(url="https://example.com/update-cat", owner=user)
+    set_page_category(page.id, user_id=user.pk, category_id=cat.id)
     page.refresh_from_db()
     assert page.url == "https://example.com/update-cat"
     assert page.category_id == cat.id
@@ -232,9 +271,14 @@ def test_set_page_category_sets_category_when_category_id_given(mock_check):
 @pytest.mark.django_db
 @patch("pagechecker.services.check_page")
 def test_set_page_category_preserves_category_when_same_category_id(mock_check):
+    user = _owner()
     cat = Category.objects.create(name="Docs", emoji="📄")
-    page = Page.objects.create(url="https://example.com/keep-cat", category=cat)
-    set_page_category(page.id, category_id=cat.id)
+    page = Page.objects.create(
+        url="https://example.com/keep-cat",
+        category=cat,
+        owner=user,
+    )
+    set_page_category(page.id, user_id=user.pk, category_id=cat.id)
     page.refresh_from_db()
     assert page.category_id == cat.id
     mock_check.assert_not_called()
@@ -243,9 +287,14 @@ def test_set_page_category_preserves_category_when_same_category_id(mock_check):
 @pytest.mark.django_db
 @patch("pagechecker.services.check_page")
 def test_set_page_category_none_clears_category(mock_check):
+    user = _owner()
     cat = Category.objects.create(name="Docs", emoji="📄")
-    page = Page.objects.create(url="https://example.com/clear-cat", category=cat)
-    set_page_category(page.id, category_id=None)
+    page = Page.objects.create(
+        url="https://example.com/clear-cat",
+        category=cat,
+        owner=user,
+    )
+    set_page_category(page.id, user_id=user.pk, category_id=None)
     page.refresh_from_db()
     assert page.category_id is None
     mock_check.assert_not_called()
@@ -254,8 +303,9 @@ def test_set_page_category_none_clears_category(mock_check):
 @pytest.mark.django_db
 @patch("pagechecker.services.check_page")
 def test_change_page_url_calls_check_when_url_changes(mock_check):
-    page = Page.objects.create(url="https://example.com/old")
-    change_page_url(page.id, "https://example.com/new")
+    user = _owner()
+    page = Page.objects.create(url="https://example.com/old", owner=user)
+    change_page_url(page.id, "https://example.com/new", user_id=user.pk)
     page.refresh_from_db()
     assert page.url == "https://example.com/new"
     mock_check.assert_called_once_with(page.id)
@@ -264,9 +314,15 @@ def test_change_page_url_calls_check_when_url_changes(mock_check):
 @pytest.mark.django_db
 @patch("pagechecker.services.check_page")
 def test_change_page_url_deletes_snapshots_unless_keep(mock_check):
-    page = Page.objects.create(url="https://example.com/url-snap")
+    user = _owner()
+    page = Page.objects.create(url="https://example.com/url-snap", owner=user)
     Snapshot.objects.create(page=page, html_content="<p>a</p>", md_content="a")
-    change_page_url(page.id, "https://example.com/url-snap-new", keep_snapshots=False)
+    change_page_url(
+        page.id,
+        "https://example.com/url-snap-new",
+        user_id=user.pk,
+        keep_snapshots=False,
+    )
     assert page.snapshots.count() == 0
     mock_check.assert_called_once_with(page.id)
 
@@ -274,16 +330,26 @@ def test_change_page_url_deletes_snapshots_unless_keep(mock_check):
 @pytest.mark.django_db
 @patch("pagechecker.services.check_page")
 def test_change_page_url_keeps_snapshots_when_requested(mock_check):
-    page = Page.objects.create(url="https://example.com/url-keep")
+    user = _owner()
+    page = Page.objects.create(url="https://example.com/url-keep", owner=user)
     Snapshot.objects.create(page=page, html_content="<p>a</p>", md_content="a")
-    change_page_url(page.id, "https://example.com/url-keep-new", keep_snapshots=True)
+    change_page_url(
+        page.id,
+        "https://example.com/url-keep-new",
+        user_id=user.pk,
+        keep_snapshots=True,
+    )
     assert page.snapshots.count() == 1
     mock_check.assert_called_once_with(page.id)
 
 
 @pytest.mark.django_db
 def test_snapshot_has_no_features_field():
-    page = Page.objects.create(url="https://example.com/snapshot-no-features")
+    user = _owner()
+    page = Page.objects.create(
+        url="https://example.com/snapshot-no-features",
+        owner=user,
+    )
     snap = Snapshot.objects.create(
         page=page,
         html_content="<p>x</p>",
@@ -295,7 +361,8 @@ def test_snapshot_has_no_features_field():
 
 @pytest.mark.django_db
 def test_check_page_raises_monitored_url_not_found_on_http_404():
-    page = Page.objects.create(url="https://example.com/missing")
+    user = _owner()
+    page = Page.objects.create(url="https://example.com/missing", owner=user)
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404, request=request)
@@ -315,23 +382,25 @@ def test_check_page_raises_monitored_url_not_found_on_http_404():
 
 @pytest.mark.django_db
 def test_set_page_category_updates_category():
+    user = _owner()
     cat = Category.objects.create(name="Docs", emoji="📄")
-    page = Page.objects.create(url="https://example.com/svc-cat")
-    set_page_category(page.id, category_id=cat.id)
+    page = Page.objects.create(url="https://example.com/svc-cat", owner=user)
+    set_page_category(page.id, user_id=user.pk, category_id=cat.id)
     page.refresh_from_db()
     assert page.category_id == cat.id
 
 
 @pytest.mark.django_db
 def test_set_page_report_interval_sets_and_clears():
-    page = Page.objects.create(url="https://example.com/svc-report-interval")
-    set_page_report_interval(page.id, report_interval="WEEKLY")
+    user = _owner()
+    page = Page.objects.create(url="https://example.com/svc-report-interval", owner=user)
+    set_page_report_interval(page.id, user_id=user.pk, report_interval="WEEKLY")
     page.refresh_from_db()
     assert page.report_interval == "WEEKLY"
-    set_page_report_interval(page.id, report_interval="MONTHLY")
+    set_page_report_interval(page.id, user_id=user.pk, report_interval="MONTHLY")
     page.refresh_from_db()
     assert page.report_interval == "MONTHLY"
-    set_page_report_interval(page.id, report_interval=None)
+    set_page_report_interval(page.id, user_id=user.pk, report_interval=None)
     page.refresh_from_db()
     assert page.report_interval is None
 
@@ -367,7 +436,7 @@ def test_send_monthly_reports_delegates_to_enqueue(mock_enqueue):
 def test_run_daily_report_for_page_emails_check_status_and_answers(
     mock_check, mock_compare, mock_send,
 ):
-    User.objects.create_user(
+    owner = User.objects.create_user(
         username="daily_reader",
         password="pw",
         email="reader@example.com",
@@ -376,10 +445,11 @@ def test_run_daily_report_for_page_emails_check_status_and_answers(
         url="https://example.com/daily-report",
         title="Daily Page",
         report_interval=ReportInterval.DAILY,
+        owner=owner,
     )
-    q1 = Question.objects.create(text="What changed?")
-    q2 = Question.objects.create(text="Any risks?")
-    associate_questions_with_page(page.id, [q1.id, q2.id])
+    q1 = Question.objects.create(text="What changed?", owner=owner)
+    q2 = Question.objects.create(text="Any risks?", owner=owner)
+    associate_questions_with_page(page.id, [q1.id, q2.id], user_id=owner.pk)
 
     mock_check.return_value = False
     mock_compare.side_effect = ["Nothing major.", "No risks."]
@@ -388,9 +458,12 @@ def test_run_daily_report_for_page_emails_check_status_and_answers(
 
     mock_check.assert_called_once_with(page.id)
     assert mock_compare.call_count == 2
-    assert {(c.args[0], c.args[1]) for c in mock_compare.call_args_list} == {
-        (page.id, q1.text),
-        (page.id, q2.text),
+    assert {
+        (c.args[0], c.args[1], c.kwargs.get("user_id"))
+        for c in mock_compare.call_args_list
+    } == {
+        (page.id, q1.text, owner.pk),
+        (page.id, q2.text, owner.pk),
     }
     mock_send.assert_called_once()
     kwargs = mock_send.call_args.kwargs
@@ -409,19 +482,14 @@ def test_run_daily_report_for_page_emails_check_status_and_answers(
 def test_run_daily_report_for_page_check_failure_still_runs_questions_and_emails(
     mock_check, mock_compare, mock_send,
 ):
-    User.objects.create_user(
+    owner = User.objects.create_user(
         username="u_a",
         password="pw",
         email="a@example.com",
     )
-    User.objects.create_user(
-        username="u_b",
-        password="pw",
-        email="b@example.com",
-    )
-    page = Page.objects.create(url="https://example.com/daily-fail")
-    q = Question.objects.create(text="Still ask?")
-    associate_questions_with_page(page.id, [q.id])
+    page = Page.objects.create(url="https://example.com/daily-fail", owner=owner)
+    q = Question.objects.create(text="Still ask?", owner=owner)
+    associate_questions_with_page(page.id, [q.id], user_id=owner.pk)
     mock_check.side_effect = RuntimeError("network down")
     mock_compare.return_value = "ok"
 
@@ -430,7 +498,7 @@ def test_run_daily_report_for_page_check_failure_still_runs_questions_and_emails
     mock_compare.assert_called_once()
     mock_send.assert_called_once()
     kwargs = mock_send.call_args.kwargs
-    assert set(kwargs["to_addrs"]) == {"a@example.com", "b@example.com"}
+    assert kwargs["to_addrs"] == ["a@example.com"]
     body = kwargs["body"]
     assert "failed" in body and "network down" in body
     assert "A: ok" in body
@@ -443,14 +511,14 @@ def test_run_daily_report_for_page_check_failure_still_runs_questions_and_emails
 def test_run_daily_report_for_page_question_error_in_body(
     mock_check, mock_compare, mock_send,
 ):
-    User.objects.create_user(
+    owner = User.objects.create_user(
         username="qerr_reader",
         password="pw",
         email="x@example.com",
     )
-    page = Page.objects.create(url="https://example.com/daily-qerr")
-    q = Question.objects.create(text="Bad?")
-    associate_questions_with_page(page.id, [q.id])
+    page = Page.objects.create(url="https://example.com/daily-qerr", owner=owner)
+    q = Question.objects.create(text="Bad?", owner=owner)
+    associate_questions_with_page(page.id, [q.id], user_id=owner.pk)
     mock_check.return_value = True
     mock_compare.side_effect = ValueError("no snapshots")
 
@@ -467,12 +535,12 @@ def test_run_daily_report_for_page_question_error_in_body(
 def test_run_daily_report_for_page_skips_email_when_no_user_emails(
     mock_check, mock_compare, mock_send,
 ):
-    User.objects.create_user(
+    owner = User.objects.create_user(
         username="no_email_user",
         password="pw",
         email="",
     )
-    page = Page.objects.create(url="https://example.com/daily-no-mail")
+    page = Page.objects.create(url="https://example.com/daily-no-mail", owner=owner)
     mock_check.return_value = False
 
     run_daily_report_for_page(page.id)
@@ -484,40 +552,14 @@ def test_run_daily_report_for_page_skips_email_when_no_user_emails(
 @patch("pagechecker.services.send_email_via_gmail")
 @patch("pagechecker.services.compare_snapshots")
 @patch("pagechecker.services.check_page")
-def test_run_daily_report_dedupes_same_email_across_users(
-    mock_check, mock_compare, mock_send,
-):
-    User.objects.create_user(
-        username="dup_a",
-        password="pw",
-        email="reader@example.com",
-    )
-    User.objects.create_user(
-        username="dup_b",
-        password="pw",
-        email="reader@example.com",
-    )
-    page = Page.objects.create(url="https://example.com/daily-dedup")
-    mock_check.return_value = False
-
-    run_daily_report_for_page(page.id)
-
-    mock_send.assert_called_once()
-    assert mock_send.call_args.kwargs["to_addrs"] == ["reader@example.com"]
-
-
-@pytest.mark.django_db
-@patch("pagechecker.services.send_email_via_gmail")
-@patch("pagechecker.services.compare_snapshots")
-@patch("pagechecker.services.check_page")
 def test_run_daily_report_ignores_inactive_users(mock_check, mock_compare, mock_send):
-    User.objects.create_user(
+    owner = User.objects.create_user(
         username="inactive",
         password="pw",
         email="gone@example.com",
         is_active=False,
     )
-    page = Page.objects.create(url="https://example.com/daily-inactive-only")
+    page = Page.objects.create(url="https://example.com/daily-inactive-only", owner=owner)
     mock_check.return_value = False
 
     run_daily_report_for_page(page.id)

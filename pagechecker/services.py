@@ -83,29 +83,32 @@ class QuestionInUseError(Exception):
         super().__init__(message)
 
 
-def list_pages(limit: int = 20, offset: int = 0) -> list[Page]:
+def list_pages(*, user_id: int, limit: int = 20, offset: int = 0) -> list[Page]:
     qs = (
-        Page.objects.order_by("-created_at")
+        Page.objects.filter(owner_id=user_id)
+        .order_by("-created_at")
         .select_related("category")
         .prefetch_related("questions")
     )
     return list(qs[offset : offset + limit])
 
 
-def get_page(page_id: int) -> Page:
+def get_page(page_id: int, *, user_id: int) -> Page:
     return (
         Page.objects.select_related("category")
         .prefetch_related("questions")
-        .get(id=page_id)
+        .get(id=page_id, owner_id=user_id)
     )
 
 
-def _categories_with_examples_for_gemini(*, exclude_page_id: int) -> list[dict]:
+def _categories_with_examples_for_gemini(
+    *, owner_id: int, exclude_page_id: int
+) -> list[dict]:
     """Category id, name, and up to 5 other pages per category (for Gemini matching)."""
     out: list[dict] = []
     for cat in Category.objects.order_by("name", "id"):
         pages = list(
-            Page.objects.filter(category=cat)
+            Page.objects.filter(category=cat, owner_id=owner_id)
             .exclude(id=exclude_page_id)
             .order_by("-created_at")[:5]
         )
@@ -121,7 +124,10 @@ def _categories_with_examples_for_gemini(*, exclude_page_id: int) -> list[dict]:
 
 def _assign_page_category_via_gemini(page: Page) -> None:
     """If categories exist, ask Gemini to pick one from URL/title + peer examples."""
-    blocks = _categories_with_examples_for_gemini(exclude_page_id=page.id)
+    blocks = _categories_with_examples_for_gemini(
+        owner_id=page.owner_id,
+        exclude_page_id=page.id,
+    )
     if not blocks:
         return
     try:
@@ -152,8 +158,8 @@ def _assign_page_category_via_gemini(page: Page) -> None:
     page.save(update_fields=["category_id"])
 
 
-def create_page(url: str) -> int:
-    page = Page.objects.create(url=url)
+def create_page(url: str, *, user_id: int) -> int:
+    page = Page.objects.create(url=url, owner_id=user_id)
     check_page(page.id)
     page.refresh_from_db()
     _assign_page_category_via_gemini(page)
@@ -165,13 +171,14 @@ def change_page_url(
     page_id: int,
     url: str,
     *,
+    user_id: int,
     keep_snapshots: bool = False,
 ) -> None:
     """Set page URL; purge snapshots unless *keep_snapshots*.
 
     When URL value changes, runs *check_page* to refresh title/icon and add snapshot.
     """
-    page = Page.objects.select_for_update().get(id=page_id)
+    page = Page.objects.select_for_update().get(id=page_id, owner_id=user_id)
     old_url = page.url
     page.url = url
     page.save(update_fields=["url"])
@@ -184,9 +191,11 @@ def change_page_url(
 
 
 @transaction.atomic
-def set_page_category(page_id: int, *, category_id: int | None = None) -> None:
+def set_page_category(
+    page_id: int, *, user_id: int, category_id: int | None = None
+) -> None:
     """Set page category FK only; does not touch report interval or URL."""
-    page = Page.objects.select_for_update().get(id=page_id)
+    page = Page.objects.select_for_update().get(id=page_id, owner_id=user_id)
     page.category_id = category_id
     page.save(update_fields=["category_id"])
 
@@ -195,16 +204,17 @@ def set_page_category(page_id: int, *, category_id: int | None = None) -> None:
 def set_page_report_interval(
     page_id: int,
     *,
+    user_id: int,
     report_interval: str | None = None,
 ) -> None:
     """Set *report_interval* (DAILY/WEEKLY/MONTHLY) or clear when *None*."""
-    page = Page.objects.select_for_update().get(id=page_id)
+    page = Page.objects.select_for_update().get(id=page_id, owner_id=user_id)
     page.report_interval = report_interval
     page.save(update_fields=["report_interval"])
 
 
-def delete_page(page_id: int) -> None:
-    Page.objects.filter(id=page_id).delete()
+def delete_page(page_id: int, *, user_id: int) -> None:
+    Page.objects.filter(id=page_id, owner_id=user_id).delete()
 
 
 def check_page(page_id: int) -> bool:
@@ -237,12 +247,14 @@ def check_page(page_id: int) -> bool:
     return has_changed
 
 
-def create_question(text: str) -> Question:
-    return Question.objects.create(text=text)
+def create_question(text: str, *, user_id: int) -> Question:
+    return Question.objects.create(text=text, owner_id=user_id)
 
 
-def list_questions(*, max_count: int = 20) -> list[Question]:
-    return list(Question.objects.order_by("-created_at")[:max_count])
+def list_questions(*, user_id: int, max_count: int = 20) -> list[Question]:
+    return list(
+        Question.objects.filter(owner_id=user_id).order_by("-created_at")[:max_count]
+    )
 
 
 def list_categories() -> list[Category]:
@@ -255,9 +267,9 @@ def create_category(name: str) -> Category:
     return Category.objects.create(name=name, emoji=emoji)
 
 
-def delete_question(question_id: int) -> None:
+def delete_question(question_id: int, *, user_id: int) -> None:
     try:
-        question = Question.objects.get(id=question_id)
+        question = Question.objects.get(id=question_id, owner_id=user_id)
     except Question.DoesNotExist:
         return
     if question.pages.exists():
@@ -266,12 +278,17 @@ def delete_question(question_id: int) -> None:
 
 
 @transaction.atomic
-def associate_questions_with_page(page_id: int, question_ids: list[int]) -> None:
+def associate_questions_with_page(
+    page_id: int, question_ids: list[int], *, user_id: int
+) -> None:
     """Replace page's question links. Unknown ids omitted. Empty list clears all."""
-    page = Page.objects.select_for_update().get(id=page_id)
+    page = Page.objects.select_for_update().get(id=page_id, owner_id=user_id)
     existing_ids = (
         list(
-            Question.objects.filter(id__in=question_ids).values_list("id", flat=True)
+            Question.objects.filter(
+                id__in=question_ids,
+                owner_id=user_id,
+            ).values_list("id", flat=True)
         )
         if question_ids
         else []
@@ -279,14 +296,16 @@ def associate_questions_with_page(page_id: int, question_ids: list[int]) -> None
     page.questions.set(existing_ids)
 
 
-def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) -> str:
+def compare_snapshots(
+    page_id: int, question: str, *, user_id: int, use_html: bool = False
+) -> str:
     """Answer a question about the page's snapshots using Gemini.
 
     Uses the two most recent snapshots when both exist; otherwise answers from
     the single latest snapshot only. *use_html* is ignored (kept for API compatibility);
     prompts always use Markdown snapshots.
     """
-    page = get_page(page_id=page_id)
+    page = get_page(page_id=page_id, user_id=user_id)
 
     snapshots = list(page.snapshots.order_by("-created_at")[:2])
     if not snapshots:
@@ -307,13 +326,13 @@ def compare_snapshots(page_id: int, question: str, *, use_html: bool = False) ->
     )
 
 
-def _daily_report_recipient_emails() -> list[str]:
-    """Distinct emails of active users with non-blank *email* (stable by user id)."""
+def _report_recipient_emails_for_user(user_id: int) -> list[str]:
+    """Distinct non-blank emails for *user_id* when user active (order stable)."""
     User = get_user_model()
     ordered: list[str] = []
     seen: set[str] = set()
     qs = (
-        User.objects.filter(is_active=True)
+        User.objects.filter(pk=user_id, is_active=True)
         .exclude(email__isnull=True)
         .exclude(email="")
         .order_by("id")
@@ -330,8 +349,8 @@ def _daily_report_recipient_emails() -> list[str]:
 def run_daily_report_for_page(page_id: int) -> None:
     """Fetch page, answer all linked questions via Gemini, email plain-text report.
 
-    Runs even when content unchanged. Recipients: every active user with a
-    non-blank email. Skips mail when that list is empty.
+    Runs even when content unchanged. Recipients: page owner's non-blank email
+    when owner is active. Skips mail when that list is empty.
     """
     try:
         page = Page.objects.prefetch_related("questions").get(id=page_id)
@@ -351,9 +370,10 @@ def run_daily_report_for_page(page_id: int) -> None:
     page_questions: Sequence[Question] = list(page.questions.all())
 
     qa_lines: list[str] = []
+    owner_id = page.owner_id
     for q in page_questions:
         try:
-            answer = compare_snapshots(page_id, q.text)
+            answer = compare_snapshots(page_id, q.text, user_id=owner_id)
         except Exception as exc:
             qa_lines.append(f"Q: {q.text}\nError: {exc}")
             logger.exception(
@@ -389,10 +409,10 @@ def run_daily_report_for_page(page_id: int) -> None:
 
     body = "\n".join(body_parts)
 
-    recipients = _daily_report_recipient_emails()
+    recipients = _report_recipient_emails_for_user(owner_id)
     if not recipients:
         logger.warning(
-            "Daily report for page id=%s not emailed: no active users with email.",
+            "Daily report for page id=%s not emailed: owner has no email or inactive.",
             page_id,
         )
         return

@@ -1,7 +1,10 @@
 import pytest
+from django.contrib.auth import get_user_model
 
 from pagechecker.models import Category, Page
 from pagechecker.schemas import CreateCategoryResponse, Page as PageSchema
+
+User = get_user_model()
 
 
 def test_create_category_response_only_category_id():
@@ -11,7 +14,11 @@ def test_create_category_response_only_category_id():
 
 @pytest.mark.django_db
 def test_page_schema_category_nested_or_null():
-    bare = Page.objects.create(url="https://example.com/schema-page-bare")
+    owner = User.objects.create_user(username="schema_user", password="pw")
+    bare = Page.objects.create(
+        url="https://example.com/schema-page-bare",
+        owner=owner,
+    )
     out = PageSchema.model_validate(bare)
     assert out.category is None
 
@@ -19,6 +26,7 @@ def test_page_schema_category_nested_or_null():
     linked = Page.objects.create(
         url="https://example.com/schema-page-cat",
         category=cat,
+        owner=owner,
     )
     linked = Page.objects.select_related("category").get(pk=linked.pk)
     out2 = PageSchema.model_validate(linked)

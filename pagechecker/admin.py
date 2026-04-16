@@ -18,7 +18,7 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Question)
 class QuestionAdmin(admin.ModelAdmin):
-    list_display = ("text_preview", "created_at")
+    list_display = ("text_preview", "owner", "created_at")
     list_filter = ("created_at",)
     search_fields = ("text",)
     readonly_fields = ("created_at",)
@@ -31,7 +31,7 @@ class QuestionAdmin(admin.ModelAdmin):
 
 @admin.register(Page)
 class PageAdmin(admin.ModelAdmin):
-    list_display = ("url", "title", "category", "created_at", "last_checked_at")
+    list_display = ("url", "title", "owner", "category", "created_at", "last_checked_at")
     list_filter = ("created_at", "last_checked_at", "category")
     search_fields = ("url", "title")
     readonly_fields = ("created_at",)

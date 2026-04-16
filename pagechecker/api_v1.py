@@ -43,9 +43,18 @@ from pagechecker.schemas import (
 router = Router()
 
 
+def _require_user(request):
+    user = getattr(request, "auth", None)
+    if user is None:
+        raise HttpError(401, "Authentication required.")
+    return user
+
+
 @router.post("/v1.PageChecker.ListPages", response=ListPagesResponse)
 def list_pages(request, payload: ListPagesRequest):
+    user = _require_user(request)
     pages = services.list_pages(
+        user_id=user.pk,
         limit=payload.limit,
         offset=payload.offset,
     )
@@ -54,14 +63,19 @@ def list_pages(request, payload: ListPagesRequest):
 
 @router.post("/v1.PageChecker.GetPage", response=GetPageResponse)
 def get_page(request, payload: GetPageRequest):
-    page = services.get_page(page_id=payload.page_id)
+    user = _require_user(request)
+    try:
+        page = services.get_page(page_id=payload.page_id, user_id=user.pk)
+    except Page.DoesNotExist:
+        raise HttpError(404, "Page not found.") from None
     return GetPageResponse(page=page)
 
 
 @router.post("/v1.PageChecker.CreatePage", response=CreatePageResponse)
 def create_page(request, payload: CreatePageRequest):
+    user = _require_user(request)
     try:
-        page_id = services.create_page(url=payload.url)
+        page_id = services.create_page(url=payload.url, user_id=user.pk)
     except MonitoredUrlNotFoundError as exc:
         raise HttpError(404, str(exc)) from exc
     return CreatePageResponse(page_id=page_id)
@@ -69,13 +83,15 @@ def create_page(request, payload: CreatePageRequest):
 
 @router.post("/v1.PageChecker.CreateQuestion", response=CreateQuestionResponse)
 def create_question(request, payload: CreateQuestionRequest):
-    q = services.create_question(text=payload.text)
+    user = _require_user(request)
+    q = services.create_question(text=payload.text, user_id=user.pk)
     return CreateQuestionResponse(question_id=q.id)
 
 
 @router.post("/v1.PageChecker.ListQuestions", response=ListQuestionsResponse)
 def list_questions(request):
-    questions = services.list_questions()
+    user = _require_user(request)
+    questions = services.list_questions(user_id=user.pk)
     return ListQuestionsResponse(questions=questions)
 
 
@@ -96,8 +112,9 @@ def create_category(request, payload: CreateCategoryRequest):
 
 @router.post("/v1.PageChecker.DeleteQuestion", response=DeleteQuestionResponse)
 def delete_question(request, payload: DeleteQuestionRequest):
+    user = _require_user(request)
     try:
-        services.delete_question(question_id=payload.question_id)
+        services.delete_question(question_id=payload.question_id, user_id=user.pk)
     except QuestionInUseError as exc:
         raise HttpError(409, str(exc)) from exc
     return DeleteQuestionResponse()
@@ -108,10 +125,12 @@ def delete_question(request, payload: DeleteQuestionRequest):
     response=AssociateQuestionsWithPageResponse,
 )
 def associate_questions_with_page(request, payload: AssociateQuestionsWithPageRequest):
+    user = _require_user(request)
     try:
         services.associate_questions_with_page(
             page_id=payload.page_id,
             question_ids=payload.question_ids,
+            user_id=user.pk,
         )
     except ObjectDoesNotExist:
         raise HttpError(404, "Page not found.")
@@ -120,9 +139,11 @@ def associate_questions_with_page(request, payload: AssociateQuestionsWithPageRe
 
 @router.post("/v1.PageChecker.SetPageCategory", response=SetPageCategoryResponse)
 def set_page_category(request, payload: SetPageCategoryRequest):
+    user = _require_user(request)
     try:
         services.set_page_category(
             page_id=payload.page_id,
+            user_id=user.pk,
             category_id=payload.category_id,
         )
     except Page.DoesNotExist:
@@ -135,9 +156,11 @@ def set_page_category(request, payload: SetPageCategoryRequest):
     response=SetPageReportIntervalResponse,
 )
 def set_page_report_interval(request, payload: SetPageReportIntervalRequest):
+    user = _require_user(request)
     try:
         services.set_page_report_interval(
             page_id=payload.page_id,
+            user_id=user.pk,
             report_interval=payload.report_interval,
         )
     except Page.DoesNotExist:
@@ -147,10 +170,12 @@ def set_page_report_interval(request, payload: SetPageReportIntervalRequest):
 
 @router.post("/v1.PageChecker.ChangePageUrl", response=ChangePageUrlResponse)
 def change_page_url(request, payload: ChangePageUrlRequest):
+    user = _require_user(request)
     try:
         services.change_page_url(
             page_id=payload.page_id,
             url=payload.url,
+            user_id=user.pk,
             keep_snapshots=payload.keep_snapshots,
         )
     except Page.DoesNotExist:
@@ -162,12 +187,18 @@ def change_page_url(request, payload: ChangePageUrlRequest):
 
 @router.post("/v1.PageChecker.DeletePage", response=DeletePageResponse)
 def delete_page(request, payload: DeletePageRequest):
-    services.delete_page(page_id=payload.page_id)
+    user = _require_user(request)
+    services.delete_page(page_id=payload.page_id, user_id=user.pk)
     return DeletePageResponse()
 
 
 @router.post("/v1.PageChecker.CheckPage", response=CheckPageResponse)
 def check_page(request, payload: CheckPageRequest):
+    user = _require_user(request)
+    try:
+        services.get_page(page_id=payload.page_id, user_id=user.pk)
+    except Page.DoesNotExist:
+        raise HttpError(404, "Page not found.") from None
     try:
         has_changed = services.check_page(page_id=payload.page_id)
     except MonitoredUrlNotFoundError as exc:
@@ -177,10 +208,12 @@ def check_page(request, payload: CheckPageRequest):
 
 @router.post("/v1.PageChecker.CompareSnapshots", response=CompareSnapshotsResponse)
 def compare_snapshots(request, payload: CompareSnapshotsRequest):
+    user = _require_user(request)
     try:
         answer = services.compare_snapshots(
             page_id=payload.page_id,
             question=payload.question,
+            user_id=user.pk,
             use_html=payload.use_html,
         )
     except ObjectDoesNotExist:
