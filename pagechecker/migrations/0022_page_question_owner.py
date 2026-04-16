@@ -40,6 +40,20 @@ def _assign_question_owners(apps, schema_editor):
     Question.objects.filter(owner_id__isnull=True).update(owner_id=user.pk)
 
 
+def _reassign_migration_owner_to_shelo(apps, schema_editor):
+    """If an older draft migration used *_migration_owner*, move rows to *shelo*."""
+    User = apps.get_model("auth", "User")
+    Page = apps.get_model("pagechecker", "Page")
+    Question = apps.get_model("pagechecker", "Question")
+    old = User.objects.filter(username="_migration_owner").first()
+    shelo = User.objects.filter(username="shelo").first()
+    if old is None or shelo is None or old.pk == shelo.pk:
+        return
+    Page.objects.filter(owner_id=old.pk).update(owner_id=shelo.pk)
+    Question.objects.filter(owner_id=old.pk).update(owner_id=shelo.pk)
+    old.delete()
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -100,5 +114,9 @@ class Migration(migrations.Migration):
                 related_name="questions",
                 to=settings.AUTH_USER_MODEL,
             ),
+        ),
+        migrations.RunPython(
+            _reassign_migration_owner_to_shelo,
+            migrations.RunPython.noop,
         ),
     ]
