@@ -51,7 +51,6 @@ class Page(Schema):
     url: str
     title: str = ""
     icon: str = ""
-    should_report_daily: bool = False
     report_interval: str | None = None
     category: Category | None = None
     created_at: datetime
@@ -107,15 +106,6 @@ class SetPageCategoryRequest(Schema):
 
 
 class SetPageCategoryResponse(Schema):
-    pass
-
-
-class SetPageShouldReportDailyRequest(Schema):
-    page_id: int
-    should_report_daily: bool
-
-
-class SetPageShouldReportDailyResponse(Schema):
     pass
 
 
