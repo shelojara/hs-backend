@@ -6,7 +6,7 @@ from pagechecker import services
 
 
 def enqueue_daily_report_jobs() -> list[int]:
-    """Enqueue one background task per daily-report page."""
+    """Enqueue one background task per page with report_interval DAILY."""
     page_ids = services.page_ids_due_for_scheduled_check()
     for page_id in page_ids:
         async_task(
@@ -18,7 +18,7 @@ def enqueue_daily_report_jobs() -> list[int]:
 
 
 def run_daily_page_check_dispatch() -> list[int]:
-    """Enqueue one background task per daily-report page."""
+    """Enqueue one background task per page with report_interval DAILY."""
     return enqueue_daily_report_jobs()
 
 
