@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from ninja import Schema
 from pydantic import AfterValidator, computed_field
@@ -52,6 +52,7 @@ class Page(Schema):
     title: str = ""
     icon: str = ""
     should_report_daily: bool = False
+    report_interval: str | None = None
     category: Category | None = None
     created_at: datetime
     last_checked_at: datetime | None = None
@@ -115,6 +116,15 @@ class SetPageShouldReportDailyRequest(Schema):
 
 
 class SetPageShouldReportDailyResponse(Schema):
+    pass
+
+
+class SetPageReportIntervalRequest(Schema):
+    page_id: int
+    report_interval: Literal["DAILY", "WEEKLY", "MONTHLY"] | None = None
+
+
+class SetPageReportIntervalResponse(Schema):
     pass
 
 

@@ -22,6 +22,7 @@ from pagechecker.services import (
     run_daily_report_for_page,
     send_daily_reports,
     set_page_category,
+    set_page_report_interval,
     set_page_should_report_daily,
 )
 
@@ -350,6 +351,52 @@ def test_set_page_category_api_updates_category():
     assert resp.status_code == 200
     page.refresh_from_db()
     assert page.category_id == cat.id
+
+
+@pytest.mark.django_db
+def test_set_page_report_interval_api_persists_and_clearable():
+    User.objects.create_user(username="repint", password="secretrep")
+    page = Page.objects.create(url="https://example.com/api-report-interval")
+
+    api_client = Client()
+    login_resp = api_client.post(
+        "/api/v1.Auth.Login",
+        data=json.dumps({"username": "repint", "password": "secretrep"}),
+        content_type="application/json",
+    )
+    assert login_resp.status_code == 200
+    token = login_resp.json()["access_token"]
+
+    resp = api_client.post(
+        "/api/v1.PageChecker.SetPageReportInterval",
+        data=json.dumps({"page_id": page.id, "report_interval": "WEEKLY"}),
+        content_type="application/json",
+        HTTP_AUTHORIZATION=f"Bearer {token}",
+    )
+    assert resp.status_code == 200
+    page.refresh_from_db()
+    assert page.report_interval == "WEEKLY"
+
+    clear = api_client.post(
+        "/api/v1.PageChecker.SetPageReportInterval",
+        data=json.dumps({"page_id": page.id, "report_interval": None}),
+        content_type="application/json",
+        HTTP_AUTHORIZATION=f"Bearer {token}",
+    )
+    assert clear.status_code == 200
+    page.refresh_from_db()
+    assert page.report_interval is None
+
+
+@pytest.mark.django_db
+def test_set_page_report_interval_service():
+    page = Page.objects.create(url="https://example.com/svc-report-interval")
+    set_page_report_interval(page.id, report_interval="MONTHLY")
+    page.refresh_from_db()
+    assert page.report_interval == "MONTHLY"
+    set_page_report_interval(page.id, report_interval=None)
+    page.refresh_from_db()
+    assert page.report_interval is None
 
 
 @pytest.mark.django_db
