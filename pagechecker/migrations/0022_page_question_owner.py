@@ -5,12 +5,12 @@ from django.conf import settings
 from django.db import migrations, models
 
 
-def _ensure_migration_owner(apps, schema_editor):
+def _ensure_shelo_user(apps, schema_editor):
     User = apps.get_model("auth", "User")
-    if User.objects.filter(username="_migration_owner").exists():
+    if User.objects.filter(username="shelo").exists():
         return
     User.objects.create_user(
-        username="_migration_owner",
+        username="shelo",
         email="",
         password="migration-placeholder-not-for-login",
     )
@@ -18,7 +18,7 @@ def _ensure_migration_owner(apps, schema_editor):
 
 def _backfill_owner_user(apps):
     User = apps.get_model("auth", "User")
-    u = User.objects.filter(username="_migration_owner").first()
+    u = User.objects.filter(username="shelo").first()
     if u is not None:
         return u
     return User.objects.order_by("id").first()
@@ -48,7 +48,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(_ensure_migration_owner, migrations.RunPython.noop),
+        migrations.RunPython(_ensure_shelo_user, migrations.RunPython.noop),
         migrations.AddField(
             model_name="page",
             name="owner",
