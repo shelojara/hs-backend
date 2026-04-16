@@ -29,6 +29,18 @@ def enqueue_weekly_report_jobs() -> list[int]:
     return page_ids
 
 
+def enqueue_monthly_report_jobs() -> list[int]:
+    """Enqueue one background task per page with report_interval MONTHLY."""
+    page_ids = services.page_ids_due_for_monthly_scheduled_check()
+    for page_id in page_ids:
+        async_task(
+            "pagechecker.scheduled_tasks.run_scheduled_page_check",
+            page_id,
+            task_name=f"scheduled_monthly_page_check:{page_id}",
+        )
+    return page_ids
+
+
 def run_daily_page_check_dispatch() -> list[int]:
     """Enqueue one background task per page with report_interval DAILY."""
     return enqueue_daily_report_jobs()
@@ -37,6 +49,11 @@ def run_daily_page_check_dispatch() -> list[int]:
 def run_weekly_page_check_dispatch() -> list[int]:
     """Enqueue one background task per page with report_interval WEEKLY."""
     return enqueue_weekly_report_jobs()
+
+
+def run_monthly_page_check_dispatch() -> list[int]:
+    """Enqueue one background task per page with report_interval MONTHLY."""
+    return enqueue_monthly_report_jobs()
 
 
 def run_scheduled_page_check(page_id: int) -> None:

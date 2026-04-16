@@ -19,6 +19,7 @@ from pagechecker.services import (
     list_pages,
     run_daily_report_for_page,
     send_daily_reports,
+    send_monthly_reports,
     send_weekly_reports,
     set_page_category,
     set_page_report_interval,
@@ -362,6 +363,14 @@ def test_send_daily_reports_delegates_to_enqueue(mock_enqueue):
 def test_send_weekly_reports_delegates_to_enqueue(mock_enqueue):
     mock_enqueue.return_value = [3, 4]
     assert send_weekly_reports() == [3, 4]
+    mock_enqueue.assert_called_once_with()
+
+
+@pytest.mark.django_db
+@patch("pagechecker.scheduled_tasks.enqueue_monthly_report_jobs")
+def test_send_monthly_reports_delegates_to_enqueue(mock_enqueue):
+    mock_enqueue.return_value = [1, 2]
+    assert send_monthly_reports() == [1, 2]
     mock_enqueue.assert_called_once_with()
 
 
