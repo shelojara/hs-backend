@@ -1,6 +1,12 @@
 from django.db import models
 
 
+class ReportInterval(models.TextChoices):
+    DAILY = "DAILY", "Daily"
+    WEEKLY = "WEEKLY", "Weekly"
+    MONTHLY = "MONTHLY", "Monthly"
+
+
 class Snapshot(models.Model):
     page = models.ForeignKey("Page", on_delete=models.CASCADE, related_name="snapshots")
 
@@ -58,6 +64,13 @@ class Page(models.Model):
     last_checked_at = models.DateTimeField(null=True)
 
     should_report_daily = models.BooleanField(default=False)
+
+    report_interval = models.CharField(
+        max_length=16,
+        choices=ReportInterval.choices,
+        null=True,
+        blank=True,
+    )
 
     def __str__(self):
         return self.url
