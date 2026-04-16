@@ -26,7 +26,7 @@ SECRET_KEY = "django-insecure-l&r26ru+8b%9p%fq(u&i_lip!7=l4)72$js=r4)min=1l==mxu
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["api.yukiclaire.xyz", "localhost"]
+ALLOWED_HOSTS = ["api.yukiclaire.xyz", "api.yukiclaire.cl", "localhost"]
 
 
 def _csrf_trusted_origins() -> list[str]:
