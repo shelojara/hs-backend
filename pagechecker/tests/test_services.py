@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -7,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client
 from django.utils import timezone
 
-from pagechecker.models import Category, Page, Question, Snapshot
+from pagechecker.models import Category, Page, Question, ReportInterval, Snapshot
 from pagechecker.services import (
     MonitoredUrlNotFoundError,
     QuestionInUseError,
@@ -19,9 +20,11 @@ from pagechecker.services import (
     delete_question,
     list_categories,
     list_pages,
+    page_ids_due_for_scheduled_check,
     run_daily_report_for_page,
     send_daily_reports,
     set_page_category,
+    set_page_report_interval,
     set_page_should_report_daily,
 )
 
@@ -261,7 +264,154 @@ def test_set_page_should_report_daily_updates_flag_only(mock_check):
     set_page_should_report_daily(page.id, should_report_daily=True)
     page.refresh_from_db()
     assert page.should_report_daily is True
+    assert page.report_interval == ReportInterval.DAILY
     mock_check.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.check_page")
+def test_set_page_should_report_daily_false_clears_daily_interval(mock_check):
+    page = Page.objects.create(
+        url="https://example.com/daily-off",
+        should_report_daily=True,
+        report_interval=ReportInterval.DAILY,
+    )
+    set_page_should_report_daily(page.id, should_report_daily=False)
+    page.refresh_from_db()
+    assert page.should_report_daily is False
+    assert page.report_interval is None
+    mock_check.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.check_page")
+def test_set_page_should_report_daily_false_keeps_non_daily_interval(mock_check):
+    page = Page.objects.create(
+        url="https://example.com/weekly-legacy",
+        should_report_daily=False,
+        report_interval=ReportInterval.WEEKLY,
+    )
+    set_page_should_report_daily(page.id, should_report_daily=False)
+    page.refresh_from_db()
+    assert page.report_interval == ReportInterval.WEEKLY
+    mock_check.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.check_page")
+def test_set_page_report_interval_weekly(mock_check):
+    page = Page.objects.create(
+        url="https://example.com/rp-weekly",
+        should_report_daily=True,
+        report_interval=ReportInterval.DAILY,
+    )
+    set_page_report_interval(page.id, report_interval=ReportInterval.WEEKLY)
+    page.refresh_from_db()
+    assert page.report_interval == ReportInterval.WEEKLY
+    assert page.should_report_daily is False
+    mock_check.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.check_page")
+def test_set_page_report_interval_none_clears(mock_check):
+    page = Page.objects.create(
+        url="https://example.com/rp-none",
+        should_report_daily=True,
+        report_interval=ReportInterval.DAILY,
+    )
+    set_page_report_interval(page.id, report_interval=None)
+    page.refresh_from_db()
+    assert page.report_interval is None
+    assert page.should_report_daily is False
+    mock_check.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_set_page_report_interval_invalid_raises():
+    page = Page.objects.create(url="https://example.com/rp-bad")
+    with pytest.raises(ValueError, match="report_interval"):
+        set_page_report_interval(page.id, report_interval="YEARLY")
+
+
+@pytest.mark.django_db
+def test_page_ids_due_respects_weekly_last_run():
+    now = timezone.now()
+    recent = Page.objects.create(
+        url="https://example.com/wk-recent",
+        should_report_daily=False,
+        report_interval=ReportInterval.WEEKLY,
+        last_scheduled_report_at=now - timedelta(days=3),
+    )
+    old = Page.objects.create(
+        url="https://example.com/wk-old",
+        should_report_daily=False,
+        report_interval=ReportInterval.WEEKLY,
+        last_scheduled_report_at=now - timedelta(days=8),
+    )
+    never = Page.objects.create(
+        url="https://example.com/wk-never",
+        should_report_daily=False,
+        report_interval=ReportInterval.WEEKLY,
+        last_scheduled_report_at=None,
+    )
+    ids = page_ids_due_for_scheduled_check()
+    assert recent.id not in ids
+    assert old.id in ids
+    assert never.id in ids
+
+
+@pytest.mark.django_db
+def test_page_ids_due_legacy_flag_without_report_interval_row():
+    """Pre-backfill shape: only boolean; effective interval still DAILY."""
+    p = Page.objects.create(
+        url="https://example.com/legacy-daily",
+        should_report_daily=True,
+    )
+    Page.objects.filter(id=p.id).update(report_interval=None)
+    p.refresh_from_db()
+    assert p.report_interval is None
+    assert p.id in page_ids_due_for_scheduled_check()
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.send_email_via_gmail")
+@patch("pagechecker.services.compare_snapshots")
+@patch("pagechecker.services.check_page")
+def test_run_daily_report_sets_last_scheduled_when_no_recipients(
+    mock_check, mock_compare, mock_send,
+):
+    User.objects.create_user(username="no_mail2", password="pw", email="")
+    page = Page.objects.create(url="https://example.com/latch-no-rcpt")
+    mock_check.return_value = False
+
+    run_daily_report_for_page(page.id)
+
+    mock_send.assert_not_called()
+    page.refresh_from_db()
+    assert page.last_scheduled_report_at is not None
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.send_email_via_gmail")
+@patch("pagechecker.services.compare_snapshots")
+@patch("pagechecker.services.check_page")
+def test_run_daily_report_sets_last_scheduled_after_email(
+    mock_check, mock_compare, mock_send,
+):
+    User.objects.create_user(
+        username="has_mail",
+        password="pw",
+        email="z@example.com",
+    )
+    page = Page.objects.create(url="https://example.com/latch-mail")
+    mock_check.return_value = False
+
+    run_daily_report_for_page(page.id)
+
+    mock_send.assert_called_once()
+    page.refresh_from_db()
+    assert page.last_scheduled_report_at is not None
 
 
 @pytest.mark.django_db
@@ -324,6 +474,35 @@ def test_check_page_raises_monitored_url_not_found_on_http_404():
             check_page(page.id)
     assert "404" in str(exc_info.value)
     assert "Not Found" in str(exc_info.value)
+
+
+@pytest.mark.django_db
+def test_set_page_report_interval_api_updates_page():
+    User.objects.create_user(username="rpi_user", password="secret")
+    page = Page.objects.create(
+        url="https://example.com/rpi",
+        should_report_daily=True,
+        report_interval=ReportInterval.DAILY,
+    )
+    api_client = Client()
+    login_resp = api_client.post(
+        "/api/v1.Auth.Login",
+        data=json.dumps({"username": "rpi_user", "password": "secret"}),
+        content_type="application/json",
+    )
+    assert login_resp.status_code == 200
+    token = login_resp.json()["access_token"]
+
+    resp = api_client.post(
+        "/api/v1.PageChecker.SetPageReportInterval",
+        data=json.dumps({"page_id": page.id, "report_interval": "WEEKLY"}),
+        content_type="application/json",
+        HTTP_AUTHORIZATION=f"Bearer {token}",
+    )
+    assert resp.status_code == 200
+    page.refresh_from_db()
+    assert page.report_interval == ReportInterval.WEEKLY
+    assert page.should_report_daily is False
 
 
 @pytest.mark.django_db

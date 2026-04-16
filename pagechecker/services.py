@@ -1,9 +1,11 @@
 import logging
 from collections.abc import Sequence
+from datetime import timedelta
 
 import httpx
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from backend.email_services import send_email_via_gmail
@@ -13,18 +15,59 @@ from pagechecker.html_utils import (
     extract_metadata,
     html_to_markdown,
 )
-from pagechecker.models import Category, Page, Question, Snapshot
+from pagechecker.models import Category, Page, Question, ReportInterval, Snapshot
 
 logger = logging.getLogger(__name__)
 
 
+def _effective_report_interval(page: Page) -> str | None:
+    """Interval for scheduled reports; legacy *should_report_daily* implies DAILY."""
+    if page.report_interval:
+        return str(page.report_interval)
+    if page.should_report_daily:
+        return ReportInterval.DAILY
+    return None
+
+
+def _page_due_for_scheduled_report(
+    now,
+    *,
+    interval: str,
+    last_at,
+) -> bool:
+    if interval == ReportInterval.DAILY:
+        return True
+    if last_at is None:
+        return True
+    if interval == ReportInterval.WEEKLY:
+        return now - last_at >= timedelta(days=7)
+    if interval == ReportInterval.MONTHLY:
+        return now - last_at >= timedelta(days=30)
+    return False
+
+
 def page_ids_due_for_scheduled_check() -> list[int]:
-    """All pages with *should_report_daily* (for daily scheduled dispatch)."""
-    return list(
-        Page.objects.filter(should_report_daily=True)
+    """Page ids due for scheduled report run (daily cron; weekly/monthly gated by last run)."""
+    now = timezone.now()
+    out: list[int] = []
+    qs = (
+        Page.objects.filter(
+            Q(should_report_daily=True) | Q(report_interval__isnull=False)
+        )
         .order_by("id")
-        .values_list("id", flat=True)
+        .only("id", "should_report_daily", "report_interval", "last_scheduled_report_at")
     )
+    for page in qs:
+        interval = _effective_report_interval(page)
+        if interval is None:
+            continue
+        if _page_due_for_scheduled_report(
+            now,
+            interval=interval,
+            last_at=page.last_scheduled_report_at,
+        ):
+            out.append(page.id)
+    return out
 
 
 def send_daily_reports() -> list[int]:
@@ -161,10 +204,40 @@ def set_page_category(page_id: int, *, category_id: int | None = None) -> None:
 
 @transaction.atomic
 def set_page_should_report_daily(page_id: int, *, should_report_daily: bool) -> None:
-    """Set daily-report flag only; leaves category and other fields unchanged."""
+    """Set legacy daily flag; keeps *report_interval* in sync for scheduling."""
     page = Page.objects.select_for_update().get(id=page_id)
     page.should_report_daily = should_report_daily
-    page.save(update_fields=["should_report_daily"])
+    fields = ["should_report_daily"]
+    if should_report_daily:
+        page.report_interval = ReportInterval.DAILY
+        fields.append("report_interval")
+    elif page.report_interval == ReportInterval.DAILY:
+        page.report_interval = None
+        fields.append("report_interval")
+    page.save(update_fields=fields)
+
+
+@transaction.atomic
+def set_page_report_interval(
+    page_id: int,
+    *,
+    report_interval: str | None,
+) -> None:
+    """Set nullable report interval; syncs legacy *should_report_daily* when DAILY or off."""
+    if report_interval is not None and report_interval not in ReportInterval.values:
+        msg = "report_interval must be DAILY, WEEKLY, MONTHLY, or null."
+        raise ValueError(msg)
+    page = Page.objects.select_for_update().get(id=page_id)
+    page.report_interval = report_interval
+    if report_interval == ReportInterval.DAILY:
+        page.should_report_daily = True
+    elif report_interval is None:
+        page.should_report_daily = False
+    else:
+        page.should_report_daily = False
+    page.save(
+        update_fields=["report_interval", "should_report_daily"],
+    )
 
 
 def delete_page(page_id: int) -> None:
@@ -359,6 +432,7 @@ def run_daily_report_for_page(page_id: int) -> None:
             "Daily report for page id=%s not emailed: no active users with email.",
             page_id,
         )
+        Page.objects.filter(id=page_id).update(last_scheduled_report_at=timezone.now())
         return
 
     label = page.title.strip() or page.url
@@ -368,3 +442,4 @@ def run_daily_report_for_page(page_id: int) -> None:
         send_email_via_gmail(to_addrs=recipients, subject=subject, body=body)
     except Exception:
         logger.exception("Daily report email send failed for page id=%s", page_id)
+    Page.objects.filter(id=page_id).update(last_scheduled_report_at=timezone.now())

@@ -38,6 +38,8 @@ from pagechecker.schemas import (
     SetPageCategoryResponse,
     SetPageShouldReportDailyRequest,
     SetPageShouldReportDailyResponse,
+    SetPageReportIntervalRequest,
+    SetPageReportIntervalResponse,
 )
 
 router = Router()
@@ -143,6 +145,23 @@ def set_page_should_report_daily(request, payload: SetPageShouldReportDailyReque
     except Page.DoesNotExist:
         raise HttpError(404, "Page not found.")
     return SetPageShouldReportDailyResponse()
+
+
+@router.post(
+    "/v1.PageChecker.SetPageReportInterval",
+    response=SetPageReportIntervalResponse,
+)
+def set_page_report_interval(request, payload: SetPageReportIntervalRequest):
+    try:
+        services.set_page_report_interval(
+            page_id=payload.page_id,
+            report_interval=payload.report_interval,
+        )
+    except Page.DoesNotExist:
+        raise HttpError(404, "Page not found.") from None
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return SetPageReportIntervalResponse()
 
 
 @router.post("/v1.PageChecker.ChangePageUrl", response=ChangePageUrlResponse)
