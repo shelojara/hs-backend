@@ -13,22 +13,22 @@ from pagechecker.html_utils import (
     extract_metadata,
     html_to_markdown,
 )
-from pagechecker.models import Category, Page, Question, Snapshot
+from pagechecker.models import Category, Page, Question, ReportInterval, Snapshot
 
 logger = logging.getLogger(__name__)
 
 
 def page_ids_due_for_scheduled_check() -> list[int]:
-    """All pages with *should_report_daily* (for daily scheduled dispatch)."""
+    """All pages with *report_interval* DAILY (for daily scheduled dispatch)."""
     return list(
-        Page.objects.filter(should_report_daily=True)
+        Page.objects.filter(report_interval=ReportInterval.DAILY)
         .order_by("id")
         .values_list("id", flat=True)
     )
 
 
 def send_daily_reports() -> list[int]:
-    """Enqueue daily-report jobs for all *should_report_daily* pages."""
+    """Enqueue daily-report jobs for all pages with *report_interval* DAILY."""
     from pagechecker import scheduled_tasks
 
     return scheduled_tasks.enqueue_daily_report_jobs()

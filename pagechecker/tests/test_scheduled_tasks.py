@@ -4,7 +4,7 @@ import pytest
 from django.test import override_settings
 from django_q.models import Schedule
 
-from pagechecker.models import Page
+from pagechecker.models import Page, ReportInterval
 from pagechecker.scheduled_tasks import (
     enqueue_daily_report_jobs,
     run_daily_page_check_dispatch,
@@ -14,22 +14,34 @@ from pagechecker.services import page_ids_due_for_scheduled_check
 
 
 @pytest.mark.django_db
-def test_page_ids_due_for_scheduled_check_all_daily_flag_pages():
+def test_page_ids_due_for_scheduled_check_daily_interval_only():
     p_a = Page.objects.create(
         url="https://example.com/daily-a",
-        should_report_daily=True,
+        report_interval=ReportInterval.DAILY,
     )
     p_b = Page.objects.create(
         url="https://example.com/daily-b",
+        report_interval=ReportInterval.DAILY,
+    )
+    p_flag_only = Page.objects.create(
+        url="https://example.com/flag-no-interval",
         should_report_daily=True,
+        report_interval=None,
+    )
+    p_weekly = Page.objects.create(
+        url="https://example.com/weekly",
+        should_report_daily=True,
+        report_interval=ReportInterval.WEEKLY,
     )
     p_off = Page.objects.create(
         url="https://example.com/no-daily",
-        should_report_daily=False,
+        report_interval=None,
     )
 
     ids = page_ids_due_for_scheduled_check()
     assert set(ids) == {p_a.id, p_b.id}
+    assert p_flag_only.id not in ids
+    assert p_weekly.id not in ids
     assert p_off.id not in ids
 
 
@@ -38,12 +50,12 @@ def test_page_ids_due_for_scheduled_check_all_daily_flag_pages():
 def test_run_daily_page_check_dispatch_enqueues_per_page(mock_async):
     p1 = Page.objects.create(
         url="https://example.com/dispatch-a",
-        should_report_daily=True,
+        report_interval=ReportInterval.DAILY,
         last_checked_at=None,
     )
     p2 = Page.objects.create(
         url="https://example.com/dispatch-b",
-        should_report_daily=True,
+        report_interval=ReportInterval.DAILY,
         last_checked_at=None,
     )
 
@@ -80,7 +92,7 @@ def test_daily_dispatcher_schedule_cron_9am_santiago():
 def test_enqueue_daily_report_jobs_enqueues_regardless_of_time_zone(mock_async):
     p = Page.objects.create(
         url="https://example.com/daily-any-tz",
-        should_report_daily=True,
+        report_interval=ReportInterval.DAILY,
     )
     out = enqueue_daily_report_jobs()
     assert out == [p.id]
@@ -97,7 +109,7 @@ def test_enqueue_daily_report_jobs_enqueues_regardless_of_time_zone(mock_async):
 def test_run_daily_page_check_dispatch_enqueues_regardless_of_time_zone(mock_async):
     p = Page.objects.create(
         url="https://example.com/dispatch-any-tz",
-        should_report_daily=True,
+        report_interval=ReportInterval.DAILY,
     )
     assert run_daily_page_check_dispatch() == [p.id]
     mock_async.assert_called_once_with(
