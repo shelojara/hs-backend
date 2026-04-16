@@ -2,6 +2,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from ninja import Router
 from ninja.errors import HttpError
 
+from auth.security import jwt_access_bearer
 from backend.email_services import send_email_via_gmail
 from pagechecker import services
 from pagechecker.services import MonitoredUrlNotFoundError, QuestionInUseError
@@ -40,19 +41,12 @@ from pagechecker.schemas import (
     SetPageReportIntervalResponse,
 )
 
-router = Router()
-
-
-def _require_user(request):
-    user = getattr(request, "auth", None)
-    if user is None:
-        raise HttpError(401, "Authentication required.")
-    return user
+router = Router(auth=jwt_access_bearer)
 
 
 @router.post("/v1.PageChecker.ListPages", response=ListPagesResponse)
 def list_pages(request, payload: ListPagesRequest):
-    user = _require_user(request)
+    user = request.auth
     pages = services.list_pages(
         user_id=user.pk,
         limit=payload.limit,
@@ -63,7 +57,7 @@ def list_pages(request, payload: ListPagesRequest):
 
 @router.post("/v1.PageChecker.GetPage", response=GetPageResponse)
 def get_page(request, payload: GetPageRequest):
-    user = _require_user(request)
+    user = request.auth
     try:
         page = services.get_page(page_id=payload.page_id, user_id=user.pk)
     except Page.DoesNotExist:
@@ -73,7 +67,7 @@ def get_page(request, payload: GetPageRequest):
 
 @router.post("/v1.PageChecker.CreatePage", response=CreatePageResponse)
 def create_page(request, payload: CreatePageRequest):
-    user = _require_user(request)
+    user = request.auth
     try:
         page_id = services.create_page(url=payload.url, user_id=user.pk)
     except MonitoredUrlNotFoundError as exc:
@@ -83,25 +77,33 @@ def create_page(request, payload: CreatePageRequest):
 
 @router.post("/v1.PageChecker.CreateQuestion", response=CreateQuestionResponse)
 def create_question(request, payload: CreateQuestionRequest):
-    user = _require_user(request)
+    user = request.auth
     q = services.create_question(text=payload.text, user_id=user.pk)
     return CreateQuestionResponse(question_id=q.id)
 
 
 @router.post("/v1.PageChecker.ListQuestions", response=ListQuestionsResponse)
 def list_questions(request):
-    user = _require_user(request)
+    user = request.auth
     questions = services.list_questions(user_id=user.pk)
     return ListQuestionsResponse(questions=questions)
 
 
-@router.post("/v1.PageChecker.ListCategories", response=ListCategoriesResponse)
+@router.post(
+    "/v1.PageChecker.ListCategories",
+    response=ListCategoriesResponse,
+    auth=None,
+)
 def list_categories(request):
     categories = services.list_categories()
     return ListCategoriesResponse(categories=categories)
 
 
-@router.post("/v1.PageChecker.CreateCategory", response=CreateCategoryResponse)
+@router.post(
+    "/v1.PageChecker.CreateCategory",
+    response=CreateCategoryResponse,
+    auth=None,
+)
 def create_category(request, payload: CreateCategoryRequest):
     try:
         cat = services.create_category(name=payload.name)
@@ -112,7 +114,7 @@ def create_category(request, payload: CreateCategoryRequest):
 
 @router.post("/v1.PageChecker.DeleteQuestion", response=DeleteQuestionResponse)
 def delete_question(request, payload: DeleteQuestionRequest):
-    user = _require_user(request)
+    user = request.auth
     try:
         services.delete_question(question_id=payload.question_id, user_id=user.pk)
     except QuestionInUseError as exc:
@@ -125,7 +127,7 @@ def delete_question(request, payload: DeleteQuestionRequest):
     response=AssociateQuestionsWithPageResponse,
 )
 def associate_questions_with_page(request, payload: AssociateQuestionsWithPageRequest):
-    user = _require_user(request)
+    user = request.auth
     try:
         services.associate_questions_with_page(
             page_id=payload.page_id,
@@ -139,7 +141,7 @@ def associate_questions_with_page(request, payload: AssociateQuestionsWithPageRe
 
 @router.post("/v1.PageChecker.SetPageCategory", response=SetPageCategoryResponse)
 def set_page_category(request, payload: SetPageCategoryRequest):
-    user = _require_user(request)
+    user = request.auth
     try:
         services.set_page_category(
             page_id=payload.page_id,
@@ -156,7 +158,7 @@ def set_page_category(request, payload: SetPageCategoryRequest):
     response=SetPageReportIntervalResponse,
 )
 def set_page_report_interval(request, payload: SetPageReportIntervalRequest):
-    user = _require_user(request)
+    user = request.auth
     try:
         services.set_page_report_interval(
             page_id=payload.page_id,
@@ -170,7 +172,7 @@ def set_page_report_interval(request, payload: SetPageReportIntervalRequest):
 
 @router.post("/v1.PageChecker.ChangePageUrl", response=ChangePageUrlResponse)
 def change_page_url(request, payload: ChangePageUrlRequest):
-    user = _require_user(request)
+    user = request.auth
     try:
         services.change_page_url(
             page_id=payload.page_id,
@@ -187,14 +189,14 @@ def change_page_url(request, payload: ChangePageUrlRequest):
 
 @router.post("/v1.PageChecker.DeletePage", response=DeletePageResponse)
 def delete_page(request, payload: DeletePageRequest):
-    user = _require_user(request)
+    user = request.auth
     services.delete_page(page_id=payload.page_id, user_id=user.pk)
     return DeletePageResponse()
 
 
 @router.post("/v1.PageChecker.CheckPage", response=CheckPageResponse)
 def check_page(request, payload: CheckPageRequest):
-    user = _require_user(request)
+    user = request.auth
     try:
         services.get_page(page_id=payload.page_id, user_id=user.pk)
     except Page.DoesNotExist:
@@ -208,7 +210,7 @@ def check_page(request, payload: CheckPageRequest):
 
 @router.post("/v1.PageChecker.CompareSnapshots", response=CompareSnapshotsResponse)
 def compare_snapshots(request, payload: CompareSnapshotsRequest):
-    user = _require_user(request)
+    user = request.auth
     try:
         answer = services.compare_snapshots(
             page_id=payload.page_id,
@@ -225,7 +227,11 @@ def compare_snapshots(request, payload: CompareSnapshotsRequest):
     return CompareSnapshotsResponse(answer=answer)
 
 
-@router.post("/v1.PageChecker.SendTestEmail", response=SendTestEmailResponse)
+@router.post(
+    "/v1.PageChecker.SendTestEmail",
+    response=SendTestEmailResponse,
+    auth=None,
+)
 def send_test_email(request, payload: SendTestEmailRequest):
     """Temporary: sends one plain-text message via configured Gmail SMTP."""
     try:
@@ -241,7 +247,11 @@ def send_test_email(request, payload: SendTestEmailRequest):
     return SendTestEmailResponse()
 
 
-@router.post("/v1.PageChecker.SendDailyReports", response=SendDailyReportsResponse)
+@router.post(
+    "/v1.PageChecker.SendDailyReports",
+    response=SendDailyReportsResponse,
+    auth=None,
+)
 def send_daily_reports(request):
     enqueued_page_ids = services.send_daily_reports()
     return SendDailyReportsResponse(enqueued_page_ids=enqueued_page_ids)

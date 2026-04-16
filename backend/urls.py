@@ -19,12 +19,10 @@ from django.contrib import admin
 from django.urls import path
 from ninja import NinjaAPI
 
-from auth.security import jwt_access_bearer
-
 api = NinjaAPI()
 
 api.add_router("", "auth.api_v1.router")
-api.add_router("", "pagechecker.api_v1.router", auth=jwt_access_bearer)
+api.add_router("", "pagechecker.api_v1.router")
 
 
 urlpatterns = [
