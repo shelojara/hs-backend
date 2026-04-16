@@ -219,11 +219,7 @@ def compare_snapshots(request, payload: CompareSnapshotsRequest):
     return CompareSnapshotsResponse(answer=answer)
 
 
-@router.post(
-    "/v1.PageChecker.SendTestEmail",
-    response=SendTestEmailResponse,
-    auth=None,
-)
+@router.post("/v1.PageChecker.SendTestEmail", response=SendTestEmailResponse)
 def send_test_email(request, payload: SendTestEmailRequest):
     """Temporary: sends one plain-text message via configured Gmail SMTP."""
     try:
@@ -239,11 +235,7 @@ def send_test_email(request, payload: SendTestEmailRequest):
     return SendTestEmailResponse()
 
 
-@router.post(
-    "/v1.PageChecker.SendDailyReports",
-    response=SendDailyReportsResponse,
-    auth=None,
-)
+@router.post("/v1.PageChecker.SendDailyReports", response=SendDailyReportsResponse)
 def send_daily_reports(request):
     enqueued_page_ids = services.send_daily_reports()
     return SendDailyReportsResponse(enqueued_page_ids=enqueued_page_ids)
