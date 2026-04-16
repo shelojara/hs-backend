@@ -27,11 +27,27 @@ def page_ids_due_for_scheduled_check() -> list[int]:
     )
 
 
+def page_ids_due_for_weekly_scheduled_check() -> list[int]:
+    """All pages with *report_interval* WEEKLY (for weekly scheduled dispatch)."""
+    return list(
+        Page.objects.filter(report_interval=ReportInterval.WEEKLY)
+        .order_by("id")
+        .values_list("id", flat=True)
+    )
+
+
 def send_daily_reports() -> list[int]:
     """Enqueue daily-report jobs for all pages with *report_interval* DAILY."""
     from pagechecker import scheduled_tasks
 
     return scheduled_tasks.enqueue_daily_report_jobs()
+
+
+def send_weekly_reports() -> list[int]:
+    """Enqueue weekly-report jobs for all pages with *report_interval* WEEKLY."""
+    from pagechecker import scheduled_tasks
+
+    return scheduled_tasks.enqueue_weekly_report_jobs()
 
 
 class MonitoredUrlNotFoundError(Exception):
