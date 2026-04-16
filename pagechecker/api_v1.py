@@ -89,21 +89,13 @@ def list_questions(request):
     return ListQuestionsResponse(questions=questions)
 
 
-@router.post(
-    "/v1.PageChecker.ListCategories",
-    response=ListCategoriesResponse,
-    auth=None,
-)
+@router.post("/v1.PageChecker.ListCategories", response=ListCategoriesResponse)
 def list_categories(request):
     categories = services.list_categories()
     return ListCategoriesResponse(categories=categories)
 
 
-@router.post(
-    "/v1.PageChecker.CreateCategory",
-    response=CreateCategoryResponse,
-    auth=None,
-)
+@router.post("/v1.PageChecker.CreateCategory", response=CreateCategoryResponse)
 def create_category(request, payload: CreateCategoryRequest):
     try:
         cat = services.create_category(name=payload.name)
