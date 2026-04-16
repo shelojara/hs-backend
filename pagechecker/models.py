@@ -71,7 +71,6 @@ class Page(models.Model):
         null=True,
         blank=True,
     )
-    last_scheduled_report_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return self.url

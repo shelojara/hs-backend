@@ -34,18 +34,6 @@ def test_page_ids_due_for_scheduled_check_all_daily_flag_pages():
 
 
 @pytest.mark.django_db
-def test_page_ids_due_includes_weekly_interval_pages():
-    from pagechecker.models import ReportInterval
-
-    p = Page.objects.create(
-        url="https://example.com/weekly-dispatch",
-        should_report_daily=False,
-        report_interval=ReportInterval.WEEKLY,
-    )
-    assert p.id in page_ids_due_for_scheduled_check()
-
-
-@pytest.mark.django_db
 @patch("pagechecker.scheduled_tasks.async_task")
 def test_run_daily_page_check_dispatch_enqueues_per_page(mock_async):
     p1 = Page.objects.create(

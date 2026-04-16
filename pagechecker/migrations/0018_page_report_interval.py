@@ -1,4 +1,4 @@
-# Nullable report_interval + last_scheduled_report_at; backfill daily flag to DAILY.
+# Nullable report_interval; backfill daily flag to DAILY.
 
 from django.db import migrations, models
 
@@ -10,7 +10,7 @@ def backfill_daily_report_interval(apps, schema_editor):
 
 def reverse_clear_report_interval(apps, schema_editor):
     Page = apps.get_model("pagechecker", "Page")
-    Page.objects.all().update(report_interval=None, last_scheduled_report_at=None)
+    Page.objects.all().update(report_interval=None)
 
 
 class Migration(migrations.Migration):
@@ -32,11 +32,6 @@ class Migration(migrations.Migration):
                 max_length=16,
                 null=True,
             ),
-        ),
-        migrations.AddField(
-            model_name="page",
-            name="last_scheduled_report_at",
-            field=models.DateTimeField(blank=True, null=True),
         ),
         migrations.RunPython(backfill_daily_report_interval, reverse_clear_report_interval),
     ]
