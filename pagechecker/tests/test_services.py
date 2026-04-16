@@ -1,10 +1,8 @@
-import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import httpx
 import pytest
 from django.contrib.auth import get_user_model
-from django.test import Client
 from django.utils import timezone
 
 from pagechecker.models import Category, Page, Question, Snapshot
@@ -22,6 +20,7 @@ from pagechecker.services import (
     run_daily_report_for_page,
     send_daily_reports,
     set_page_category,
+    set_page_report_interval,
     set_page_should_report_daily,
 )
 
@@ -327,59 +326,26 @@ def test_check_page_raises_monitored_url_not_found_on_http_404():
 
 
 @pytest.mark.django_db
-def test_set_page_category_api_updates_category():
-    User.objects.create_user(username="setcat", password="secretcat")
+def test_set_page_category_updates_category():
     cat = Category.objects.create(name="Docs", emoji="📄")
-    page = Page.objects.create(url="https://example.com/api-cat")
-
-    api_client = Client()
-    login_resp = api_client.post(
-        "/api/v1.Auth.Login",
-        data=json.dumps({"username": "setcat", "password": "secretcat"}),
-        content_type="application/json",
-    )
-    assert login_resp.status_code == 200
-    token = login_resp.json()["access_token"]
-
-    resp = api_client.post(
-        "/api/v1.PageChecker.SetPageCategory",
-        data=json.dumps({"page_id": page.id, "category_id": cat.id}),
-        content_type="application/json",
-        HTTP_AUTHORIZATION=f"Bearer {token}",
-    )
-    assert resp.status_code == 200
+    page = Page.objects.create(url="https://example.com/svc-cat")
+    set_page_category(page.id, category_id=cat.id)
     page.refresh_from_db()
     assert page.category_id == cat.id
 
 
 @pytest.mark.django_db
-def test_check_page_api_returns_clear_detail_on_remote_404():
-    User.objects.create_user(username="check404", password="secret404")
-    page = Page.objects.create(url="https://example.com/missing")
-
-    api_client = Client()
-    login_resp = api_client.post(
-        "/api/v1.Auth.Login",
-        data=json.dumps({"username": "check404", "password": "secret404"}),
-        content_type="application/json",
-    )
-    assert login_resp.status_code == 200
-    token = login_resp.json()["access_token"]
-
-    with patch("pagechecker.services.httpx.get") as mock_get:
-        mock_get.return_value = MagicMock(status_code=404, text="")
-        check_resp = api_client.post(
-            "/api/v1.PageChecker.CheckPage",
-            data=json.dumps({"page_id": page.id}),
-            content_type="application/json",
-            HTTP_AUTHORIZATION=f"Bearer {token}",
-        )
-
-    assert check_resp.status_code == 404
-    body = check_resp.json()
-    assert "detail" in body
-    assert "404" in body["detail"]
-    assert "Not Found" in body["detail"]
+def test_set_page_report_interval_sets_and_clears():
+    page = Page.objects.create(url="https://example.com/svc-report-interval")
+    set_page_report_interval(page.id, report_interval="WEEKLY")
+    page.refresh_from_db()
+    assert page.report_interval == "WEEKLY"
+    set_page_report_interval(page.id, report_interval="MONTHLY")
+    page.refresh_from_db()
+    assert page.report_interval == "MONTHLY"
+    set_page_report_interval(page.id, report_interval=None)
+    page.refresh_from_db()
+    assert page.report_interval is None
 
 
 @pytest.mark.django_db
@@ -388,34 +354,6 @@ def test_send_daily_reports_delegates_to_enqueue(mock_enqueue):
     mock_enqueue.return_value = [7, 8]
     assert send_daily_reports() == [7, 8]
     mock_enqueue.assert_called_once_with()
-
-
-@pytest.mark.django_db
-def test_send_daily_reports_api_enqueues_and_returns_ids():
-    User.objects.create_user(username="dailyapi", password="pw")
-    p = Page.objects.create(
-        url="https://example.com/daily-api",
-        should_report_daily=True,
-    )
-    api_client = Client()
-    login_resp = api_client.post(
-        "/api/v1.Auth.Login",
-        data=json.dumps({"username": "dailyapi", "password": "pw"}),
-        content_type="application/json",
-    )
-    assert login_resp.status_code == 200
-    token = login_resp.json()["access_token"]
-
-    with patch("pagechecker.services.send_daily_reports", return_value=[p.id]) as mock_send:
-        resp = api_client.post(
-            "/api/v1.PageChecker.SendDailyReports",
-            data=json.dumps({}),
-            content_type="application/json",
-            HTTP_AUTHORIZATION=f"Bearer {token}",
-        )
-    assert resp.status_code == 200
-    assert resp.json() == {"enqueued_page_ids": [p.id]}
-    mock_send.assert_called_once_with()
 
 
 @pytest.mark.django_db

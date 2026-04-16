@@ -167,6 +167,18 @@ def set_page_should_report_daily(page_id: int, *, should_report_daily: bool) -> 
     page.save(update_fields=["should_report_daily"])
 
 
+@transaction.atomic
+def set_page_report_interval(
+    page_id: int,
+    *,
+    report_interval: str | None = None,
+) -> None:
+    """Set *report_interval* (DAILY/WEEKLY/MONTHLY) or clear when *None*."""
+    page = Page.objects.select_for_update().get(id=page_id)
+    page.report_interval = report_interval
+    page.save(update_fields=["report_interval"])
+
+
 def delete_page(page_id: int) -> None:
     Page.objects.filter(id=page_id).delete()
 
