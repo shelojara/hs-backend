@@ -26,3 +26,4 @@ This is a Django-based **Page Checker** API (Django Ninja) that monitors web pag
 - `check_page` makes outbound HTTP requests to fetch monitored URLs — network access is required.
 - The SQLite database file (`db.sqlite3`) is created in the project root after running migrations. It is gitignored.
 - When you change or add logic in `pagechecker/services.py`, add or extend **pytest** coverage in `pagechecker/tests/` (pytest-django; use `@pytest.mark.django_db` when the database is involved). Run `uv run pytest` together with `uv run ruff check .`.
+- **Test services, not HTTP routes.** Prefer calling functions in `pagechecker/services.py` directly. Do not add or extend tests that hit `/api/...` RPC endpoints via `django.test.Client` unless there is an explicit reason (e.g. auth middleware contract). Interactive behavior stays verifiable via `/api/docs`.
