@@ -79,6 +79,24 @@ def test_jwt_access_bearer_accepts_api_key():
 
 
 @pytest.mark.django_db
+def test_jwt_access_bearer_accepts_api_key_in_x_api_key_header():
+    user = User.objects.create_user(username="key_header_ok", password="pw")
+    raw = "x" * 40
+    key_prefix = raw[:API_KEY_PREFIX_LEN]
+    key_hash = bcrypt.hashpw(raw.encode(), bcrypt.gensalt()).decode("ascii")
+    ApiKey.objects.create(
+        user=user,
+        key_prefix=key_prefix,
+        key_hash=key_hash,
+    )
+    request = RequestFactory().post(
+        "/api/x",
+        HTTP_X_API_KEY=raw,
+    )
+    assert jwt_access_bearer(request).pk == user.pk
+
+
+@pytest.mark.django_db
 def test_jwt_access_bearer_rejects_wrong_api_key_secret():
     user = User.objects.create_user(username="key_bad", password="pw")
     raw = "y" * 40

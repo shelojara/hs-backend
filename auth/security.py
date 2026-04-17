@@ -12,10 +12,19 @@ User = get_user_model()
 
 
 class JwtAccessBearer(HttpBearer):
-    """Bearer: JWT from `Auth.Login`, or full secret from `Auth.CreatePersonalApiKey`."""
+    """Bearer: JWT from `Auth.Login`, or API key from `Auth.CreatePersonalApiKey`.
+
+    API key may also be sent as raw secret in ``X-API-Key`` (no ``Bearer`` prefix).
+    """
 
     def __call__(self, request: HttpRequest) -> User:
         user = super().__call__(request)
+        if user is None:
+            api_key_header = request.headers.get("X-API-Key")
+            if api_key_header:
+                token = api_key_header.strip()
+                if token:
+                    user = self.authenticate(request, token)
         if user is None:
             raise AuthenticationError(401, "Authentication required.")
         return user
