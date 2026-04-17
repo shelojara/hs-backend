@@ -84,6 +84,38 @@ def test_suggest_page_category_id_none_reply(mock_get_client):
 
 
 @patch("pagechecker.gemini_service._get_client")
+def test_extract_snapshot_feature_with_old_snapshot_labels_old_and_new(mock_get_client):
+    from datetime import UTC, datetime
+
+    mock_response = MagicMock()
+    mock_response.text = "  ok  "
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    old_at = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
+    new_at = datetime(2025, 1, 2, 12, 0, 0, tzinfo=UTC)
+    out = gemini_service.extract_snapshot_feature(
+        feature_instruction="price?",
+        page_url="https://shop.example/p",
+        page_title="Product",
+        md_content="# New body",
+        old_md_content="# Old body",
+        old_snapshot_taken_at=old_at,
+        new_snapshot_taken_at=new_at,
+    )
+    assert out == "ok"
+    mock_client.models.generate_content.assert_called_once()
+    prompt = mock_client.models.generate_content.call_args.kwargs["contents"]
+    assert "## Older snapshot (Markdown) — previous check" in prompt
+    assert "## Newer snapshot (Markdown) — this check" in prompt
+    assert "# Old body" in prompt
+    assert "# New body" in prompt
+    assert old_at.isoformat() in prompt
+    assert new_at.isoformat() in prompt
+
+
+@patch("pagechecker.gemini_service._get_client")
 def test_extract_snapshot_feature_normalizes_multiline(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = "  First line  \n\n  Second line  \n  Third ignored  "

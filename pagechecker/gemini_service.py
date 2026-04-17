@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+from datetime import datetime
 
 from google import genai
 from google.genai import types
@@ -39,6 +40,8 @@ PAGE_CATEGORY_SYSTEM_INSTRUCTION = (
 FEATURE_EXTRACT_SYSTEM_INSTRUCTION = (
     "You extract one short answer for a monitored web page card. "
     "Prefer facts stated in the provided page snapshot (Markdown). "
+    "When two snapshots are provided, the older snapshot is labeled as such and the newer "
+    "snapshot is labeled as such — compare them if the extraction benefits from what changed. "
     "If the snapshot does not contain enough to answer, you may use general knowledge about "
     "the page URL or title, and say so briefly only when needed. "
     "Reply with plain text only: at most two short lines (one line break max), no markdown, "
@@ -165,20 +168,48 @@ def extract_snapshot_feature(
     page_url: str,
     page_title: str,
     md_content: str,
+    old_md_content: str | None = None,
+    old_snapshot_taken_at: datetime | None = None,
+    new_snapshot_taken_at: datetime | None = None,
 ) -> str | None:
-    """Ask Gemini for a short *feature* line from snapshot + instruction; may use world knowledge."""
+    """Ask Gemini for a short *feature* line from snapshot + instruction; may use world knowledge.
+
+    When *old_md_content* is set, both old and new Markdown snapshots are sent and labeled.
+    """
     instruction = (feature_instruction or "").strip()
     if not instruction:
         return None
-    body = md_content or ""
-    prompt = (
-        f"## Page\n\n"
-        f"URL: {page_url}\n"
-        f"Title: {page_title or '(none)'}\n\n"
-        f"## What to extract\n\n{instruction}\n\n"
-        f"## Page snapshot (Markdown)\n\n{body}\n\n"
-        f"## Task\n\nAnswer the extraction request above in plain text for the card."
-    )
+    new_body = md_content or ""
+    new_ts = new_snapshot_taken_at.isoformat() if new_snapshot_taken_at else None
+    if old_md_content is not None:
+        old_body = old_md_content or ""
+        old_ts = (
+            old_snapshot_taken_at.isoformat() if old_snapshot_taken_at else "(unknown)"
+        )
+        new_ts_display = new_ts if new_ts else "(this check)"
+        prompt = (
+            f"## Page\n\n"
+            f"URL: {page_url}\n"
+            f"Title: {page_title or '(none)'}\n\n"
+            f"## What to extract\n\n{instruction}\n\n"
+            f"## Older snapshot (Markdown) — previous check\n\n"
+            f"Taken: {old_ts}\n\n"
+            f"{old_body}\n\n"
+            f"---\n\n"
+            f"## Newer snapshot (Markdown) — this check\n\n"
+            f"Taken: {new_ts_display}\n\n"
+            f"{new_body}\n\n"
+            f"## Task\n\nAnswer the extraction request above in plain text for the card."
+        )
+    else:
+        prompt = (
+            f"## Page\n\n"
+            f"URL: {page_url}\n"
+            f"Title: {page_title or '(none)'}\n\n"
+            f"## What to extract\n\n{instruction}\n\n"
+            f"## Page snapshot (Markdown)\n\n{new_body}\n\n"
+            f"## Task\n\nAnswer the extraction request above in plain text for the card."
+        )
     client = _get_client()
     response = client.models.generate_content(
         model="gemini-2.5-flash",
