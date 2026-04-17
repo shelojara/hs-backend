@@ -344,19 +344,29 @@ def test_change_page_url_keeps_snapshots_when_requested(mock_check):
 
 
 @pytest.mark.django_db
-def test_snapshot_has_no_features_field():
+def test_snapshot_feature_and_page_feature_instruction_nullable():
     user = _owner()
     page = Page.objects.create(
-        url="https://example.com/snapshot-no-features",
+        url="https://example.com/snapshot-feature-fields",
         owner=user,
     )
+    assert page.feature_instruction is None
     snap = Snapshot.objects.create(
         page=page,
         html_content="<p>x</p>",
         md_content="# x",
     )
     assert snap.md_content == "# x"
+    assert snap.feature is None
     assert "features" not in [f.name for f in Snapshot._meta.get_fields()]
+    page.feature_instruction = "summarize pricing"
+    page.save(update_fields=["feature_instruction"])
+    snap.feature = "pricing table"
+    snap.save(update_fields=["feature"])
+    page.refresh_from_db()
+    snap.refresh_from_db()
+    assert page.feature_instruction == "summarize pricing"
+    assert snap.feature == "pricing table"
 
 
 @pytest.mark.django_db

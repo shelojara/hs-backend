@@ -21,6 +21,7 @@ def test_page_schema_category_nested_or_null():
     )
     out = PageSchema.model_validate(bare)
     assert out.category is None
+    assert out.feature_instruction is None
 
     cat = Category.objects.create(name="Docs", emoji="📄")
     linked = Page.objects.create(
