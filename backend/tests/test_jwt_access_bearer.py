@@ -2,6 +2,7 @@
 
 import time
 
+import bcrypt
 import jwt
 import pytest
 from django.conf import settings
@@ -10,6 +11,8 @@ from django.test import RequestFactory
 from ninja.errors import AuthenticationError
 
 from auth.security import jwt_access_bearer
+from auth.services import API_KEY_PREFIX_LEN
+from pagechecker.models import ApiKey
 
 User = get_user_model()
 
@@ -52,6 +55,42 @@ def test_jwt_access_bearer_raises_when_invalid_token():
     request = RequestFactory().post(
         "/api/x",
         HTTP_AUTHORIZATION="Bearer not-a-jwt",
+    )
+    with pytest.raises(AuthenticationError):
+        jwt_access_bearer(request)
+
+
+@pytest.mark.django_db
+def test_jwt_access_bearer_accepts_api_key():
+    user = User.objects.create_user(username="key_ok", password="pw")
+    raw = "x" * 40  # long enough for prefix + secret body
+    key_prefix = raw[:API_KEY_PREFIX_LEN]
+    key_hash = bcrypt.hashpw(raw.encode(), bcrypt.gensalt()).decode("ascii")
+    ApiKey.objects.create(
+        user=user,
+        key_prefix=key_prefix,
+        key_hash=key_hash,
+    )
+    request = RequestFactory().post(
+        "/api/x",
+        HTTP_AUTHORIZATION=f"Bearer {raw}",
+    )
+    assert jwt_access_bearer(request).pk == user.pk
+
+
+@pytest.mark.django_db
+def test_jwt_access_bearer_rejects_wrong_api_key_secret():
+    user = User.objects.create_user(username="key_bad", password="pw")
+    raw = "y" * 40
+    key_hash = bcrypt.hashpw(raw.encode(), bcrypt.gensalt()).decode("ascii")
+    ApiKey.objects.create(
+        user=user,
+        key_prefix=raw[:API_KEY_PREFIX_LEN],
+        key_hash=key_hash,
+    )
+    request = RequestFactory().post(
+        "/api/x",
+        HTTP_AUTHORIZATION=f"Bearer {'z' * 40}",
     )
     with pytest.raises(AuthenticationError):
         jwt_access_bearer(request)

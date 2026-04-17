@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import bcrypt
 import jwt
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -11,7 +12,7 @@ User = get_user_model()
 
 
 class JwtAccessBearer(HttpBearer):
-    """Bearer JWT from `Auth.Login`; must be active access token for existing user."""
+    """Bearer: JWT from `Auth.Login`, or full secret from `Auth.CreatePersonalApiKey`."""
 
     def __call__(self, request: HttpRequest) -> User:
         user = super().__call__(request)
@@ -20,6 +21,12 @@ class JwtAccessBearer(HttpBearer):
         return user
 
     def authenticate(self, request: HttpRequest, token: str) -> User | None:
+        user = self._authenticate_jwt(token)
+        if user is not None:
+            return user
+        return self._authenticate_api_key(token)
+
+    def _authenticate_jwt(self, token: str) -> User | None:
         try:
             payload = jwt.decode(
                 token,
@@ -37,6 +44,35 @@ class JwtAccessBearer(HttpBearer):
             return None
         return (
             User.objects.filter(pk=user_id, is_active=True)
+            .only("id", "username")
+            .first()
+        )
+
+    def _authenticate_api_key(self, token: str) -> User | None:
+        from auth.services import API_KEY_PREFIX_LEN
+        from pagechecker.models import ApiKey
+
+        if len(token) < API_KEY_PREFIX_LEN:
+            return None
+        prefix = token[:API_KEY_PREFIX_LEN]
+        row = (
+            ApiKey.objects.filter(key_prefix=prefix)
+            .only("key_hash", "user_id")
+            .first()
+        )
+        if row is None:
+            return None
+        try:
+            ok = bcrypt.checkpw(
+                token.encode("utf-8"),
+                row.key_hash.encode("ascii"),
+            )
+        except ValueError:
+            return None
+        if not ok:
+            return None
+        return (
+            User.objects.filter(pk=row.user_id, is_active=True)
             .only("id", "username")
             .first()
         )
