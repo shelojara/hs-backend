@@ -245,17 +245,37 @@ def check_page(page_id: int) -> bool:
 
     body_html = extract_body_html(response.text)
     md_content = html_to_markdown(body_html)
+    metadata = extract_metadata(response.text, str(page.url))
+    page_title_for_prompt = metadata["title"] or page.title or ""
 
     latest_snapshot = Snapshot.objects.filter(page=page).order_by("-created_at").first()
     has_changed = latest_snapshot is None or latest_snapshot.md_content != md_content
+
+    feature_text: str | None = None
+    instr = (page.feature_instruction or "").strip()
+    if instr:
+        try:
+            feature_text = gemini_service.extract_snapshot_feature(
+                feature_instruction=instr,
+                page_url=str(page.url),
+                page_title=page_title_for_prompt,
+                md_content=md_content,
+            )
+        except RuntimeError:
+            logger.warning(
+                "Skipped Gemini snapshot feature: GEMINI_API_KEY not set (page id=%s).",
+                page.id,
+            )
+        except Exception:
+            logger.exception("Gemini snapshot feature failed for page id=%s", page.id)
 
     Snapshot.objects.create(
         page=page,
         html_content=body_html,
         md_content=md_content,
+        feature=feature_text,
     )
 
-    metadata = extract_metadata(response.text, str(page.url))
     page.title = metadata["title"]
     page.icon = metadata["icon"]
     page.last_checked_at = timezone.now()
