@@ -13,3 +13,11 @@ class LoginResponse(Schema):
 
 class CreatePersonalApiKeyResponse(Schema):
     api_key: str
+
+
+class DeletePersonalApiKeyRequest(Schema):
+    api_key_id: int
+
+
+class DeletePersonalApiKeyResponse(Schema):
+    pass
