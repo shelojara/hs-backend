@@ -67,3 +67,8 @@ def create_personal_api_key(user: AbstractBaseUser) -> str:
         )
         return raw
     raise RuntimeError("Could not allocate unique API key prefix.")
+
+
+def delete_personal_api_key(user: AbstractBaseUser, *, api_key_id: int) -> None:
+    """Remove API key row owned by user; no-op if id missing or not owned."""
+    ApiKey.objects.filter(pk=api_key_id, user_id=user.pk).delete()
