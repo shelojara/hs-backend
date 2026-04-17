@@ -22,6 +22,7 @@ from pagechecker.services import (
     send_monthly_reports,
     send_weekly_reports,
     set_page_category,
+    set_page_feature_instruction,
     set_page_report_interval,
 )
 
@@ -413,6 +414,32 @@ def test_set_page_report_interval_sets_and_clears():
     set_page_report_interval(page.id, user_id=user.pk, report_interval=None)
     page.refresh_from_db()
     assert page.report_interval is None
+
+
+@pytest.mark.django_db
+def test_set_page_feature_instruction_sets_strips_and_clears():
+    user = _owner()
+    page = Page.objects.create(
+        url="https://example.com/svc-feature-instruction",
+        owner=user,
+        feature_instruction="old",
+    )
+    set_page_feature_instruction(
+        page.id,
+        user_id=user.pk,
+        feature_instruction="  Focus on pricing  ",
+    )
+    page.refresh_from_db()
+    assert page.feature_instruction == "Focus on pricing"
+    set_page_feature_instruction(page.id, user_id=user.pk, feature_instruction=None)
+    page.refresh_from_db()
+    assert page.feature_instruction is None
+    set_page_feature_instruction(page.id, user_id=user.pk, feature_instruction="x")
+    page.refresh_from_db()
+    assert page.feature_instruction == "x"
+    set_page_feature_instruction(page.id, user_id=user.pk, feature_instruction="   ")
+    page.refresh_from_db()
+    assert page.feature_instruction is None
 
 
 @pytest.mark.django_db
