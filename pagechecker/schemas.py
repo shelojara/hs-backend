@@ -120,6 +120,15 @@ class SetPageReportIntervalResponse(Schema):
     pass
 
 
+class SetPageFeatureInstructionRequest(Schema):
+    page_id: int
+    feature_instruction: str | None = None
+
+
+class SetPageFeatureInstructionResponse(Schema):
+    pass
+
+
 class ChangePageUrlRequest(Schema):
     page_id: int
     url: str

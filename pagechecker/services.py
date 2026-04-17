@@ -213,6 +213,23 @@ def set_page_report_interval(
     page.save(update_fields=["report_interval"])
 
 
+@transaction.atomic
+def set_page_feature_instruction(
+    page_id: int,
+    *,
+    user_id: int,
+    feature_instruction: str | None = None,
+) -> None:
+    """Set *feature_instruction* text or clear when *None* or blank after strip."""
+    page = Page.objects.select_for_update().get(id=page_id, owner_id=user_id)
+    if feature_instruction is None:
+        page.feature_instruction = None
+    else:
+        stripped = feature_instruction.strip()
+        page.feature_instruction = stripped if stripped else None
+    page.save(update_fields=["feature_instruction"])
+
+
 def delete_page(page_id: int, *, user_id: int) -> None:
     Page.objects.filter(id=page_id, owner_id=user_id).delete()
 

@@ -39,6 +39,8 @@ from pagechecker.schemas import (
     SetPageCategoryResponse,
     SetPageReportIntervalRequest,
     SetPageReportIntervalResponse,
+    SetPageFeatureInstructionRequest,
+    SetPageFeatureInstructionResponse,
 )
 
 router = Router(auth=jwt_access_bearer)
@@ -160,6 +162,23 @@ def set_page_report_interval(request, payload: SetPageReportIntervalRequest):
     except Page.DoesNotExist:
         raise HttpError(404, "Page not found.")
     return SetPageReportIntervalResponse()
+
+
+@router.post(
+    "/v1.PageChecker.SetPageFeatureInstruction",
+    response=SetPageFeatureInstructionResponse,
+)
+def set_page_feature_instruction(request, payload: SetPageFeatureInstructionRequest):
+    user = request.auth
+    try:
+        services.set_page_feature_instruction(
+            page_id=payload.page_id,
+            user_id=user.pk,
+            feature_instruction=payload.feature_instruction,
+        )
+    except Page.DoesNotExist:
+        raise HttpError(404, "Page not found.")
+    return SetPageFeatureInstructionResponse()
 
 
 @router.post("/v1.PageChecker.ChangePageUrl", response=ChangePageUrlResponse)
