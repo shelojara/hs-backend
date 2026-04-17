@@ -254,12 +254,20 @@ def check_page(page_id: int) -> bool:
     feature_text: str | None = None
     instr = (page.feature_instruction or "").strip()
     if instr:
+        now = timezone.now()
         try:
             feature_text = gemini_service.extract_snapshot_feature(
                 feature_instruction=instr,
                 page_url=str(page.url),
                 page_title=page_title_for_prompt,
                 md_content=md_content,
+                old_md_content=(
+                    latest_snapshot.md_content if latest_snapshot else None
+                ),
+                old_snapshot_taken_at=(
+                    latest_snapshot.created_at if latest_snapshot else None
+                ),
+                new_snapshot_taken_at=now,
             )
         except RuntimeError:
             logger.warning(

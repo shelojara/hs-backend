@@ -371,7 +371,6 @@ def test_snapshot_feature_and_page_feature_instruction_nullable():
 
 
 @pytest.mark.django_db
-@pytest.mark.django_db
 @patch("pagechecker.services.gemini_service.extract_snapshot_feature", return_value="Plan: Pro $9")
 def test_check_page_sets_snapshot_feature_when_instruction_set(mock_extract):
     user = _owner()
@@ -404,6 +403,46 @@ def test_check_page_sets_snapshot_feature_when_instruction_set(mock_extract):
     assert kwargs["page_url"] == "https://example.com/feature-snap"
     assert kwargs["page_title"] == "Pricing"
     assert "Pro plan" in kwargs["md_content"]
+    assert kwargs["old_md_content"] is None
+    assert kwargs["old_snapshot_taken_at"] is None
+    assert kwargs["new_snapshot_taken_at"] is not None
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.gemini_service.extract_snapshot_feature", return_value="v2")
+def test_check_page_passes_previous_snapshot_to_feature_extract(mock_extract):
+    user = _owner()
+    page = Page.objects.create(
+        url="https://example.com/feature-dual",
+        owner=user,
+        feature_instruction="Summarize pricing",
+    )
+    snap1 = Snapshot.objects.create(
+        page=page,
+        html_content="<p>old</p>",
+        md_content="# old md",
+    )
+
+    html2 = """<!doctype html><html><head><title>P2</title></head>
+    <body><p>New price $5</p></body></html>"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=html2.encode(), request=request)
+
+    transport = httpx.MockTransport(handler)
+
+    def fake_get(url: str, verify: bool = False) -> httpx.Response:
+        with httpx.Client(transport=transport) as client:
+            return client.get(url)
+
+    with patch("pagechecker.services.httpx.get", new=fake_get):
+        check_page(page.id)
+
+    kwargs = mock_extract.call_args.kwargs
+    assert kwargs["old_md_content"] == "# old md"
+    assert kwargs["old_snapshot_taken_at"] == snap1.created_at
+    assert kwargs["new_snapshot_taken_at"] is not None
+    assert "New price" in kwargs["md_content"]
 
 
 @pytest.mark.django_db
