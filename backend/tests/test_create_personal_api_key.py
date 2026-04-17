@@ -1,7 +1,6 @@
 """create_personal_api_key persists prefix + hash; returns raw secret once."""
 
-import hashlib
-
+import bcrypt
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -19,5 +18,5 @@ def test_create_personal_api_key_stores_prefix_and_hash_not_plaintext():
     assert len(raw) > 20
     row = ApiKey.objects.get(user=user)
     assert row.key_prefix == raw[:12]
-    assert row.key_hash == hashlib.sha256(raw.encode()).hexdigest()
+    assert bcrypt.checkpw(raw.encode(), row.key_hash.encode("ascii"))
     assert raw not in row.key_hash

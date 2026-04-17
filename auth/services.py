@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import secrets
 import time
 from typing import Any
 
+import bcrypt
 import jwt
 from django.conf import settings
 from django.contrib.auth import authenticate
@@ -56,7 +56,7 @@ def create_personal_api_key(user: AbstractBaseUser) -> str:
         key_prefix = raw[:12]
         if ApiKey.objects.filter(key_prefix=key_prefix).exists():
             continue
-        key_hash = hashlib.sha256(raw.encode()).hexdigest()
+        key_hash = bcrypt.hashpw(raw.encode(), bcrypt.gensalt()).decode("ascii")
         ApiKey.objects.create(
             user_id=user.pk,
             key_prefix=key_prefix,
