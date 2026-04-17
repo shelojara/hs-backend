@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import hashlib
+import secrets
 import time
 from typing import Any
 
 import jwt
 from django.conf import settings
 from django.contrib.auth import authenticate
+from django.contrib.auth.models import AbstractBaseUser
 from django.http import HttpRequest
+
+from pagechecker.models import ApiKey
 
 
 class InvalidLogin(Exception):
@@ -42,3 +47,20 @@ def login(request: HttpRequest, *, username: str, password: str) -> str:
         user_id=user.pk,
         username=user.get_username(),
     )
+
+
+def create_personal_api_key(user: AbstractBaseUser) -> str:
+    """Persist new API key for user; returns full secret once (never stored)."""
+    for _ in range(8):
+        raw = secrets.token_urlsafe(32)
+        key_prefix = raw[:12]
+        if ApiKey.objects.filter(key_prefix=key_prefix).exists():
+            continue
+        key_hash = hashlib.sha256(raw.encode()).hexdigest()
+        ApiKey.objects.create(
+            user_id=user.pk,
+            key_prefix=key_prefix,
+            key_hash=key_hash,
+        )
+        return raw
+    raise RuntimeError("Could not allocate unique API key prefix.")
