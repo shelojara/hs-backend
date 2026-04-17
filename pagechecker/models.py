@@ -12,7 +12,7 @@ class ApiKey(models.Model):
     )
     # Public prefix for indexed lookup; full secret never stored.
     key_prefix = models.CharField(max_length=32, unique=True, db_index=True)
-    # Hex digest (e.g. SHA-256) of full secret; verify with constant-time compare.
+    # bcrypt hash of full secret; verify with bcrypt.checkpw.
     key_hash = models.CharField(max_length=128, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -9,3 +9,7 @@ class LoginRequest(Schema):
 class LoginResponse(Schema):
     access_token: str
     token_type: str = "Bearer"
+
+
+class CreatePersonalApiKeyResponse(Schema):
+    api_key: str
