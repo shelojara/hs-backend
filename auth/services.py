@@ -72,3 +72,8 @@ def create_personal_api_key(user: AbstractBaseUser) -> str:
 def delete_personal_api_key(user: AbstractBaseUser, *, api_key_id: int) -> None:
     """Remove API key row owned by user; no-op if id missing or not owned."""
     ApiKey.objects.filter(pk=api_key_id, user_id=user.pk).delete()
+
+
+def list_personal_api_keys(user: AbstractBaseUser) -> list[ApiKey]:
+    """Return API key metadata for user (prefix + created_at; never full secret)."""
+    return list(ApiKey.objects.filter(user_id=user.pk))
