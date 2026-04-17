@@ -36,6 +36,36 @@ PAGE_CATEGORY_SYSTEM_INSTRUCTION = (
     "no explanation, no markdown."
 )
 
+FEATURE_EXTRACT_SYSTEM_INSTRUCTION = (
+    "You extract one short answer for a monitored web page card. "
+    "Prefer facts stated in the provided page snapshot (Markdown). "
+    "If the snapshot does not contain enough to answer, you may use general knowledge about "
+    "the page URL or title, and say so briefly only when needed. "
+    "Reply with plain text only: at most two short lines (one line break max), no markdown, "
+    "no bullet prefix, no quotes wrapping the whole answer. "
+    "Keep it under about 180 characters total so it fits a small UI card."
+)
+
+
+def _normalize_card_feature(raw: str | None) -> str | None:
+    """Trim Gemini feature text to card-sized plain text (1–2 lines)."""
+    if not raw:
+        return None
+    lines: list[str] = []
+    for ln in (raw or "").splitlines():
+        s = " ".join(ln.split())
+        if s:
+            lines.append(s)
+        if len(lines) >= 2:
+            break
+    if not lines:
+        return None
+    out = "\n".join(lines) if len(lines) > 1 else lines[0]
+    out = out.strip()
+    if len(out) > 220:
+        out = out[:217].rstrip() + "..."
+    return out or None
+
 
 def _parse_category_id_choice(raw: str | None, valid_ids: set[int]) -> int | None:
     """Interpret Gemini reply as one of *valid_ids* or no assignment."""
@@ -127,6 +157,38 @@ def answer_question_about_snapshot(
         ),
     )
     return response.text
+
+
+def extract_snapshot_feature(
+    *,
+    feature_instruction: str,
+    page_url: str,
+    page_title: str,
+    md_content: str,
+) -> str | None:
+    """Ask Gemini for a short *feature* line from snapshot + instruction; may use world knowledge."""
+    instruction = (feature_instruction or "").strip()
+    if not instruction:
+        return None
+    body = md_content or ""
+    prompt = (
+        f"## Page\n\n"
+        f"URL: {page_url}\n"
+        f"Title: {page_title or '(none)'}\n\n"
+        f"## What to extract\n\n{instruction}\n\n"
+        f"## Page snapshot (Markdown)\n\n{body}\n\n"
+        f"## Task\n\nAnswer the extraction request above in plain text for the card."
+    )
+    client = _get_client()
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=FEATURE_EXTRACT_SYSTEM_INSTRUCTION,
+            temperature=0.2,
+        ),
+    )
+    return _normalize_card_feature(response.text)
 
 
 def suggest_category_emoji(category_name: str) -> str:

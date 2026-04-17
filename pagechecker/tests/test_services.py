@@ -371,6 +371,66 @@ def test_snapshot_feature_and_page_feature_instruction_nullable():
 
 
 @pytest.mark.django_db
+@pytest.mark.django_db
+@patch("pagechecker.services.gemini_service.extract_snapshot_feature", return_value="Plan: Pro $9")
+def test_check_page_sets_snapshot_feature_when_instruction_set(mock_extract):
+    user = _owner()
+    page = Page.objects.create(
+        url="https://example.com/feature-snap",
+        owner=user,
+        feature_instruction="Summarize pricing",
+    )
+    html = """<!doctype html><html><head><title>Pricing</title></head>
+    <body><p>Pro plan $9/mo</p></body></html>"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=html.encode(), request=request)
+
+    transport = httpx.MockTransport(handler)
+
+    def fake_get(url: str, verify: bool = False) -> httpx.Response:
+        with httpx.Client(transport=transport) as client:
+            return client.get(url)
+
+    with patch("pagechecker.services.httpx.get", new=fake_get):
+        check_page(page.id)
+
+    snap = Snapshot.objects.filter(page=page).order_by("-created_at").first()
+    assert snap is not None
+    assert snap.feature == "Plan: Pro $9"
+    mock_extract.assert_called_once()
+    kwargs = mock_extract.call_args.kwargs
+    assert kwargs["feature_instruction"] == "Summarize pricing"
+    assert kwargs["page_url"] == "https://example.com/feature-snap"
+    assert kwargs["page_title"] == "Pricing"
+    assert "Pro plan" in kwargs["md_content"]
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.gemini_service.extract_snapshot_feature")
+def test_check_page_skips_feature_when_no_instruction(mock_extract):
+    user = _owner()
+    page = Page.objects.create(url="https://example.com/no-fi", owner=user)
+    html = "<html><body><p>Hi</p></body></html>"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=html.encode(), request=request)
+
+    transport = httpx.MockTransport(handler)
+
+    def fake_get(url: str, verify: bool = False) -> httpx.Response:
+        with httpx.Client(transport=transport) as client:
+            return client.get(url)
+
+    with patch("pagechecker.services.httpx.get", new=fake_get):
+        check_page(page.id)
+
+    snap = Snapshot.objects.get(page=page)
+    assert snap.feature is None
+    mock_extract.assert_not_called()
+
+
+@pytest.mark.django_db
 def test_check_page_raises_monitored_url_not_found_on_http_404():
     user = _owner()
     page = Page.objects.create(url="https://example.com/missing", owner=user)
