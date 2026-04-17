@@ -26,6 +26,7 @@ class Snapshot(Schema):
     id: int
     created_at: datetime
     md_content: str = ""
+    feature: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -51,6 +52,7 @@ class Page(Schema):
     url: str
     title: str = ""
     icon: str = ""
+    feature_instruction: str | None = None
     report_interval: str | None = None
     category: Category | None = None
     created_at: datetime

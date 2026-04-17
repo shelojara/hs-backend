@@ -15,6 +15,7 @@ class Snapshot(models.Model):
 
     html_content = models.TextField(default="")
     md_content = models.TextField(default="")
+    feature = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.page.url} - {self.created_at}"
@@ -80,6 +81,8 @@ class Page(models.Model):
         null=True,
         blank=True,
     )
+
+    feature_instruction = models.TextField(null=True, blank=True)
 
     class Meta:
         constraints = [
