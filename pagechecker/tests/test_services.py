@@ -576,6 +576,67 @@ def test_run_daily_report_for_page_emails_check_status_and_answers(
 @patch("pagechecker.services.send_email_via_gmail")
 @patch("pagechecker.services.compare_snapshots")
 @patch("pagechecker.services.check_page")
+def test_run_daily_report_includes_snapshot_feature_when_latest_has_feature(
+    mock_check, mock_compare, mock_send,
+):
+    owner = User.objects.create_user(
+        username="feat_reader",
+        password="pw",
+        email="feat@example.com",
+    )
+    page = Page.objects.create(
+        url="https://example.com/daily-feature",
+        title="Feat Page",
+        owner=owner,
+    )
+    Snapshot.objects.create(
+        page=page,
+        md_content="# x",
+        feature="Plan: Pro $9/mo",
+    )
+    q = Question.objects.create(text="Ok?", owner=owner)
+    associate_questions_with_page(page.id, [q.id], user_id=owner.pk)
+    mock_check.return_value = False
+    mock_compare.return_value = "yes"
+
+    run_daily_report_for_page(page.id)
+
+    body = mock_send.call_args.kwargs["body"]
+    assert "Snapshot feature: Plan: Pro $9/mo" in body
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.send_email_via_gmail")
+@patch("pagechecker.services.compare_snapshots")
+@patch("pagechecker.services.check_page")
+def test_run_daily_report_omits_snapshot_feature_line_when_empty(
+    mock_check, mock_compare, mock_send,
+):
+    owner = User.objects.create_user(
+        username="no_feat_reader",
+        password="pw",
+        email="nf@example.com",
+    )
+    page = Page.objects.create(
+        url="https://example.com/daily-no-feat",
+        owner=owner,
+    )
+    Snapshot.objects.create(page=page, md_content="# x", feature=None)
+    q = Question.objects.create(text="Ok?", owner=owner)
+    associate_questions_with_page(page.id, [q.id], user_id=owner.pk)
+    mock_check.return_value = False
+    mock_compare.return_value = "yes"
+
+    run_daily_report_for_page(page.id)
+
+    body = mock_send.call_args.kwargs["body"]
+    assert "Snapshot feature:" not in body
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.send_email_via_gmail")
+@patch("pagechecker.services.compare_snapshots")
+@patch("pagechecker.services.check_page")
 def test_run_daily_report_for_page_check_failure_still_runs_questions_and_emails(
     mock_check, mock_compare, mock_send,
 ):
