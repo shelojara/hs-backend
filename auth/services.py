@@ -13,6 +13,9 @@ from django.http import HttpRequest
 
 from pagechecker.models import ApiKey
 
+# Length of stored `key_prefix` (first N chars of full secret); must match bearer lookup.
+API_KEY_PREFIX_LEN = 12
+
 
 class InvalidLogin(Exception):
     """Username/password wrong or user inactive."""
@@ -53,7 +56,7 @@ def create_personal_api_key(user: AbstractBaseUser) -> str:
     """Persist new API key for user; returns full secret once (never stored)."""
     for _ in range(8):
         raw = secrets.token_urlsafe(32)
-        key_prefix = raw[:12]
+        key_prefix = raw[:API_KEY_PREFIX_LEN]
         if ApiKey.objects.filter(key_prefix=key_prefix).exists():
             continue
         key_hash = bcrypt.hashpw(raw.encode(), bcrypt.gensalt()).decode("ascii")
