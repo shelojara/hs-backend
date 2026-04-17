@@ -11,11 +11,8 @@ from ninja.security import HttpBearer
 User = get_user_model()
 
 
-class JwtAccessBearer(HttpBearer):
-    """Bearer: JWT from `Auth.Login`, or API key from `Auth.CreatePersonalApiKey`.
-
-    API key may also be sent as raw secret in ``X-API-Key`` (no ``Bearer`` prefix).
-    """
+class BearerOrApiKeyAuth(HttpBearer):
+    """JWT access token or personal API key (Bearer body or ``X-API-Key`` header)."""
 
     def __call__(self, request: HttpRequest) -> User:
         user = super().__call__(request)
@@ -87,4 +84,4 @@ class JwtAccessBearer(HttpBearer):
         )
 
 
-jwt_access_bearer = JwtAccessBearer()
+bearer_or_api_key_auth = BearerOrApiKeyAuth()
