@@ -428,6 +428,9 @@ def run_daily_report_for_page(page_id: int) -> None:
     else:
         status_line = "Check: succeeded — no content change since previous snapshot."
 
+    latest = page.latest_snapshot
+    feature_text = (latest.feature or "").strip() if latest else ""
+
     body_parts = [
         "Page Checker — daily report",
         "",
@@ -435,10 +438,16 @@ def run_daily_report_for_page(page_id: int) -> None:
         f"Title: {page.title or '(none)'}",
         "",
         status_line,
-        "",
-        "Questions",
-        "-------",
     ]
+    if feature_text:
+        body_parts.extend(["", f"Snapshot feature: {feature_text}"])
+    body_parts.extend(
+        [
+            "",
+            "Questions",
+            "-------",
+        ]
+    )
     if qa_lines:
         body_parts.append("\n\n".join(qa_lines))
     else:
