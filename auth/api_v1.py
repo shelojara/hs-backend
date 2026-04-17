@@ -7,13 +7,16 @@ from .schemas import (
     CreatePersonalApiKeyResponse,
     DeletePersonalApiKeyRequest,
     DeletePersonalApiKeyResponse,
+    ListPersonalApiKeysResponse,
     LoginRequest,
     LoginResponse,
+    PersonalApiKey,
 )
 from .services import (
     InvalidLogin,
     create_personal_api_key,
     delete_personal_api_key,
+    list_personal_api_keys,
     login as login_service,
 )
 
@@ -51,3 +54,22 @@ def create_personal_api_key_endpoint(request):
 def delete_personal_api_key_endpoint(request, payload: DeletePersonalApiKeyRequest):
     delete_personal_api_key(request.auth, api_key_id=payload.api_key_id)
     return DeletePersonalApiKeyResponse()
+
+
+@router.post(
+    "/v1.Auth.ListPersonalApiKeys",
+    response=ListPersonalApiKeysResponse,
+    auth=jwt_access_bearer,
+)
+def list_personal_api_keys_endpoint(request):
+    rows = list_personal_api_keys(request.auth)
+    return ListPersonalApiKeysResponse(
+        api_keys=[
+            PersonalApiKey(
+                id=row.pk,
+                key_prefix=row.key_prefix,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ],
+    )

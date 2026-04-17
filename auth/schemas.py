@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from ninja import Schema
 
 
@@ -21,3 +23,13 @@ class DeletePersonalApiKeyRequest(Schema):
 
 class DeletePersonalApiKeyResponse(Schema):
     pass
+
+
+class PersonalApiKey(Schema):
+    id: int
+    key_prefix: str
+    created_at: datetime
+
+
+class ListPersonalApiKeysResponse(Schema):
+    api_keys: list[PersonalApiKey]
