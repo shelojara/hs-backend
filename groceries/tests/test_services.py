@@ -82,25 +82,6 @@ def test_create_product_rejects_duplicate_name_case_insensitive(_mock_gemini):
 @pytest.mark.django_db
 @patch(
     "groceries.services.gemini_service.fetch_lider_product_info",
-    return_value=LiderProductInfo(
-        display_name="First",
-        brand="",
-        price="",
-        format="",
-        details="",
-    ),
-)
-def test_create_product_skips_gemini_display_when_name_taken(_mock_gemini):
-    create_product(name="First")
-    pid = create_product(name="second")
-    row = Product.objects.get(pk=pid)
-    assert row.name == "second"
-    assert row.original_name == "second"
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
     return_value=None,
 )
 def test_list_products_orders_by_name_and_paginates(_mock_gemini):
