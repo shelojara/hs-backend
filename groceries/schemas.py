@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated
 
 from ninja import Schema
@@ -55,3 +56,18 @@ class AddProductToBasketRequest(Schema):
 
 class AddProductToBasketResponse(Schema):
     basket_id: int
+
+
+class BasketSchema(Schema):
+    basket_id: int
+    created_at: datetime
+    purchased_at: datetime | None
+    products: list[ProductSchema]
+
+
+class GetLatestBasketRequest(Schema):
+    """No fields; POST body may be `{}` for RPC transport."""
+
+
+class GetLatestBasketResponse(Schema):
+    basket: BasketSchema | None

@@ -10,6 +10,7 @@ from groceries.services import (
     ProductNameConflict,
     add_product_to_basket,
     create_product,
+    get_latest_basket_with_products,
     list_products,
     recheck_product_from_gemini,
 )
@@ -280,3 +281,45 @@ def test_add_product_to_basket_skips_purchased_baskets(_mock_gemini):
 def test_add_product_to_basket_raises_when_product_missing(_mock_gemini):
     with pytest.raises(Product.DoesNotExist):
         add_product_to_basket(product_id=99999)
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_get_latest_basket_with_products_none_when_empty(_mock_gemini):
+    assert get_latest_basket_with_products() is None
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_get_latest_basket_with_products_returns_newest_and_ordered_products(_mock_gemini):
+    pid_a = create_product(name="Apple")
+    pid_b = create_product(name="Banana")
+    older = Basket.objects.create()
+    newer = Basket.objects.create()
+    older.products.add(pid_b)
+    newer.products.add(pid_a)
+    out = get_latest_basket_with_products()
+    assert out is not None
+    assert out.pk == newer.pk
+    assert [p.pk for p in out.products.all()] == [pid_a]
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_get_latest_basket_with_products_includes_purchased(_mock_gemini):
+    pid = create_product(name="Z")
+    b = Basket.objects.create(purchased_at=timezone.now())
+    b.products.add(pid)
+    out = get_latest_basket_with_products()
+    assert out is not None
+    assert out.pk == b.pk
+    assert list(out.products.values_list("pk", flat=True)) == [pid]
