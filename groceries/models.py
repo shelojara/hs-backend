@@ -5,6 +5,7 @@ from django.db.models.functions import Lower
 
 class Product(models.Model):
     name = models.CharField(max_length=255)
+    details = models.TextField(blank=True, default="")
 
     class Meta:
         ordering = ("name",)

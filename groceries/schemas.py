@@ -29,6 +29,7 @@ class ListProductsRequest(Schema):
 class ProductSchema(Schema):
     product_id: int
     name: str
+    details: str
 
 
 class ListProductsResponse(Schema):
