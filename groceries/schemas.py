@@ -18,3 +18,19 @@ class CreateProductRequest(Schema):
 
 class CreateProductResponse(Schema):
     product_id: int
+
+
+class ListProductsRequest(Schema):
+    limit: int = 20
+    cursor: str | None = None
+    search: str | None = None
+
+
+class ProductSchema(Schema):
+    product_id: int
+    name: str
+
+
+class ListProductsResponse(Schema):
+    products: list[ProductSchema]
+    next_cursor: str | None = None

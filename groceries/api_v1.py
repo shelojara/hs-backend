@@ -3,8 +3,14 @@ from ninja.errors import HttpError
 
 from auth.security import protected_api_auth
 from groceries import services
-from groceries.schemas import CreateProductRequest, CreateProductResponse
-from groceries.services import ProductNameConflict
+from groceries.schemas import (
+    CreateProductRequest,
+    CreateProductResponse,
+    ListProductsRequest,
+    ListProductsResponse,
+    ProductSchema,
+)
+from groceries.services import InvalidProductListCursorError, ProductNameConflict
 
 router = Router(auth=protected_api_auth, tags=["Groceries"])
 
@@ -16,3 +22,25 @@ def create_product(request, payload: CreateProductRequest):
     except ProductNameConflict as exc:
         raise HttpError(409, str(exc)) from exc
     return CreateProductResponse(product_id=product_id)
+
+
+@router.post("/v1.Groceries.ListProducts", response=ListProductsResponse)
+def list_products(request, payload: ListProductsRequest):
+    try:
+        items, next_cursor = services.list_products(
+            limit=payload.limit,
+            cursor=payload.cursor,
+            search=payload.search,
+        )
+    except InvalidProductListCursorError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return ListProductsResponse(
+        products=[
+            ProductSchema(
+                product_id=p.pk,
+                name=p.name,
+            )
+            for p in items
+        ],
+        next_cursor=next_cursor,
+    )
