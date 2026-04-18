@@ -2,7 +2,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from ninja import Router
 from ninja.errors import HttpError
 
-from auth.security import jwt_access_bearer
+from auth.security import protected_api_auth
 from backend.email_services import send_email_via_gmail
 from pagechecker import services
 from pagechecker.services import MonitoredUrlNotFoundError, QuestionInUseError
@@ -43,7 +43,7 @@ from pagechecker.schemas import (
     SetPageFeatureInstructionResponse,
 )
 
-router = Router(auth=jwt_access_bearer)
+router = Router(auth=protected_api_auth)
 
 
 @router.post("/v1.PageChecker.ListPages", response=ListPagesResponse)

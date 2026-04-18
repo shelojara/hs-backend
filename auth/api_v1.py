@@ -1,7 +1,7 @@
 from ninja import Router
 from ninja.errors import HttpError
 
-from auth.security import jwt_access_bearer
+from auth.security import protected_api_auth
 
 from .schemas import (
     CreatePersonalApiKeyResponse,
@@ -39,7 +39,7 @@ def login(request, payload: LoginRequest):
 @router.post(
     "/v1.Auth.CreatePersonalApiKey",
     response=CreatePersonalApiKeyResponse,
-    auth=jwt_access_bearer,
+    auth=protected_api_auth,
 )
 def create_personal_api_key_endpoint(request):
     api_key = create_personal_api_key(request.auth)
@@ -49,7 +49,7 @@ def create_personal_api_key_endpoint(request):
 @router.post(
     "/v1.Auth.DeletePersonalApiKey",
     response=DeletePersonalApiKeyResponse,
-    auth=jwt_access_bearer,
+    auth=protected_api_auth,
 )
 def delete_personal_api_key_endpoint(request, payload: DeletePersonalApiKeyRequest):
     delete_personal_api_key(request.auth, api_key_id=payload.api_key_id)
@@ -59,7 +59,7 @@ def delete_personal_api_key_endpoint(request, payload: DeletePersonalApiKeyReque
 @router.post(
     "/v1.Auth.ListPersonalApiKeys",
     response=ListPersonalApiKeysResponse,
-    auth=jwt_access_bearer,
+    auth=protected_api_auth,
 )
 def list_personal_api_keys_endpoint(request):
     rows = list_personal_api_keys(request.auth)
