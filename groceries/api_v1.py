@@ -26,7 +26,6 @@ from groceries.services import (
     InvalidProductListCursorError,
     NoOpenBasketError,
     ProductNameConflict,
-    basket_total_from_product_prices,
 )
 
 router = Router(auth=protected_api_auth, tags=["Groceries"])
@@ -129,7 +128,7 @@ def get_latest_basket(request, payload: GetLatestBasketRequest):
             basket_id=basket.pk,
             created_at=basket.created_at,
             purchased_at=basket.purchased_at,
-            total=basket_total_from_product_prices(basket=basket),
+            total=basket.total,
             products=[
                 ProductSchema(
                     product_id=p.pk,

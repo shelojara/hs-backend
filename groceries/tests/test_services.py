@@ -12,7 +12,6 @@ from groceries.services import (
     NoOpenBasketError,
     ProductNameConflict,
     add_product_to_basket,
-    basket_total_from_product_prices,
     create_product,
     delete_product_from_basket,
     get_latest_basket_with_products,
@@ -256,6 +255,7 @@ def test_add_product_to_basket_creates_basket_when_none_open(_mock_gemini):
     basket = add_product_to_basket(product_id=pid, user_id=user.pk)
     assert basket.pk is not None
     assert basket.purchased_at is None
+    assert basket.total == Decimal("0")
     assert list(basket.products.values_list("pk", flat=True)) == [pid]
 
 
@@ -424,14 +424,18 @@ def test_get_latest_basket_with_products_includes_purchased(_mock_gemini):
     "groceries.services.gemini_service.fetch_lider_product_info",
     return_value=None,
 )
-def test_basket_total_from_product_prices_sums_prices(_mock_gemini):
+def test_basket_total_stays_synced_on_add_and_remove(_mock_gemini):
     user = _user()
     pa = Product.objects.create(name="A", price=Decimal("1.50"))
     pb = Product.objects.create(name="B", price=Decimal("2.25"))
-    basket = Basket.objects.create(owner=user)
-    assert basket_total_from_product_prices(basket=basket) == Decimal("0")
-    basket.products.add(pa, pb)
-    assert basket_total_from_product_prices(basket=basket) == Decimal("3.75")
+    b1 = add_product_to_basket(product_id=pa.pk, user_id=user.pk)
+    assert b1.total == Decimal("1.50")
+    add_product_to_basket(product_id=pb.pk, user_id=user.pk)
+    b1.refresh_from_db()
+    assert b1.total == Decimal("3.75")
+    delete_product_from_basket(product_id=pa.pk, user_id=user.pk)
+    b1.refresh_from_db()
+    assert b1.total == Decimal("2.25")
 
 
 @pytest.mark.django_db
