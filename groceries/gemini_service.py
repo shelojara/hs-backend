@@ -14,7 +14,9 @@ LIDER_PRODUCT_SYSTEM_INSTRUCTION = (
     "Use Google Search to find how this product appears on líder.cl or in Lider Chile listings "
     "when possible. "
     "Respond with a single JSON object only — no markdown, no code fences, no text before or after. "
-    'Keys (all strings): "brand" (marca comercial or empty), '
+    'Keys (all strings): "display_name" (best retail-style product title for lists: proper capitalization, '
+    "brand + product line + key format as on shelf or líder.cl; Spanish Chile; empty if unknown), "
+    '"brand" (marca comercial or empty), '
     '"price" (typical shelf price in Chilean pesos or CLP text as found, or empty if unknown), '
     '"format" (presentation: size, units, e.g. "1 L", "6 x 330 ml", "500 g"; empty if unknown), '
     '"details" (one short paragraph in Spanish (Chile): category/aisle and one concrete fact if known; '
@@ -26,6 +28,7 @@ LIDER_PRODUCT_SYSTEM_INSTRUCTION = (
 
 @dataclass(frozen=True)
 class LiderProductInfo:
+    display_name: str
     brand: str
     price: str
     format: str
@@ -88,6 +91,7 @@ def _parse_lider_product_payload(raw: str | None) -> LiderProductInfo | None:
             data = None
         if isinstance(data, dict):
             return LiderProductInfo(
+                display_name=_normalize_field(data.get("display_name"), 255),
                 brand=_normalize_field(data.get("brand"), 255),
                 price=_normalize_field(data.get("price"), 128),
                 format=_normalize_field(data.get("format"), 255),
@@ -97,7 +101,13 @@ def _parse_lider_product_payload(raw: str | None) -> LiderProductInfo | None:
     details = _normalize_field(raw, 4000)
     if not details:
         return None
-    return LiderProductInfo(brand="", price="", format="", details=details)
+    return LiderProductInfo(
+        display_name="",
+        brand="",
+        price="",
+        format="",
+        details=details,
+    )
 
 
 def fetch_lider_product_info(*, product_name: str) -> LiderProductInfo | None:
