@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
 from django.db.models import UniqueConstraint
@@ -9,9 +11,12 @@ class Product(models.Model):
     original_name = models.CharField(max_length=255, blank=True, default="")
     standard_name = models.CharField(max_length=255, blank=True, default="")
     brand = models.CharField(max_length=255, blank=True, default="")
-    price = models.CharField(max_length=128, blank=True, default="")
+    price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0"),
+    )
     format = models.CharField(max_length=255, blank=True, default="")
-    details = models.TextField(blank=True, default="")
     emoji = models.CharField(max_length=64, blank=True, default="")
 
     class Meta:

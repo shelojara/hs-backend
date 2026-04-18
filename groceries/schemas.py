@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated
 
 from ninja import Schema
@@ -33,9 +34,8 @@ class ProductSchema(Schema):
     original_name: str
     standard_name: str
     brand: str
-    price: str
+    price: Decimal
     format: str
-    details: str
     emoji: str
 
 

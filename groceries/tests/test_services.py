@@ -1,3 +1,4 @@
+from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
@@ -46,22 +47,20 @@ def test_create_product_persists_and_returns_id(_mock_gemini):
         display_name="Oatly Leche de Avena 1 L",
         standard_name="Leche de avena",
         brand="Oatly",
-        price="$3.990",
+        price=Decimal("3990"),
         format="1 L",
-        details="Leche de avena 1 L en lácteos.",
         emoji="🥛",
     ),
 )
-def test_create_product_stores_gemini_lider_details(_mock_gemini):
+def test_create_product_stores_gemini_lider_fields(_mock_gemini):
     pid = create_product(name="Avena")
     row = Product.objects.get(pk=pid)
     assert row.name == "Oatly Leche de Avena 1 L"
     assert row.original_name == "Avena"
     assert row.standard_name == "Leche de avena"
     assert row.brand == "Oatly"
-    assert row.price == "$3.990"
+    assert row.price == Decimal("3990.00")
     assert row.format == "1 L"
-    assert row.details == "Leche de avena 1 L en lácteos."
     assert row.emoji == "🥛"
 
 
@@ -70,9 +69,9 @@ def test_create_product_stores_gemini_lider_details(_mock_gemini):
     "groceries.services.gemini_service.fetch_lider_product_info",
     return_value=None,
 )
-def test_create_product_leaves_details_empty_when_gemini_returns_none(_mock_gemini):
+def test_create_product_leaves_price_zero_when_gemini_returns_none(_mock_gemini):
     pid = create_product(name="X")
-    assert Product.objects.get(pk=pid).details == ""
+    assert Product.objects.get(pk=pid).price == Decimal("0")
 
 
 @pytest.mark.django_db
@@ -172,9 +171,8 @@ def test_list_products_rejects_invalid_cursor():
         display_name="New Title",
         standard_name="Arroz",
         brand="B",
-        price="1000",
+        price=Decimal("1000"),
         format="1 kg",
-        details="D",
         emoji="🍚",
     ),
 )
@@ -186,9 +184,8 @@ def test_recheck_product_from_gemini_updates_fields(_mock_gemini):
     assert out.original_name == "Old"
     assert out.standard_name == "Arroz"
     assert out.brand == "B"
-    assert out.price == "1000"
+    assert out.price == Decimal("1000.00")
     assert out.format == "1 kg"
-    assert out.details == "D"
     assert out.emoji == "🍚"
 
 
@@ -200,9 +197,9 @@ def test_recheck_product_from_gemini_updates_fields(_mock_gemini):
 def test_recheck_product_from_gemini_noop_when_gemini_returns_none(_mock_gemini):
     pid = create_product(name="X")
     row = Product.objects.get(pk=pid)
-    before = (row.name, row.brand, row.details)
+    before = (row.name, row.brand, row.price)
     out = recheck_product_from_gemini(product_id=pid)
-    assert (out.name, out.brand, out.details) == before
+    assert (out.name, out.brand, out.price) == before
 
 
 @pytest.mark.django_db
@@ -225,9 +222,8 @@ def test_recheck_product_from_gemini_noop_when_gemini_key_missing(_mock_gemini):
         display_name="Taken",
         standard_name="",
         brand="",
-        price="",
+        price=Decimal("0"),
         format="",
-        details="",
         emoji="",
     ),
 )
