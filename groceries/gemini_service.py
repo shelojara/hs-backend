@@ -24,10 +24,8 @@ LIDER_PRODUCT_SYSTEM_INSTRUCTION = (
     '"format" (presentation: size, units, e.g. "1 L", "6 x 330 ml", "500 g"; empty if unknown), '
     '"details" (one short paragraph in Spanish (Chile): category/aisle and one concrete fact if known; '
     "if no líder.cl hit, say briefly that results are general or uncertain), "
-    '"image_url" (HTTPS URL of one representative product image that is publicly reachable without login '
-    "(manufacturer site, retailer other than líder.cl, press pack, Wikimedia Commons, or similar); "
-    "do not use líder.cl or other URLs that block hotlinking or require cookies; pick from search results; "
-    "empty if none). "
+    '"emoji" (one Unicode emoji best matching product type or category, e.g. 🥛 for milk, 🍚 for rice; '
+    "empty string \"\" if unsure). "
     "Use empty string \"\" for any unknown field. "
     "Keep \"details\" under 900 characters."
 )
@@ -41,7 +39,7 @@ class LiderProductInfo:
     price: str
     format: str
     details: str
-    image_url: str
+    emoji: str
 
 
 def _get_client() -> genai.Client:
@@ -106,7 +104,7 @@ def _parse_lider_product_payload(raw: str | None) -> LiderProductInfo | None:
                 price=_normalize_field(data.get("price"), 128),
                 format=_normalize_field(data.get("format"), 255),
                 details=_normalize_field(data.get("details"), 4000),
-                image_url=_normalize_field(data.get("image_url"), 2048),
+                emoji=_normalize_field(data.get("emoji"), 64),
             )
     # Legacy: plain text → details only
     details = _normalize_field(raw, 4000)
@@ -119,7 +117,7 @@ def _parse_lider_product_payload(raw: str | None) -> LiderProductInfo | None:
         price="",
         format="",
         details=details,
-        image_url="",
+        emoji="",
     )
 
 
