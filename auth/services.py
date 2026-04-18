@@ -143,3 +143,9 @@ def delete_personal_api_key(user: AbstractBaseUser, *, api_key_id: int) -> None:
 def list_personal_api_keys(user: AbstractBaseUser) -> list[ApiKey]:
     """Return API key metadata for user (prefix + created_at; never full secret)."""
     return list(ApiKey.objects.filter(user_id=user.pk))
+
+
+def delete_user_account(user: AbstractBaseUser) -> None:
+    """Remove user and all owned data (pages, snapshots, questions, API keys)."""
+    User = get_user_model()
+    User.objects.filter(pk=user.pk).delete()

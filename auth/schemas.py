@@ -39,3 +39,7 @@ class PersonalApiKey(Schema):
 
 class ListPersonalApiKeysResponse(Schema):
     api_keys: list[PersonalApiKey]
+
+
+class DeleteUserResponse(Schema):
+    pass

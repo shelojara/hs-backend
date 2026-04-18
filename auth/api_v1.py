@@ -7,6 +7,7 @@ from .schemas import (
     CreatePersonalApiKeyResponse,
     DeletePersonalApiKeyRequest,
     DeletePersonalApiKeyResponse,
+    DeleteUserResponse,
     ListPersonalApiKeysResponse,
     LoginRequest,
     LoginResponse,
@@ -20,6 +21,7 @@ from .services import (
     UsernameTaken,
     create_personal_api_key,
     delete_personal_api_key,
+    delete_user_account,
     list_personal_api_keys,
     login as login_service,
     register_user,
@@ -96,3 +98,13 @@ def list_personal_api_keys_endpoint(request):
             for row in rows
         ],
     )
+
+
+@router.post(
+    "/v1.Auth.DeleteUser",
+    response=DeleteUserResponse,
+    auth=protected_api_auth,
+)
+def delete_user(request):
+    delete_user_account(request.auth)
+    return DeleteUserResponse()
