@@ -43,7 +43,7 @@ def create_product(*, name: str) -> int:
         raise ProductNameConflict() from exc
 
     try:
-        details = gemini_service.fetch_lider_product_details(product_name=normalized)
+        info = gemini_service.fetch_lider_product_info(product_name=normalized)
     except RuntimeError:
         logger.warning(
             "Skipped Gemini Líder product details: GEMINI_API_KEY not set (product id=%s).",
@@ -52,9 +52,16 @@ def create_product(*, name: str) -> int:
     except Exception:
         logger.exception("Gemini Líder product details failed for product id=%s", product.pk)
     else:
-        if details:
-            product.details = details
-            product.save(update_fields=["details"])
+        if info and (
+            info.brand or info.price or info.format or info.details
+        ):
+            product.brand = info.brand
+            product.price = info.price
+            product.format = info.format
+            product.details = info.details
+            product.save(
+                update_fields=["brand", "price", "format", "details"],
+            )
 
     return product.pk
 

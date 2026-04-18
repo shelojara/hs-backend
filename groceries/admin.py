@@ -5,7 +5,7 @@ from groceries.models import Product, Purchase
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ("name",)
+    list_display = ("name", "brand", "price", "format")
 
 
 @admin.register(Purchase)
