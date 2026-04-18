@@ -11,13 +11,17 @@ from .schemas import (
     LoginRequest,
     LoginResponse,
     PersonalApiKey,
+    RegisterRequest,
 )
 from .services import (
     InvalidLogin,
+    InvalidRegistration,
+    UsernameTaken,
     create_personal_api_key,
     delete_personal_api_key,
     list_personal_api_keys,
     login as login_service,
+    register_user,
 )
 
 router = Router()
@@ -33,6 +37,21 @@ def login(request, payload: LoginRequest):
         )
     except InvalidLogin:
         raise HttpError(401, "Invalid username or password.") from None
+    return LoginResponse(access_token=access_token)
+
+
+@router.post("/v1.Auth.Register", response=LoginResponse)
+def register(request, payload: RegisterRequest):
+    try:
+        access_token = register_user(
+            request,
+            username=payload.username,
+            password=payload.password,
+        )
+    except UsernameTaken:
+        raise HttpError(409, "Username already taken.") from None
+    except InvalidRegistration as e:
+        raise HttpError(400, "; ".join(e.messages)) from None
     return LoginResponse(access_token=access_token)
 
 

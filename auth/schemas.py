@@ -8,6 +8,11 @@ class LoginRequest(Schema):
     password: str
 
 
+class RegisterRequest(Schema):
+    username: str
+    password: str
+
+
 class LoginResponse(Schema):
     access_token: str
     token_type: str = "Bearer"
