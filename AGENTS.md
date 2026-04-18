@@ -2,7 +2,9 @@
 
 ## Cursor Cloud specific instructions
 
-This is a Django-based **Page Checker** API (Django Ninja) that monitors web pages for content changes. It uses SQLite (no external DB server needed) and `uv` as the Python package manager.
+**Backend monorepo:** one Django project; **auth** (and related shared infrastructure) lives in common code paths and is reused across apps. Top-level directories such as `pagechecker/` are **independent applications**—each owns its domain, services, and tests. Expect **more apps** to land over time (for example groceries, manga); treat new app directories the same way: shared auth, app-local code.
+
+This document focuses on the **Page Checker** app: a Django Ninja API that monitors web pages for content changes. It uses SQLite (no external DB server needed) and `uv` as the Python package manager.
 
 ### Quick reference
 
