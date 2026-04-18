@@ -5,6 +5,7 @@ from typing import Any
 
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch, Q
+from django.utils import timezone
 
 from groceries import gemini_service
 from groceries.gemini_service import LiderProductInfo
@@ -222,3 +223,19 @@ def get_latest_basket_with_products() -> Basket | None:
         .order_by("-created_at")
         .first()
     )
+
+
+def purchase_latest_open_basket() -> Basket:
+    """Set purchased_at on latest open basket (purchased_at unset)."""
+    with transaction.atomic():
+        basket = (
+            Basket.objects.select_for_update()
+            .filter(purchased_at__isnull=True)
+            .order_by("-created_at")
+            .first()
+        )
+        if basket is None:
+            raise NoOpenBasketError()
+        basket.purchased_at = timezone.now()
+        basket.save(update_fields=["purchased_at"])
+    return basket
