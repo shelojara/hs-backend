@@ -1,4 +1,6 @@
 from django.db import models
+from django.db.models import UniqueConstraint
+from django.db.models.functions import Lower
 
 
 class Product(models.Model):
@@ -6,6 +8,12 @@ class Product(models.Model):
 
     class Meta:
         ordering = ("name",)
+        constraints = [
+            UniqueConstraint(
+                Lower("name"),
+                name="groceries_product_name_lower_uniq",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.name
