@@ -114,7 +114,12 @@ def find_products(*, query: str) -> list[MerchantProductInfo]:
     return []
 
 
-def create_product_from_merchant_info(*, query_name: str, info: MerchantProductInfo) -> int:
+def create_product_from_merchant_info(
+    *,
+    query_name: str,
+    info: MerchantProductInfo,
+    is_custom: bool = False,
+) -> int:
     """Persist product using *info* from a prior find (no Gemini call). Raises ProductNameConflict."""
     anchor = query_name.strip()
     if not anchor:
@@ -132,6 +137,7 @@ def create_product_from_merchant_info(*, query_name: str, info: MerchantProductI
             price=info.price,
             format=info.format,
             emoji=info.emoji,
+            is_custom=is_custom,
         )
     except IntegrityError as exc:
         raise ProductNameConflict() from exc

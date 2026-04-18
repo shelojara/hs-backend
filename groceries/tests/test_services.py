@@ -159,6 +159,28 @@ def test_create_product_from_merchant_info_persists_without_gemini(_mock_gemini)
     assert row.standard_name == "Leche entera"
     assert row.brand == "Colún"
     assert row.price == Decimal("2590.00")
+    assert row.is_custom is False
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_create_product_from_merchant_info_sets_is_custom(_mock_gemini):
+    pid = create_product_from_merchant_info(
+        query_name="custom",
+        info=MerchantProductInfo(
+            display_name="Custom item",
+            standard_name="",
+            brand="",
+            price=Decimal("0"),
+            format="",
+            emoji="",
+        ),
+        is_custom=True,
+    )
+    assert Product.objects.get(pk=pid).is_custom is True
 
 
 @pytest.mark.django_db
