@@ -3,12 +3,12 @@ import json
 import logging
 from typing import Any
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 
 from groceries import gemini_service
 from groceries.gemini_service import LiderProductInfo
-from groceries.models import Product
+from groceries.models import Basket, Product
 
 logger = logging.getLogger(__name__)
 
@@ -173,3 +173,19 @@ def list_products(
         last = page[-1]
         next_cursor = _encode_cursor({"q": q, "n": last.name, "i": last.pk})
     return page, next_cursor
+
+
+def add_product_to_basket(*, product_id: int) -> Basket:
+    """Use latest basket with purchased_at unset, or create one; append product."""
+    product = Product.objects.get(pk=product_id)
+    with transaction.atomic():
+        basket = (
+            Basket.objects.select_for_update()
+            .filter(purchased_at__isnull=True)
+            .order_by("-created_at")
+            .first()
+        )
+        if basket is None:
+            basket = Basket.objects.create()
+        basket.products.add(product)
+    return basket

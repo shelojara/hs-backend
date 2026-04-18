@@ -47,3 +47,11 @@ class RecheckProductRequest(Schema):
 
 class RecheckProductResponse(Schema):
     pass
+
+
+class AddProductToBasketRequest(Schema):
+    product_id: int
+
+
+class AddProductToBasketResponse(Schema):
+    basket_id: int

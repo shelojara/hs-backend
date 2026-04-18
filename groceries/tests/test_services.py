@@ -1,12 +1,14 @@
 from unittest.mock import patch
 
 import pytest
+from django.utils import timezone
 
 from groceries.gemini_service import LiderProductInfo
-from groceries.models import Product
+from groceries.models import Basket, Product
 from groceries.services import (
     InvalidProductListCursorError,
     ProductNameConflict,
+    add_product_to_basket,
     create_product,
     list_products,
     recheck_product_from_gemini,
@@ -223,3 +225,58 @@ def test_recheck_product_from_gemini_raises_when_display_name_conflicts(_mock_ge
 def test_recheck_product_from_gemini_raises_when_missing(_mock_gemini):
     with pytest.raises(Product.DoesNotExist):
         recheck_product_from_gemini(product_id=99999)
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_add_product_to_basket_creates_basket_when_none_open(_mock_gemini):
+    pid = create_product(name="Milk")
+    basket = add_product_to_basket(product_id=pid)
+    assert basket.pk is not None
+    assert basket.purchased_at is None
+    assert list(basket.products.values_list("pk", flat=True)) == [pid]
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_add_product_to_basket_reuses_latest_open_basket(_mock_gemini):
+    pid_a = create_product(name="A")
+    pid_b = create_product(name="B")
+    older = Basket.objects.create()
+    newer = Basket.objects.create()
+    out = add_product_to_basket(product_id=pid_a)
+    assert out.pk == newer.pk
+    assert set(newer.products.values_list("pk", flat=True)) == {pid_a}
+    add_product_to_basket(product_id=pid_b)
+    newer.refresh_from_db()
+    assert set(newer.products.values_list("pk", flat=True)) == {pid_a, pid_b}
+    assert older.products.count() == 0
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_add_product_to_basket_skips_purchased_baskets(_mock_gemini):
+    p = create_product(name="X")
+    open_b = Basket.objects.create()
+    Basket.objects.create(purchased_at=timezone.now())
+    out = add_product_to_basket(product_id=p)
+    assert out.pk == open_b.pk
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_add_product_to_basket_raises_when_product_missing(_mock_gemini):
+    with pytest.raises(Product.DoesNotExist):
+        add_product_to_basket(product_id=99999)
