@@ -80,8 +80,12 @@ def recheck_product(request, payload: RecheckProductRequest):
 
 @router.post("/v1.Groceries.AddProductToBasket", response=AddProductToBasketResponse)
 def add_product_to_basket(request, payload: AddProductToBasketRequest):
+    user = request.auth
     try:
-        basket = services.add_product_to_basket(product_id=payload.product_id)
+        basket = services.add_product_to_basket(
+            product_id=payload.product_id,
+            user_id=user.pk,
+        )
     except Product.DoesNotExist as exc:
         raise HttpError(404, "Product not found.") from exc
     return AddProductToBasketResponse(basket_id=basket.pk)
@@ -89,8 +93,12 @@ def add_product_to_basket(request, payload: AddProductToBasketRequest):
 
 @router.post("/v1.Groceries.DeleteProductFromBasket", response=DeleteProductFromBasketResponse)
 def delete_product_from_basket(request, payload: DeleteProductFromBasketRequest):
+    user = request.auth
     try:
-        services.delete_product_from_basket(product_id=payload.product_id)
+        services.delete_product_from_basket(
+            product_id=payload.product_id,
+            user_id=user.pk,
+        )
     except Product.DoesNotExist as exc:
         raise HttpError(404, "Product not found.") from exc
     except NoOpenBasketError as exc:
@@ -100,8 +108,9 @@ def delete_product_from_basket(request, payload: DeleteProductFromBasketRequest)
 
 @router.post("/v1.Groceries.PurchaseBasket", response=PurchaseBasketResponse)
 def purchase_basket(request, payload: PurchaseBasketRequest):
+    user = request.auth
     try:
-        basket = services.purchase_latest_open_basket()
+        basket = services.purchase_latest_open_basket(user_id=user.pk)
     except NoOpenBasketError as exc:
         raise HttpError(404, str(exc)) from exc
     return PurchaseBasketResponse(basket_id=basket.pk)
@@ -109,7 +118,8 @@ def purchase_basket(request, payload: PurchaseBasketRequest):
 
 @router.post("/v1.Groceries.GetLatestBasket", response=GetLatestBasketResponse)
 def get_latest_basket(request, payload: GetLatestBasketRequest):
-    basket = services.get_latest_basket_with_products()
+    user = request.auth
+    basket = services.get_latest_basket_with_products(user_id=user.pk)
     if basket is None:
         return GetLatestBasketResponse(basket=None)
     return GetLatestBasketResponse(

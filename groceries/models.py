@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.db.models import UniqueConstraint
 from django.db.models.functions import Lower
@@ -25,6 +26,11 @@ class Product(models.Model):
 
 
 class Basket(models.Model):
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="baskets",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     purchased_at = models.DateTimeField(null=True, blank=True)
     products = models.ManyToManyField(Product, related_name="baskets", blank=True)
