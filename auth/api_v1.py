@@ -27,7 +27,7 @@ from .services import (
     register_user,
 )
 
-router = Router()
+router = Router(tags=["Auth"])
 
 
 @router.post("/v1.Auth.Login", response=LoginResponse)
