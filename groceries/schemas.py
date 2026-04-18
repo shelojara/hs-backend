@@ -29,6 +29,7 @@ class ListProductsRequest(Schema):
 class ProductSchema(Schema):
     product_id: int
     name: str
+    original_name: str
     brand: str
     price: str
     format: str

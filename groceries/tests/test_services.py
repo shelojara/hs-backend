@@ -19,14 +19,17 @@ from groceries.services import (
 )
 def test_create_product_persists_and_returns_id(_mock_gemini):
     pid = create_product(name="  Oat milk  ")
-    assert pid == Product.objects.get(pk=pid).pk
-    assert Product.objects.get(pk=pid).name == "Oat milk"
+    row = Product.objects.get(pk=pid)
+    assert row.pk == pid
+    assert row.name == "Oat milk"
+    assert row.original_name == "Oat milk"
 
 
 @pytest.mark.django_db
 @patch(
     "groceries.services.gemini_service.fetch_lider_product_info",
     return_value=LiderProductInfo(
+        display_name="Oatly Leche de Avena 1 L",
         brand="Oatly",
         price="$3.990",
         format="1 L",
@@ -36,6 +39,8 @@ def test_create_product_persists_and_returns_id(_mock_gemini):
 def test_create_product_stores_gemini_lider_details(_mock_gemini):
     pid = create_product(name="Avena")
     row = Product.objects.get(pk=pid)
+    assert row.name == "Oatly Leche de Avena 1 L"
+    assert row.original_name == "Avena"
     assert row.brand == "Oatly"
     assert row.price == "$3.990"
     assert row.format == "1 L"

@@ -38,7 +38,7 @@ def create_product(*, name: str) -> int:
     if Product.objects.filter(name__iexact=normalized).exists():
         raise ProductNameConflict()
     try:
-        product = Product.objects.create(name=normalized)
+        product = Product.objects.create(name=normalized, original_name=normalized)
     except IntegrityError as exc:
         raise ProductNameConflict() from exc
 
@@ -52,16 +52,17 @@ def create_product(*, name: str) -> int:
     except Exception:
         logger.exception("Gemini Líder product details failed for product id=%s", product.pk)
     else:
-        if info and (
-            info.brand or info.price or info.format or info.details
-        ):
-            product.brand = info.brand
-            product.price = info.price
-            product.format = info.format
-            product.details = info.details
-            product.save(
-                update_fields=["brand", "price", "format", "details"],
-            )
+        if not info:
+            return product.pk
+
+        product.brand = info.brand
+        product.price = info.price
+        product.format = info.format
+        product.details = info.details
+        product.name = info.display_name or product.name
+        product.save(
+            update_fields=["brand", "price", "format", "details", "name"],
+        )
 
     return product.pk
 

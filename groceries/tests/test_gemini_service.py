@@ -8,8 +8,8 @@ from groceries.gemini_service import LiderProductInfo, _parse_lider_product_payl
 def test_fetch_lider_product_info_returns_structured_fields(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = (
-        '{"brand": "Colún", "price": "$2.590", "format": "1 L", '
-        '"details": "Leche entera, góndola lácteos."}'
+        '{"display_name": "Colún Leche Entera 1 L", "brand": "Colún", "price": "$2.590", '
+        '"format": "1 L", "details": "Leche entera, góndola lácteos."}'
     )
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = mock_response
@@ -18,6 +18,7 @@ def test_fetch_lider_product_info_returns_structured_fields(mock_get_client):
     out = gemini_service.fetch_lider_product_info(product_name="  Leche  ")
 
     assert out == LiderProductInfo(
+        display_name="Colún Leche Entera 1 L",
         brand="Colún",
         price="$2.590",
         format="1 L",
@@ -32,7 +33,7 @@ def test_fetch_lider_product_info_returns_structured_fields(mock_get_client):
 def test_fetch_lider_product_info_strips_json_fence(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = """```json
-{"brand": "", "price": "", "format": "500 g", "details": "Arroz."}
+{"display_name": "", "brand": "", "price": "", "format": "500 g", "details": "Arroz."}
 ```"""
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = mock_response
@@ -40,6 +41,7 @@ def test_fetch_lider_product_info_strips_json_fence(mock_get_client):
 
     out = gemini_service.fetch_lider_product_info(product_name="Arroz")
     assert out == LiderProductInfo(
+        display_name="",
         brand="",
         price="",
         format="500 g",
@@ -56,6 +58,7 @@ def test_fetch_lider_product_info_empty_name_returns_none(mock_get_client):
 def test_parse_legacy_plain_text_maps_to_details_only():
     out = _parse_lider_product_payload("  Solo texto.  ")
     assert out == LiderProductInfo(
+        display_name="",
         brand="",
         price="",
         format="",
@@ -66,6 +69,7 @@ def test_parse_legacy_plain_text_maps_to_details_only():
 def test_parse_invalid_json_falls_back_to_plain_text():
     out = _parse_lider_product_payload("{not json")
     assert out == LiderProductInfo(
+        display_name="",
         brand="",
         price="",
         format="",
