@@ -49,10 +49,10 @@ def create_product(request, payload: CreateProductRequest):
 @router.post("/v1.Groceries.FindProducts", response=FindProductsResponse)
 def find_products(request, payload: FindProductsRequest):
     try:
-        items = services.find_products(query=payload.name)
+        items = services.find_products(query=payload.query)
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    anchor = payload.name.strip()
+    anchor = payload.query.strip()
     return FindProductsResponse(
         products=[
             ProductCandidateSchema(

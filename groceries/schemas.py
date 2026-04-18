@@ -14,6 +14,14 @@ def _strip_nonempty_product_name(v: str) -> str:
     return s
 
 
+def _strip_nonempty_query(v: str) -> str:
+    s = v.strip()
+    if not s:
+        msg = "Query must not be empty."
+        raise ValueError(msg)
+    return s
+
+
 class CreateProductRequest(Schema):
     name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
 
@@ -23,7 +31,7 @@ class CreateProductResponse(Schema):
 
 
 class FindProductsRequest(Schema):
-    name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
+    query: Annotated[str, AfterValidator(_strip_nonempty_query)]
 
 
 class ProductCandidateSchema(Schema):

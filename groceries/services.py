@@ -98,7 +98,7 @@ def find_products(*, query: str) -> list[MerchantProductInfo]:
     """Return up to 10 Gemini merchant product rows for *query*; no DB writes."""
     normalized = query.strip()
     if not normalized:
-        msg = "Product name must not be empty."
+        msg = "Query must not be empty."
         raise ValueError(msg)
     try:
         return gemini_service.fetch_merchant_product_candidates(query=normalized)
