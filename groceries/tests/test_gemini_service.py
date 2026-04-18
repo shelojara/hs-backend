@@ -11,7 +11,7 @@ def test_fetch_lider_product_info_returns_structured_fields(mock_get_client):
         '{"display_name": "Colún Leche Entera 1 L", "standard_name": "Leche entera", '
         '"brand": "Colún", "price": "$2.590", '
         '"format": "1 L", "details": "Leche entera, góndola lácteos.", '
-        '"image_url": "https://lider.cl/img/leche.jpg"}'
+        '"image_url": "https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png"}'
     )
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = mock_response
@@ -26,7 +26,7 @@ def test_fetch_lider_product_info_returns_structured_fields(mock_get_client):
         price="$2.590",
         format="1 L",
         details="Leche entera, góndola lácteos.",
-        image_url="https://lider.cl/img/leche.jpg",
+        image_url="https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png",
     )
     mock_client.models.generate_content.assert_called_once()
     cfg = mock_client.models.generate_content.call_args.kwargs["config"]

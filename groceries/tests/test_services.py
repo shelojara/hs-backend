@@ -49,7 +49,7 @@ def test_create_product_persists_and_returns_id(_mock_gemini):
         price="$3.990",
         format="1 L",
         details="Leche de avena 1 L en lácteos.",
-        image_url="https://lider.cl/p/oatly.jpg",
+        image_url="https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png",
     ),
 )
 def test_create_product_stores_gemini_lider_details(_mock_gemini):
@@ -62,7 +62,7 @@ def test_create_product_stores_gemini_lider_details(_mock_gemini):
     assert row.price == "$3.990"
     assert row.format == "1 L"
     assert row.details == "Leche de avena 1 L en lácteos."
-    assert row.image_url == "https://lider.cl/p/oatly.jpg"
+    assert row.image_url == "https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png"
 
 
 @pytest.mark.django_db
