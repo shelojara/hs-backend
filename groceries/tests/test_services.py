@@ -44,6 +44,7 @@ def test_create_product_persists_and_returns_id(_mock_gemini):
     "groceries.services.gemini_service.fetch_lider_product_info",
     return_value=LiderProductInfo(
         display_name="Oatly Leche de Avena 1 L",
+        standard_name="Leche de avena",
         brand="Oatly",
         price="$3.990",
         format="1 L",
@@ -55,6 +56,7 @@ def test_create_product_stores_gemini_lider_details(_mock_gemini):
     row = Product.objects.get(pk=pid)
     assert row.name == "Oatly Leche de Avena 1 L"
     assert row.original_name == "Avena"
+    assert row.standard_name == "Leche de avena"
     assert row.brand == "Oatly"
     assert row.price == "$3.990"
     assert row.format == "1 L"
@@ -166,6 +168,7 @@ def test_list_products_rejects_invalid_cursor():
     "groceries.services.gemini_service.fetch_lider_product_info",
     return_value=LiderProductInfo(
         display_name="New Title",
+        standard_name="Arroz",
         brand="B",
         price="1000",
         format="1 kg",
@@ -178,6 +181,7 @@ def test_recheck_product_from_gemini_updates_fields(_mock_gemini):
     assert out.pk == pid
     assert out.name == "New Title"
     assert out.original_name == "Old"
+    assert out.standard_name == "Arroz"
     assert out.brand == "B"
     assert out.price == "1000"
     assert out.format == "1 kg"
@@ -215,6 +219,7 @@ def test_recheck_product_from_gemini_noop_when_gemini_key_missing(_mock_gemini):
     "groceries.services.gemini_service.fetch_lider_product_info",
     return_value=LiderProductInfo(
         display_name="Taken",
+        standard_name="",
         brand="",
         price="",
         format="",
