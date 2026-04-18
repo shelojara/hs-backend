@@ -183,29 +183,29 @@ def list_products(
     return page, next_cursor
 
 
-def add_product_to_basket(*, product_id: int) -> Basket:
-    """Use latest basket with purchased_at unset, or create one; append product."""
+def add_product_to_basket(*, product_id: int, user_id: int) -> Basket:
+    """Use latest open basket for *user_id*, or create one; append product."""
     product = Product.objects.get(pk=product_id)
     with transaction.atomic():
         basket = (
             Basket.objects.select_for_update()
-            .filter(purchased_at__isnull=True)
+            .filter(owner_id=user_id, purchased_at__isnull=True)
             .order_by("-created_at")
             .first()
         )
         if basket is None:
-            basket = Basket.objects.create()
+            basket = Basket.objects.create(owner_id=user_id)
         basket.products.add(product)
     return basket
 
 
-def delete_product_from_basket(*, product_id: int) -> None:
-    """Remove product from latest open basket (purchased_at unset). No-op if not in basket."""
+def delete_product_from_basket(*, product_id: int, user_id: int) -> None:
+    """Remove product from user's latest open basket. No-op if not in basket."""
     product = Product.objects.get(pk=product_id)
     with transaction.atomic():
         basket = (
             Basket.objects.select_for_update()
-            .filter(purchased_at__isnull=True)
+            .filter(owner_id=user_id, purchased_at__isnull=True)
             .order_by("-created_at")
             .first()
         )
@@ -214,10 +214,11 @@ def delete_product_from_basket(*, product_id: int) -> None:
         basket.products.remove(product)
 
 
-def get_latest_basket_with_products() -> Basket | None:
-    """Latest basket by created_at (any purchase state), with products ordered by name."""
+def get_latest_basket_with_products(*, user_id: int) -> Basket | None:
+    """Latest basket for *user* by created_at (any purchase state)."""
     return (
-        Basket.objects.prefetch_related(
+        Basket.objects.filter(owner_id=user_id)
+        .prefetch_related(
             Prefetch("products", queryset=Product.objects.order_by("name", "pk")),
         )
         .order_by("-created_at")
@@ -225,12 +226,12 @@ def get_latest_basket_with_products() -> Basket | None:
     )
 
 
-def purchase_latest_open_basket() -> Basket:
-    """Set purchased_at on latest open basket (purchased_at unset)."""
+def purchase_latest_open_basket(*, user_id: int) -> Basket:
+    """Set purchased_at on user's latest open basket."""
     with transaction.atomic():
         basket = (
             Basket.objects.select_for_update()
-            .filter(purchased_at__isnull=True)
+            .filter(owner_id=user_id, purchased_at__isnull=True)
             .order_by("-created_at")
             .first()
         )
