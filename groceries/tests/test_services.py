@@ -7,9 +7,11 @@ from groceries.gemini_service import LiderProductInfo
 from groceries.models import Basket, Product
 from groceries.services import (
     InvalidProductListCursorError,
+    NoOpenBasketError,
     ProductNameConflict,
     add_product_to_basket,
     create_product,
+    delete_product_from_basket,
     get_latest_basket_with_products,
     list_products,
     recheck_product_from_gemini,
@@ -281,6 +283,71 @@ def test_add_product_to_basket_skips_purchased_baskets(_mock_gemini):
 def test_add_product_to_basket_raises_when_product_missing(_mock_gemini):
     with pytest.raises(Product.DoesNotExist):
         add_product_to_basket(product_id=99999)
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_delete_product_from_basket_removes_line(_mock_gemini):
+    pid = create_product(name="Milk")
+    add_product_to_basket(product_id=pid)
+    delete_product_from_basket(product_id=pid)
+    b = Basket.objects.get(purchased_at__isnull=True)
+    assert b.products.count() == 0
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_delete_product_from_basket_targets_latest_open_basket(_mock_gemini):
+    pid = create_product(name="X")
+    older = Basket.objects.create()
+    newer = Basket.objects.create()
+    older.products.add(pid)
+    delete_product_from_basket(product_id=pid)
+    newer.refresh_from_db()
+    older.refresh_from_db()
+    assert newer.products.count() == 0
+    assert list(older.products.values_list("pk", flat=True)) == [pid]
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_delete_product_from_basket_noop_when_product_not_in_basket(_mock_gemini):
+    pid = create_product(name="Y")
+    Basket.objects.create()
+    delete_product_from_basket(product_id=pid)
+    assert Basket.objects.get(purchased_at__isnull=True).products.count() == 0
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_delete_product_from_basket_raises_when_no_open_basket(_mock_gemini):
+    pid = create_product(name="Z")
+    Basket.objects.create(purchased_at=timezone.now())
+    with pytest.raises(NoOpenBasketError):
+        delete_product_from_basket(product_id=pid)
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_delete_product_from_basket_raises_when_product_missing(_mock_gemini):
+    Basket.objects.create()
+    with pytest.raises(Product.DoesNotExist):
+        delete_product_from_basket(product_id=99999)
 
 
 @pytest.mark.django_db
