@@ -11,7 +11,7 @@ def test_fetch_lider_product_info_returns_structured_fields(mock_get_client):
         '{"display_name": "Colún Leche Entera 1 L", "standard_name": "Leche entera", '
         '"brand": "Colún", "price": "$2.590", '
         '"format": "1 L", "details": "Leche entera, góndola lácteos.", '
-        '"image_url": "https://lider.cl/img/leche.jpg"}'
+        '"emoji": "🥛"}'
     )
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = mock_response
@@ -26,7 +26,7 @@ def test_fetch_lider_product_info_returns_structured_fields(mock_get_client):
         price="$2.590",
         format="1 L",
         details="Leche entera, góndola lácteos.",
-        image_url="https://lider.cl/img/leche.jpg",
+        emoji="🥛",
     )
     mock_client.models.generate_content.assert_called_once()
     cfg = mock_client.models.generate_content.call_args.kwargs["config"]
@@ -37,7 +37,7 @@ def test_fetch_lider_product_info_returns_structured_fields(mock_get_client):
 def test_fetch_lider_product_info_strips_json_fence(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = """```json
-{"display_name": "", "standard_name": "Arroz grano largo", "brand": "", "price": "", "format": "500 g", "details": "Arroz.", "image_url": ""}
+{"display_name": "", "standard_name": "Arroz grano largo", "brand": "", "price": "", "format": "500 g", "details": "Arroz.", "emoji": ""}
 ```"""
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = mock_response
@@ -51,7 +51,7 @@ def test_fetch_lider_product_info_strips_json_fence(mock_get_client):
         price="",
         format="500 g",
         details="Arroz.",
-        image_url="",
+        emoji="",
     )
 
 
@@ -70,7 +70,7 @@ def test_parse_legacy_plain_text_maps_to_details_only():
         price="",
         format="",
         details="Solo texto.",
-        image_url="",
+        emoji="",
     )
 
 
@@ -83,5 +83,5 @@ def test_parse_invalid_json_falls_back_to_plain_text():
         price="",
         format="",
         details="{not json",
-        image_url="",
+        emoji="",
     )

@@ -78,7 +78,7 @@ def _apply_lider_product_info(
     product.format = info.format
     product.details = info.details
     product.standard_name = info.standard_name
-    product.image_url = info.image_url
+    product.emoji = info.emoji
     product.name = next_name
     product.save(
         update_fields=[
@@ -87,7 +87,7 @@ def _apply_lider_product_info(
             "format",
             "details",
             "standard_name",
-            "image_url",
+            "emoji",
             "name",
         ],
     )
