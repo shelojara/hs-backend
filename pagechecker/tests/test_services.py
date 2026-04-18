@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from pagechecker.models import Category, Page, Question, ReportInterval, Snapshot
 from pagechecker.services import (
+    MonitoredUrlFetchError,
     MonitoredUrlNotFoundError,
     QuestionInUseError,
     associate_questions_with_page,
@@ -488,6 +489,49 @@ def test_check_page_raises_monitored_url_not_found_on_http_404():
             check_page(page.id)
     assert "404" in str(exc_info.value)
     assert "Not Found" in str(exc_info.value)
+
+
+@pytest.mark.django_db
+def test_check_page_raises_monitored_url_fetch_on_http_403():
+    user = _owner()
+    page = Page.objects.create(url="https://example.com/forbidden", owner=user)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, request=request)
+
+    transport = httpx.MockTransport(handler)
+
+    def fake_get(url: str, verify: bool = False) -> httpx.Response:
+        with httpx.Client(transport=transport) as client:
+            return client.get(url)
+
+    with patch("pagechecker.services.httpx.get", new=fake_get):
+        with pytest.raises(MonitoredUrlFetchError) as exc_info:
+            check_page(page.id)
+    msg = str(exc_info.value)
+    assert "403" in msg
+    assert "Forbidden" in msg
+    assert "automated" in msg.lower()
+
+
+@pytest.mark.django_db
+def test_create_page_rolls_back_when_first_check_http_error():
+    user = _owner()
+    url = "https://example.com/create-rollback"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, request=request)
+
+    transport = httpx.MockTransport(handler)
+
+    def fake_get(u: str, verify: bool = False) -> httpx.Response:
+        with httpx.Client(transport=transport) as client:
+            return client.get(u)
+
+    with patch("pagechecker.services.httpx.get", new=fake_get):
+        with pytest.raises(MonitoredUrlFetchError):
+            create_page(url, user_id=user.pk)
+    assert not Page.objects.filter(url=url).exists()
 
 
 @pytest.mark.django_db
