@@ -4,6 +4,8 @@ from ninja.errors import HttpError
 from auth.security import protected_api_auth
 from groceries import services
 from groceries.schemas import (
+    AddProductToBasketRequest,
+    AddProductToBasketResponse,
     CreateProductRequest,
     CreateProductResponse,
     ListProductsRequest,
@@ -63,3 +65,12 @@ def recheck_product(request, payload: RecheckProductRequest):
     except ProductNameConflict as exc:
         raise HttpError(409, str(exc)) from exc
     return RecheckProductResponse()
+
+
+@router.post("/v1.Groceries.AddProductToBasket", response=AddProductToBasketResponse)
+def add_product_to_basket(request, payload: AddProductToBasketRequest):
+    try:
+        basket = services.add_product_to_basket(product_id=payload.product_id)
+    except Product.DoesNotExist as exc:
+        raise HttpError(404, "Product not found.") from exc
+    return AddProductToBasketResponse(basket_id=basket.pk)
