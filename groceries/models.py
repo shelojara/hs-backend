@@ -24,12 +24,13 @@ class Product(models.Model):
         return self.name
 
 
-class Purchase(models.Model):
+class Basket(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
-    products = models.ManyToManyField(Product, related_name="purchases", blank=True)
+    purchased_at = models.DateTimeField(null=True, blank=True)
+    products = models.ManyToManyField(Product, related_name="baskets", blank=True)
 
     class Meta:
         ordering = ("-created_at",)
 
     def __str__(self) -> str:
-        return f"Purchase({self.pk}) at {self.created_at}"
+        return f"Basket({self.pk}) at {self.created_at}"
