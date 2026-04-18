@@ -18,3 +18,21 @@ class CreateProductRequest(Schema):
 
 class CreateProductResponse(Schema):
     product_id: int
+
+
+class ListProductsRequest(Schema):
+    limit: int = 20
+    cursor: str | None = None
+    search: str | None = None
+    min_similarity: int = 60
+
+
+class ProductSummary(Schema):
+    product_id: int
+    name: str
+    similarity_score: float | None = None
+
+
+class ListProductsResponse(Schema):
+    products: list[ProductSummary]
+    next_cursor: str | None = None
