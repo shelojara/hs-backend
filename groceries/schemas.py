@@ -39,3 +39,11 @@ class ProductSchema(Schema):
 class ListProductsResponse(Schema):
     products: list[ProductSchema]
     next_cursor: str | None = None
+
+
+class RecheckProductRequest(Schema):
+    product_id: int
+
+
+class RecheckProductResponse(Schema):
+    pass
