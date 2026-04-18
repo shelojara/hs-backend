@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from groceries.models import Product, Purchase
+from groceries.models import Basket, Product
 
 
 @admin.register(Product)
@@ -8,7 +8,7 @@ class ProductAdmin(admin.ModelAdmin):
     list_display = ("name", "brand", "price", "format")
 
 
-@admin.register(Purchase)
-class PurchaseAdmin(admin.ModelAdmin):
-    list_display = ("id", "created_at")
+@admin.register(Basket)
+class BasketAdmin(admin.ModelAdmin):
+    list_display = ("id", "created_at", "purchased_at")
     filter_horizontal = ("products",)
