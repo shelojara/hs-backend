@@ -64,7 +64,7 @@ INSTALLED_APPS = [
     "django_q",
     "auth.apps.AuthConfig",
     "pagechecker",
-    "groceries.apps.GroceriesConfig",
+    "groceries",
 ]
 
 MIDDLEWARE = [
