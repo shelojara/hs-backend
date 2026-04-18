@@ -8,7 +8,11 @@ import bcrypt
 import jwt
 from django.conf import settings
 from django.contrib.auth import authenticate
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractBaseUser
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.http import HttpRequest
 
 from pagechecker.models import ApiKey
@@ -19,6 +23,17 @@ API_KEY_PREFIX_LEN = 12
 
 class InvalidLogin(Exception):
     """Username/password wrong or user inactive."""
+
+
+class UsernameTaken(Exception):
+    """Chosen username already exists."""
+
+
+class InvalidRegistration(Exception):
+    """Validation failed (e.g. password policy)."""
+
+    def __init__(self, messages: list[str]) -> None:
+        self.messages = messages
 
 
 def _encode_access_token(*, user_id: int, username: str) -> str:
@@ -46,6 +61,29 @@ def login(request: HttpRequest, *, username: str, password: str) -> str:
     )
     if user is None or not user.is_active:
         raise InvalidLogin
+    return _encode_access_token(
+        user_id=user.pk,
+        username=user.get_username(),
+    )
+
+
+def register_user(request: HttpRequest, *, username: str, password: str) -> str:
+    """Create user account; returns JWT access token (same shape as login)."""
+    User = get_user_model()
+    name = username.strip()
+    if not name:
+        raise InvalidRegistration(["Username is required."])
+    if User.objects.filter(username=name).exists():
+        raise UsernameTaken
+    candidate = User(username=name)
+    try:
+        validate_password(password, user=candidate)
+    except ValidationError as e:
+        raise InvalidRegistration(list(e.messages)) from None
+    try:
+        user = User.objects.create_user(username=name, password=password)
+    except IntegrityError:
+        raise UsernameTaken from None
     return _encode_access_token(
         user_id=user.pk,
         username=user.get_username(),
