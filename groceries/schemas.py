@@ -31,6 +31,7 @@ class ProductSchema(Schema):
     product_id: int
     name: str
     original_name: str
+    standard_name: str
     brand: str
     price: str
     format: str

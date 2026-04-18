@@ -16,6 +16,9 @@ LIDER_PRODUCT_SYSTEM_INSTRUCTION = (
     "Respond with a single JSON object only — no markdown, no code fences, no text before or after. "
     'Keys (all strings): "display_name" (best retail-style product title for lists: proper capitalization, '
     "brand + product line + key format as on shelf or líder.cl; Spanish Chile; empty if unknown), "
+    '"standard_name" (generic product type for grouping across brands and formats: Spanish Chile; '
+    "omit marca, precio, and envase/tamaño; short noun phrase e.g. \"Leche entera\", \"Arroz grano largo\"; "
+    "empty if unknown), "
     '"brand" (marca comercial or empty), '
     '"price" (typical shelf price in Chilean pesos or CLP text as found, or empty if unknown), '
     '"format" (presentation: size, units, e.g. "1 L", "6 x 330 ml", "500 g"; empty if unknown), '
@@ -29,6 +32,7 @@ LIDER_PRODUCT_SYSTEM_INSTRUCTION = (
 @dataclass(frozen=True)
 class LiderProductInfo:
     display_name: str
+    standard_name: str
     brand: str
     price: str
     format: str
@@ -92,6 +96,7 @@ def _parse_lider_product_payload(raw: str | None) -> LiderProductInfo | None:
         if isinstance(data, dict):
             return LiderProductInfo(
                 display_name=_normalize_field(data.get("display_name"), 255),
+                standard_name=_normalize_field(data.get("standard_name"), 255),
                 brand=_normalize_field(data.get("brand"), 255),
                 price=_normalize_field(data.get("price"), 128),
                 format=_normalize_field(data.get("format"), 255),
@@ -103,6 +108,7 @@ def _parse_lider_product_payload(raw: str | None) -> LiderProductInfo | None:
         return None
     return LiderProductInfo(
         display_name="",
+        standard_name="",
         brand="",
         price="",
         format="",

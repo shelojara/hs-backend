@@ -5,7 +5,7 @@ from groceries.models import Basket, Product
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ("name", "brand", "price", "format")
+    list_display = ("name", "standard_name", "brand", "price", "format")
 
 
 @admin.register(Basket)
