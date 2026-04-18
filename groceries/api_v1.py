@@ -31,7 +31,6 @@ def list_products(request, payload: ListProductsRequest):
             limit=payload.limit,
             cursor=payload.cursor,
             search=payload.search,
-            min_similarity=payload.min_similarity,
         )
     except InvalidProductListCursorError as exc:
         raise HttpError(400, str(exc)) from exc
@@ -40,7 +39,6 @@ def list_products(request, payload: ListProductsRequest):
             ProductSummary(
                 product_id=i.product_id,
                 name=i.name,
-                similarity_score=i.similarity_score,
             )
             for i in items
         ],

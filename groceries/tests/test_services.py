@@ -44,15 +44,12 @@ def test_list_products_orders_by_name_and_paginates():
 
 
 @pytest.mark.django_db
-def test_list_products_search_ranks_by_similarity():
+def test_list_products_search_icontains_ordered_by_name():
     create_product(name="Oat milk")
     create_product(name="Whole oat flakes")
     create_product(name="Rice milk")
-    items, _ = list_products(search="oat", limit=10, min_similarity=50)
-    names = [i.name for i in items]
-    assert "Oat milk" in names
-    assert "Whole oat flakes" in names
-    assert all(i.similarity_score is not None for i in items)
+    items, _ = list_products(search="oat", limit=10)
+    assert [i.name for i in items] == ["Oat milk", "Whole oat flakes"]
 
 
 @pytest.mark.django_db
