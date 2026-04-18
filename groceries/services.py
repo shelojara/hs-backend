@@ -1,6 +1,5 @@
 import base64
 import json
-from dataclasses import dataclass
 from typing import Any
 
 from django.db import IntegrityError
@@ -61,12 +60,6 @@ def _decode_cursor(token: str) -> dict[str, Any]:
         raise InvalidProductListCursorError() from exc
 
 
-@dataclass(frozen=True)
-class ProductListItem:
-    product_id: int
-    name: str
-
-
 def _clamp_limit(limit: int) -> int:
     if limit < 1:
         return 1
@@ -78,7 +71,7 @@ def list_products(
     limit: int = DEFAULT_LIST_LIMIT,
     cursor: str | None = None,
     search: str | None = None,
-) -> tuple[list[ProductListItem], str | None]:
+) -> tuple[list[Product], str | None]:
     """List products with cursor pagination; optional case-insensitive substring search (ILIKE)."""
     lim = _clamp_limit(limit)
     q = (search or "").strip()
@@ -102,10 +95,9 @@ def list_products(
     rows = list(qs[: lim + 1])
     has_more = len(rows) > lim
     page = rows[:lim]
-    items = [ProductListItem(product_id=p.pk, name=p.name) for p in page]
 
     next_cursor = None
     if has_more and page:
         last = page[-1]
         next_cursor = _encode_cursor({"q": q, "n": last.name, "i": last.pk})
-    return items, next_cursor
+    return page, next_cursor

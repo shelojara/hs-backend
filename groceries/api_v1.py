@@ -8,7 +8,7 @@ from groceries.schemas import (
     CreateProductResponse,
     ListProductsRequest,
     ListProductsResponse,
-    ProductSummary,
+    ProductSchema,
 )
 from groceries.services import InvalidProductListCursorError, ProductNameConflict
 
@@ -36,11 +36,11 @@ def list_products(request, payload: ListProductsRequest):
         raise HttpError(400, str(exc)) from exc
     return ListProductsResponse(
         products=[
-            ProductSummary(
-                product_id=i.product_id,
-                name=i.name,
+            ProductSchema(
+                product_id=p.pk,
+                name=p.name,
             )
-            for i in items
+            for p in items
         ],
         next_cursor=next_cursor,
     )

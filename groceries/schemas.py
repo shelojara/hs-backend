@@ -26,11 +26,11 @@ class ListProductsRequest(Schema):
     search: str | None = None
 
 
-class ProductSummary(Schema):
+class ProductSchema(Schema):
     product_id: int
     name: str
 
 
 class ListProductsResponse(Schema):
-    products: list[ProductSummary]
+    products: list[ProductSchema]
     next_cursor: str | None = None
