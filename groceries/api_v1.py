@@ -16,6 +16,8 @@ from groceries.schemas import (
     ListProductsRequest,
     ListProductsResponse,
     ProductSchema,
+    PurchaseBasketRequest,
+    PurchaseBasketResponse,
     RecheckProductRequest,
     RecheckProductResponse,
 )
@@ -94,6 +96,15 @@ def delete_product_from_basket(request, payload: DeleteProductFromBasketRequest)
     except NoOpenBasketError as exc:
         raise HttpError(404, str(exc)) from exc
     return DeleteProductFromBasketResponse()
+
+
+@router.post("/v1.Groceries.PurchaseBasket", response=PurchaseBasketResponse)
+def purchase_basket(request, payload: PurchaseBasketRequest):
+    try:
+        basket = services.purchase_latest_open_basket()
+    except NoOpenBasketError as exc:
+        raise HttpError(404, str(exc)) from exc
+    return PurchaseBasketResponse(basket_id=basket.pk)
 
 
 @router.post("/v1.Groceries.GetLatestBasket", response=GetLatestBasketResponse)

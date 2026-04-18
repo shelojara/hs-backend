@@ -14,6 +14,7 @@ from groceries.services import (
     delete_product_from_basket,
     get_latest_basket_with_products,
     list_products,
+    purchase_latest_open_basket,
     recheck_product_from_gemini,
 )
 
@@ -390,3 +391,44 @@ def test_get_latest_basket_with_products_includes_purchased(_mock_gemini):
     assert out is not None
     assert out.pk == b.pk
     assert list(out.products.values_list("pk", flat=True)) == [pid]
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_purchase_latest_open_basket_sets_purchased_at(_mock_gemini):
+    older = Basket.objects.create()
+    newer = Basket.objects.create()
+    out = purchase_latest_open_basket()
+    assert out.pk == newer.pk
+    newer.refresh_from_db()
+    older.refresh_from_db()
+    assert newer.purchased_at is not None
+    assert older.purchased_at is None
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_purchase_latest_open_basket_skips_already_purchased(_mock_gemini):
+    open_b = Basket.objects.create()
+    Basket.objects.create(purchased_at=timezone.now())
+    out = purchase_latest_open_basket()
+    assert out.pk == open_b.pk
+    open_b.refresh_from_db()
+    assert open_b.purchased_at is not None
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_purchase_latest_open_basket_raises_when_none_open(_mock_gemini):
+    Basket.objects.create(purchased_at=timezone.now())
+    with pytest.raises(NoOpenBasketError):
+        purchase_latest_open_basket()

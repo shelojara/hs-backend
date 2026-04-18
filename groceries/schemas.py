@@ -79,3 +79,11 @@ class GetLatestBasketRequest(Schema):
 
 class GetLatestBasketResponse(Schema):
     basket: BasketSchema | None
+
+
+class PurchaseBasketRequest(Schema):
+    """No fields; POST body may be `{}` for RPC transport."""
+
+
+class PurchaseBasketResponse(Schema):
+    basket_id: int
