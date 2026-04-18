@@ -12,14 +12,27 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='Product',
+            name="Product",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=255)),
-                ('last_bought_at', models.DateTimeField(blank=True, null=True)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("name", models.CharField(max_length=255)),
             ],
             options={
-                'ordering': ('name',),
+                "ordering": ("name",),
+            },
+        ),
+        migrations.CreateModel(
+            name="Purchase",
+            fields=[
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "products",
+                    models.ManyToManyField(blank=True, related_name="purchases", to="groceries.product"),
+                ),
+            ],
+            options={
+                "ordering": ("-created_at",),
             },
         ),
     ]
