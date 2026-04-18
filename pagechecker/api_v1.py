@@ -5,7 +5,11 @@ from ninja.errors import HttpError
 from auth.security import protected_api_auth
 from backend.email_services import send_email_via_gmail
 from pagechecker import services
-from pagechecker.services import MonitoredUrlNotFoundError, QuestionInUseError
+from pagechecker.services import (
+    MonitoredUrlFetchError,
+    MonitoredUrlNotFoundError,
+    QuestionInUseError,
+)
 from pagechecker.models import Page
 from pagechecker.schemas import (
     AssociateQuestionsWithPageRequest,
@@ -74,6 +78,8 @@ def create_page(request, payload: CreatePageRequest):
         page_id = services.create_page(url=payload.url, user_id=user.pk)
     except MonitoredUrlNotFoundError as exc:
         raise HttpError(404, str(exc)) from exc
+    except MonitoredUrlFetchError as exc:
+        raise HttpError(502, str(exc)) from exc
     return CreatePageResponse(page_id=page_id)
 
 
@@ -195,6 +201,8 @@ def change_page_url(request, payload: ChangePageUrlRequest):
         raise HttpError(404, "Page not found.")
     except MonitoredUrlNotFoundError as exc:
         raise HttpError(404, str(exc)) from exc
+    except MonitoredUrlFetchError as exc:
+        raise HttpError(502, str(exc)) from exc
     return ChangePageUrlResponse()
 
 
@@ -216,6 +224,8 @@ def check_page(request, payload: CheckPageRequest):
         has_changed = services.check_page(page_id=payload.page_id)
     except MonitoredUrlNotFoundError as exc:
         raise HttpError(404, str(exc)) from exc
+    except MonitoredUrlFetchError as exc:
+        raise HttpError(502, str(exc)) from exc
     return CheckPageResponse(has_changed=has_changed)
 
 

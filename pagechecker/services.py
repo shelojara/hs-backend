@@ -73,6 +73,27 @@ class MonitoredUrlNotFoundError(Exception):
         super().__init__(message)
 
 
+class MonitoredUrlFetchError(Exception):
+    """Fetch failed: non-404 HTTP error, timeout, or other transport error."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+def _raise_for_failed_fetch(response: httpx.Response) -> None:
+    """Raise domain error when *response* is not usable (404 or other error status)."""
+    code = response.status_code
+    if code == 404:
+        raise MonitoredUrlNotFoundError()
+    if response.is_error:
+        reason = (response.reason_phrase or "").strip() or "error"
+        raise MonitoredUrlFetchError(
+            f"The monitored URL returned HTTP {code} ({reason}). "
+            "Page Checker cannot fetch this page; the site may block automated requests "
+            "(for example bot protection or access control)."
+        )
+
+
 class QuestionInUseError(Exception):
     """Question still linked to at least one page; delete blocked."""
 
@@ -159,8 +180,9 @@ def _assign_page_category_via_gemini(page: Page) -> None:
 
 
 def create_page(url: str, *, user_id: int) -> int:
-    page = Page.objects.create(url=url, owner_id=user_id)
-    check_page(page.id)
+    with transaction.atomic():
+        page = Page.objects.create(url=url, owner_id=user_id)
+        check_page(page.id)
     page.refresh_from_db()
     _assign_page_category_via_gemini(page)
     return page.id
@@ -238,10 +260,13 @@ def check_page(page_id: int) -> bool:
     """Fetch the page, snapshot its text content, and return whether it changed."""
     page = Page.objects.get(id=page_id)
 
-    response = httpx.get(str(page.url), verify=False)
-    if response.status_code == 404:
-        raise MonitoredUrlNotFoundError()
-    response.raise_for_status()
+    try:
+        response = httpx.get(str(page.url), verify=False)
+    except httpx.RequestError as exc:
+        raise MonitoredUrlFetchError(
+            f"Could not reach the monitored URL ({exc!s})."
+        ) from exc
+    _raise_for_failed_fetch(response)
 
     body_html = extract_body_html(response.text)
     md_content = html_to_markdown(body_html)
