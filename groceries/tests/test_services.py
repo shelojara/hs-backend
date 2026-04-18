@@ -15,6 +15,7 @@ from groceries.services import (
     create_product,
     delete_product_from_basket,
     get_latest_basket_with_products,
+    basket_total_price,
     list_products,
     purchase_latest_open_basket,
     recheck_product_from_gemini,
@@ -416,6 +417,35 @@ def test_get_latest_basket_with_products_includes_purchased(_mock_gemini):
     assert out is not None
     assert out.pk == b.pk
     assert list(out.products.values_list("pk", flat=True)) == [pid]
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_basket_total_price_sums_product_prices(_mock_gemini):
+    user = _user()
+    pa = Product.objects.create(name="A", price=Decimal("1.50"))
+    pb = Product.objects.create(name="B", price=Decimal("2.25"))
+    b = Basket.objects.create(owner=user)
+    b.products.add(pa, pb)
+    b = get_latest_basket_with_products(user_id=user.pk)
+    assert b is not None
+    assert basket_total_price(basket=b) == Decimal("3.75")
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_basket_total_price_empty_basket_zero(_mock_gemini):
+    user = _user()
+    Basket.objects.create(owner=user)
+    b = get_latest_basket_with_products(user_id=user.pk)
+    assert b is not None
+    assert basket_total_price(basket=b) == Decimal("0")
 
 
 @pytest.mark.django_db

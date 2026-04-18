@@ -72,6 +72,7 @@ class BasketSchema(Schema):
     basket_id: int
     created_at: datetime
     purchased_at: datetime | None
+    total_price: Decimal
     products: list[ProductSchema]
 
 
