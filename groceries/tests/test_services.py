@@ -12,6 +12,7 @@ from groceries.services import (
     NoOpenBasketError,
     ProductNameConflict,
     add_product_to_basket,
+    basket_total_from_product_prices,
     create_product,
     delete_product_from_basket,
     get_latest_basket_with_products,
@@ -416,6 +417,21 @@ def test_get_latest_basket_with_products_includes_purchased(_mock_gemini):
     assert out is not None
     assert out.pk == b.pk
     assert list(out.products.values_list("pk", flat=True)) == [pid]
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_basket_total_from_product_prices_sums_prices(_mock_gemini):
+    user = _user()
+    pa = Product.objects.create(name="A", price=Decimal("1.50"))
+    pb = Product.objects.create(name="B", price=Decimal("2.25"))
+    basket = Basket.objects.create(owner=user)
+    assert basket_total_from_product_prices(basket=basket) == Decimal("0")
+    basket.products.add(pa, pb)
+    assert basket_total_from_product_prices(basket=basket) == Decimal("3.75")
 
 
 @pytest.mark.django_db

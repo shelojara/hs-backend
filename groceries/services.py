@@ -1,10 +1,11 @@
 import base64
 import json
 import logging
+from decimal import Decimal
 from typing import Any
 
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch, Q, Sum
 from django.utils import timezone
 
 from groceries import gemini_service
@@ -232,6 +233,12 @@ def get_latest_basket_with_products(*, user_id: int) -> Basket | None:
         .order_by("-created_at")
         .first()
     )
+
+
+def basket_total_from_product_prices(*, basket: Basket) -> Decimal:
+    """Sum ``Product.price`` for lines in *basket* (M2M: each product counted once)."""
+    total = basket.products.aggregate(sum_price=Sum("price"))["sum_price"]
+    return total if total is not None else Decimal("0")
 
 
 def purchase_latest_open_basket(*, user_id: int) -> Basket:
