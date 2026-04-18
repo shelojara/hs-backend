@@ -24,8 +24,10 @@ LIDER_PRODUCT_SYSTEM_INSTRUCTION = (
     '"format" (presentation: size, units, e.g. "1 L", "6 x 330 ml", "500 g"; empty if unknown), '
     '"details" (one short paragraph in Spanish (Chile): category/aisle and one concrete fact if known; '
     "if no líder.cl hit, say briefly that results are general or uncertain), "
-    '"image_url" (HTTPS URL of one representative product image; prefer líder.cl product photo from search '
-    "results; empty if unknown). "
+    '"image_url" (HTTPS URL of one representative product image that is publicly reachable without login '
+    "(manufacturer site, retailer other than líder.cl, press pack, Wikimedia Commons, or similar); "
+    "do not use líder.cl or other URLs that block hotlinking or require cookies; pick from search results; "
+    "empty if none). "
     "Use empty string \"\" for any unknown field. "
     "Keep \"details\" under 900 characters."
 )
