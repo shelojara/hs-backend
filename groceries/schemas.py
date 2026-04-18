@@ -46,4 +46,4 @@ class RecheckProductRequest(Schema):
 
 
 class RecheckProductResponse(Schema):
-    product: ProductSchema
+    pass

@@ -57,19 +57,9 @@ def list_products(request, payload: ListProductsRequest):
 @router.post("/v1.Groceries.RecheckProduct", response=RecheckProductResponse)
 def recheck_product(request, payload: RecheckProductRequest):
     try:
-        p = services.recheck_product_from_gemini(product_id=payload.product_id)
+        services.recheck_product_from_gemini(product_id=payload.product_id)
     except Product.DoesNotExist as exc:
         raise HttpError(404, "Product not found.") from exc
     except ProductNameConflict as exc:
         raise HttpError(409, str(exc)) from exc
-    return RecheckProductResponse(
-        product=ProductSchema(
-            product_id=p.pk,
-            name=p.name,
-            original_name=p.original_name,
-            brand=p.brand,
-            price=p.price,
-            format=p.format,
-            details=p.details,
-        ),
-    )
+    return RecheckProductResponse()
