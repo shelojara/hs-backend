@@ -58,7 +58,7 @@ class AddProductToBasketResponse(Schema):
     basket_id: int
 
 
-class BasketWithProductsSchema(Schema):
+class BasketSchema(Schema):
     basket_id: int
     created_at: datetime
     purchased_at: datetime | None
@@ -70,4 +70,4 @@ class GetLatestBasketRequest(Schema):
 
 
 class GetLatestBasketResponse(Schema):
-    basket: BasketWithProductsSchema | None
+    basket: BasketSchema | None

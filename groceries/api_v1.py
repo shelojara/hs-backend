@@ -6,7 +6,7 @@ from groceries import services
 from groceries.schemas import (
     AddProductToBasketRequest,
     AddProductToBasketResponse,
-    BasketWithProductsSchema,
+    BasketSchema,
     CreateProductRequest,
     CreateProductResponse,
     GetLatestBasketRequest,
@@ -85,7 +85,7 @@ def get_latest_basket(request, payload: GetLatestBasketRequest):
     if basket is None:
         return GetLatestBasketResponse(basket=None)
     return GetLatestBasketResponse(
-        basket=BasketWithProductsSchema(
+        basket=BasketSchema(
             basket_id=basket.pk,
             created_at=basket.created_at,
             purchased_at=basket.purchased_at,
