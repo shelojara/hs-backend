@@ -72,6 +72,7 @@ class BasketSchema(Schema):
     basket_id: int
     created_at: datetime
     purchased_at: datetime | None
+    calculated_price_clp: int | None
     products: list[ProductSchema]
 
 

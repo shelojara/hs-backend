@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import re
 from typing import Any
 
 from django.db import IntegrityError, transaction
@@ -250,3 +251,41 @@ def purchase_latest_open_basket(*, user_id: int) -> Basket:
         basket.purchased_at = timezone.now()
         basket.save(update_fields=["purchased_at"])
     return basket
+
+
+_NON_DIGIT_SEP = re.compile(r"[^\d.,]")
+
+
+def parse_product_price_clp(price: str) -> int | None:
+    """Parse shelf *price* string into CLP integer.
+
+    Empty string → ``0`` (no price). Non-empty but not interpretable as CLP → ``None``.
+    Accepts typical Chile retail text: ``$3.990``, ``1.000``, ``CLP 500``.
+    """
+    s = (price or "").strip()
+    if not s:
+        return 0
+    t = _NON_DIGIT_SEP.sub("", s)
+    if not t:
+        return None
+    if "," in t:
+        left, right = t.rsplit(",", 1)
+        if not right.isdigit() or len(right) > 2:
+            return None
+        t = left.replace(".", "") + right
+    else:
+        t = t.replace(".", "")
+    if not t.isdigit():
+        return None
+    return int(t)
+
+
+def basket_calculated_price_clp(*, products: list[Product]) -> int | None:
+    """Sum of line prices in CLP; ``None`` if any non-empty price is unparseable."""
+    total = 0
+    for p in products:
+        unit = parse_product_price_clp(p.price)
+        if unit is None:
+            return None
+        total += unit
+    return total

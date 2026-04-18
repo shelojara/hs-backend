@@ -11,10 +11,12 @@ from groceries.services import (
     NoOpenBasketError,
     ProductNameConflict,
     add_product_to_basket,
+    basket_calculated_price_clp,
     create_product,
     delete_product_from_basket,
     get_latest_basket_with_products,
     list_products,
+    parse_product_price_clp,
     purchase_latest_open_basket,
     recheck_product_from_gemini,
 )
@@ -481,3 +483,25 @@ def test_basket_operations_isolated_per_user(_mock_gemini):
     assert ba.owner_id == bob.pk
     assert Basket.objects.filter(owner=alice, purchased_at__isnull=True).count() == 1
     assert Basket.objects.filter(owner=bob, purchased_at__isnull=True).count() == 1
+
+
+def test_parse_product_price_clp_empty_and_chile_formats():
+    assert parse_product_price_clp("") == 0
+    assert parse_product_price_clp("  ") == 0
+    assert parse_product_price_clp("$3.990") == 3990
+    assert parse_product_price_clp("1.000") == 1000
+    assert parse_product_price_clp("CLP 500") == 500
+    assert parse_product_price_clp("nope") is None
+
+
+def test_basket_calculated_price_clp_sums_lines():
+    a = Product(name="A", price="$1.000")
+    b = Product(name="B", price="$2.500")
+    assert basket_calculated_price_clp(products=[a, b]) == 3500
+    assert basket_calculated_price_clp(products=[]) == 0
+
+
+def test_basket_calculated_price_clp_none_when_unparseable():
+    ok = Product(name="A", price="$100")
+    bad = Product(name="B", price="???")
+    assert basket_calculated_price_clp(products=[ok, bad]) is None

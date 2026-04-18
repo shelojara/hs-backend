@@ -26,6 +26,7 @@ from groceries.services import (
     InvalidProductListCursorError,
     NoOpenBasketError,
     ProductNameConflict,
+    basket_calculated_price_clp,
 )
 
 router = Router(auth=protected_api_auth, tags=["Groceries"])
@@ -124,11 +125,13 @@ def get_latest_basket(request, payload: GetLatestBasketRequest):
     basket = services.get_latest_basket_with_products(user_id=user.pk)
     if basket is None:
         return GetLatestBasketResponse(basket=None)
+    products = list(basket.products.all())
     return GetLatestBasketResponse(
         basket=BasketSchema(
             basket_id=basket.pk,
             created_at=basket.created_at,
             purchased_at=basket.purchased_at,
+            calculated_price_clp=basket_calculated_price_clp(products=products),
             products=[
                 ProductSchema(
                     product_id=p.pk,
@@ -141,7 +144,7 @@ def get_latest_basket(request, payload: GetLatestBasketRequest):
                     details=p.details,
                     emoji=p.emoji,
                 )
-                for p in basket.products.all()
+                for p in products
             ],
         ),
     )
