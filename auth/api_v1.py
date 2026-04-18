@@ -14,6 +14,7 @@ from .schemas import (
     RegisterRequest,
 )
 from .services import (
+    EmailTaken,
     InvalidLogin,
     InvalidRegistration,
     UsernameTaken,
@@ -46,10 +47,13 @@ def register(request, payload: RegisterRequest):
         access_token = register_user(
             request,
             username=payload.username,
+            email=payload.email,
             password=payload.password,
         )
     except UsernameTaken:
         raise HttpError(409, "Username already taken.") from None
+    except EmailTaken:
+        raise HttpError(409, "Email already registered.") from None
     except InvalidRegistration as e:
         raise HttpError(400, "; ".join(e.messages)) from None
     return LoginResponse(access_token=access_token)
