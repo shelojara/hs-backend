@@ -5,7 +5,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from groceries.gemini_service import LiderProductInfo
+from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Basket, Product
 from groceries.services import (
     InvalidProductListCursorError,
@@ -13,7 +13,9 @@ from groceries.services import (
     ProductNameConflict,
     add_product_to_basket,
     create_product,
+    create_product_from_merchant_info,
     delete_product_from_basket,
+    find_products,
     get_latest_basket_with_products,
     basket_total_price,
     list_products,
@@ -30,7 +32,7 @@ def _user(username: str = "u1", **kwargs):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_create_product_persists_and_returns_id(_mock_gemini):
@@ -43,8 +45,8 @@ def test_create_product_persists_and_returns_id(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
-    return_value=LiderProductInfo(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=MerchantProductInfo(
         display_name="Oatly Leche de Avena 1 L",
         standard_name="Leche de avena",
         brand="Oatly",
@@ -53,7 +55,7 @@ def test_create_product_persists_and_returns_id(_mock_gemini):
         emoji="🥛",
     ),
 )
-def test_create_product_stores_gemini_lider_fields(_mock_gemini):
+def test_create_product_stores_gemini_merchant_fields(_mock_gemini):
     pid = create_product(name="Avena")
     row = Product.objects.get(pk=pid)
     assert row.name == "Oatly Leche de Avena 1 L"
@@ -67,7 +69,7 @@ def test_create_product_stores_gemini_lider_fields(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_create_product_leaves_price_zero_when_gemini_returns_none(_mock_gemini):
@@ -77,7 +79,7 @@ def test_create_product_leaves_price_zero_when_gemini_returns_none(_mock_gemini)
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_create_product_rejects_blank_name(_mock_gemini):
@@ -87,7 +89,7 @@ def test_create_product_rejects_blank_name(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_create_product_rejects_duplicate_name_case_insensitive(_mock_gemini):
@@ -99,7 +101,122 @@ def test_create_product_rejects_duplicate_name_case_insensitive(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    return_value=[
+        MerchantProductInfo(
+            display_name="Colún Leche Entera 1 L",
+            standard_name="Leche entera",
+            brand="Colún",
+            price=Decimal("2590"),
+            format="1 L",
+            emoji="🥛",
+        ),
+    ],
+)
+def test_find_products_returns_gemini_rows_no_db(_mock_candidates):
+    assert Product.objects.count() == 0
+    rows = find_products(query="  leche  ")
+    assert len(rows) == 1
+    assert rows[0].display_name == "Colún Leche Entera 1 L"
+    assert Product.objects.count() == 0
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    side_effect=RuntimeError("no key"),
+)
+def test_find_products_returns_empty_when_gemini_unconfigured(_mock_candidates):
+    assert find_products(query="milk") == []
+
+
+@pytest.mark.django_db
+def test_find_products_rejects_blank_query():
+    with pytest.raises(ValueError, match="empty"):
+        find_products(query="   ")
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_create_product_from_merchant_info_persists_without_gemini(_mock_gemini):
+    pid = create_product_from_merchant_info(
+        query_name="  leche  ",
+        info=MerchantProductInfo(
+            display_name="Colún Leche Entera 1 L",
+            standard_name="Leche entera",
+            brand="Colún",
+            price=Decimal("2590"),
+            format="1 L",
+            emoji="🥛",
+        ),
+    )
+    row = Product.objects.get(pk=pid)
+    assert row.original_name == "leche"
+    assert row.name == "Colún Leche Entera 1 L"
+    assert row.standard_name == "Leche entera"
+    assert row.brand == "Colún"
+    assert row.price == Decimal("2590.00")
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_create_product_from_merchant_info_uses_query_when_display_empty(_mock_gemini):
+    pid = create_product_from_merchant_info(
+        query_name="X",
+        info=MerchantProductInfo(
+            display_name="",
+            standard_name="",
+            brand="",
+            price=Decimal("0"),
+            format="",
+            emoji="",
+        ),
+    )
+    row = Product.objects.get(pk=pid)
+    assert row.name == "X"
+    assert row.original_name == "X"
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_create_product_from_merchant_info_rejects_duplicate_name(_mock_gemini):
+    create_product_from_merchant_info(
+        query_name="a",
+        info=MerchantProductInfo(
+            display_name="Same",
+            standard_name="",
+            brand="",
+            price=Decimal("0"),
+            format="",
+            emoji="",
+        ),
+    )
+    with pytest.raises(ProductNameConflict):
+        create_product_from_merchant_info(
+            query_name="b",
+            info=MerchantProductInfo(
+                display_name="same",
+                standard_name="",
+                brand="",
+                price=Decimal("0"),
+                format="",
+                emoji="",
+            ),
+        )
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_list_products_orders_by_name_and_paginates(_mock_gemini):
@@ -116,7 +233,7 @@ def test_list_products_orders_by_name_and_paginates(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_list_products_search_icontains_ordered_by_name(_mock_gemini):
@@ -129,7 +246,7 @@ def test_list_products_search_icontains_ordered_by_name(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_list_products_search_paginates_with_cursor(_mock_gemini):
@@ -147,7 +264,7 @@ def test_list_products_search_paginates_with_cursor(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_list_products_rejects_mismatched_cursor(_mock_gemini):
@@ -167,8 +284,8 @@ def test_list_products_rejects_invalid_cursor():
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
-    return_value=LiderProductInfo(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=MerchantProductInfo(
         display_name="New Title",
         standard_name="Arroz",
         brand="B",
@@ -192,7 +309,7 @@ def test_recheck_product_from_gemini_updates_fields(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_recheck_product_from_gemini_noop_when_gemini_returns_none(_mock_gemini):
@@ -205,7 +322,7 @@ def test_recheck_product_from_gemini_noop_when_gemini_returns_none(_mock_gemini)
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     side_effect=RuntimeError("no key"),
 )
 def test_recheck_product_from_gemini_noop_when_gemini_key_missing(_mock_gemini):
@@ -218,8 +335,8 @@ def test_recheck_product_from_gemini_noop_when_gemini_key_missing(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
-    return_value=LiderProductInfo(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=MerchantProductInfo(
         display_name="Taken",
         standard_name="",
         brand="",
@@ -237,7 +354,7 @@ def test_recheck_product_from_gemini_raises_when_display_name_conflicts(_mock_ge
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_recheck_product_from_gemini_raises_when_missing(_mock_gemini):
@@ -247,7 +364,7 @@ def test_recheck_product_from_gemini_raises_when_missing(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_add_product_to_basket_creates_basket_when_none_open(_mock_gemini):
@@ -261,7 +378,7 @@ def test_add_product_to_basket_creates_basket_when_none_open(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_add_product_to_basket_reuses_latest_open_basket(_mock_gemini):
@@ -281,7 +398,7 @@ def test_add_product_to_basket_reuses_latest_open_basket(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_add_product_to_basket_skips_purchased_baskets(_mock_gemini):
@@ -295,7 +412,7 @@ def test_add_product_to_basket_skips_purchased_baskets(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_add_product_to_basket_raises_when_product_missing(_mock_gemini):
@@ -306,7 +423,7 @@ def test_add_product_to_basket_raises_when_product_missing(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_delete_product_from_basket_removes_line(_mock_gemini):
@@ -320,7 +437,7 @@ def test_delete_product_from_basket_removes_line(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_delete_product_from_basket_targets_latest_open_basket(_mock_gemini):
@@ -338,7 +455,7 @@ def test_delete_product_from_basket_targets_latest_open_basket(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_delete_product_from_basket_noop_when_product_not_in_basket(_mock_gemini):
@@ -351,7 +468,7 @@ def test_delete_product_from_basket_noop_when_product_not_in_basket(_mock_gemini
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_delete_product_from_basket_raises_when_no_open_basket(_mock_gemini):
@@ -364,7 +481,7 @@ def test_delete_product_from_basket_raises_when_no_open_basket(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_delete_product_from_basket_raises_when_product_missing(_mock_gemini):
@@ -376,7 +493,7 @@ def test_delete_product_from_basket_raises_when_product_missing(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_get_latest_basket_with_products_none_when_empty(_mock_gemini):
@@ -386,7 +503,7 @@ def test_get_latest_basket_with_products_none_when_empty(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_get_latest_basket_with_products_returns_newest_and_ordered_products(_mock_gemini):
@@ -405,7 +522,7 @@ def test_get_latest_basket_with_products_returns_newest_and_ordered_products(_mo
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_get_latest_basket_with_products_includes_purchased(_mock_gemini):
@@ -421,7 +538,7 @@ def test_get_latest_basket_with_products_includes_purchased(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_basket_total_price_sums_product_prices(_mock_gemini):
@@ -437,7 +554,7 @@ def test_basket_total_price_sums_product_prices(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_basket_total_price_empty_basket_zero(_mock_gemini):
@@ -450,7 +567,7 @@ def test_basket_total_price_empty_basket_zero(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_purchase_latest_open_basket_sets_purchased_at(_mock_gemini):
@@ -467,7 +584,7 @@ def test_purchase_latest_open_basket_sets_purchased_at(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_purchase_latest_open_basket_skips_already_purchased(_mock_gemini):
@@ -482,7 +599,7 @@ def test_purchase_latest_open_basket_skips_already_purchased(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_purchase_latest_open_basket_raises_when_none_open(_mock_gemini):
@@ -494,7 +611,7 @@ def test_purchase_latest_open_basket_raises_when_none_open(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_lider_product_info",
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_basket_operations_isolated_per_user(_mock_gemini):

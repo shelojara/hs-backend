@@ -14,11 +14,53 @@ def _strip_nonempty_product_name(v: str) -> str:
     return s
 
 
+def _strip_nonempty_query(v: str) -> str:
+    s = v.strip()
+    if not s:
+        msg = "Query must not be empty."
+        raise ValueError(msg)
+    return s
+
+
 class CreateProductRequest(Schema):
     name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
 
 
 class CreateProductResponse(Schema):
+    product_id: int
+
+
+class FindProductsRequest(Schema):
+    query: Annotated[str, AfterValidator(_strip_nonempty_query)]
+
+
+class ProductCandidateSchema(Schema):
+    """Merchant-oriented fields from Gemini (or client echo); not yet persisted."""
+
+    original_name: str
+    name: str
+    standard_name: str
+    brand: str
+    price: Decimal
+    format: str
+    emoji: str
+
+
+class FindProductsResponse(Schema):
+    products: list[ProductCandidateSchema]
+
+
+class CreateProductFromCandidateRequest(Schema):
+    original_name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
+    name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
+    standard_name: str = ""
+    brand: str = ""
+    price: Decimal = Decimal("0")
+    format: str = ""
+    emoji: str = ""
+
+
+class CreateProductFromCandidateResponse(Schema):
     product_id: int
 
 

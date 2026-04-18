@@ -3,6 +3,7 @@ from ninja.errors import HttpError
 
 from auth.security import protected_api_auth
 from groceries import services
+from groceries.gemini_service import MerchantProductInfo
 from groceries.schemas import (
     AddProductToBasketRequest,
     AddProductToBasketResponse,
@@ -11,10 +12,15 @@ from groceries.schemas import (
     DeleteProductFromBasketResponse,
     CreateProductRequest,
     CreateProductResponse,
+    CreateProductFromCandidateRequest,
+    CreateProductFromCandidateResponse,
+    FindProductsRequest,
+    FindProductsResponse,
     GetLatestBasketRequest,
     GetLatestBasketResponse,
     ListProductsRequest,
     ListProductsResponse,
+    ProductCandidateSchema,
     ProductSchema,
     PurchaseBasketRequest,
     PurchaseBasketResponse,
@@ -38,6 +44,51 @@ def create_product(request, payload: CreateProductRequest):
     except ProductNameConflict as exc:
         raise HttpError(409, str(exc)) from exc
     return CreateProductResponse(product_id=product_id)
+
+
+@router.post("/v1.Groceries.FindProducts", response=FindProductsResponse)
+def find_products(request, payload: FindProductsRequest):
+    try:
+        items = services.find_products(query=payload.query)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    anchor = payload.query.strip()
+    return FindProductsResponse(
+        products=[
+            ProductCandidateSchema(
+                original_name=anchor,
+                name=(p.display_name or anchor).strip() or anchor,
+                standard_name=p.standard_name,
+                brand=p.brand,
+                price=p.price,
+                format=p.format,
+                emoji=p.emoji,
+            )
+            for p in items
+        ],
+    )
+
+
+@router.post("/v1.Groceries.CreateProductFromCandidate", response=CreateProductFromCandidateResponse)
+def create_product_from_candidate(request, payload: CreateProductFromCandidateRequest):
+    info = MerchantProductInfo(
+        display_name=payload.name,
+        standard_name=payload.standard_name,
+        brand=payload.brand,
+        price=payload.price,
+        format=payload.format,
+        emoji=payload.emoji,
+    )
+    try:
+        product_id = services.create_product_from_merchant_info(
+            query_name=payload.original_name,
+            info=info,
+        )
+    except ProductNameConflict as exc:
+        raise HttpError(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return CreateProductFromCandidateResponse(product_id=product_id)
 
 
 @router.post("/v1.Groceries.ListProducts", response=ListProductsResponse)
