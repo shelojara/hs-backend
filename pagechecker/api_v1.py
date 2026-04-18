@@ -43,7 +43,7 @@ from pagechecker.schemas import (
     SetPageFeatureInstructionResponse,
 )
 
-router = Router(auth=protected_api_auth)
+router = Router(auth=protected_api_auth, tags=["PageChecker"])
 
 
 @router.post("/v1.PageChecker.ListPages", response=ListPagesResponse)
