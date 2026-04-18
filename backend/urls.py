@@ -23,6 +23,7 @@ api = NinjaAPI()
 
 api.add_router("", "auth.api_v1.router")
 api.add_router("", "pagechecker.api_v1.router")
+api.add_router("", "groceries.api_v1.router")
 
 
 urlpatterns = [
