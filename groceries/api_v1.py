@@ -128,6 +128,7 @@ def get_latest_basket(request, payload: GetLatestBasketRequest):
             basket_id=basket.pk,
             created_at=basket.created_at,
             purchased_at=basket.purchased_at,
+            total_price=services.basket_total_price(basket=basket),
             products=[
                 ProductSchema(
                     product_id=p.pk,
