@@ -10,6 +10,7 @@ class LoginRequest(Schema):
 
 class RegisterRequest(Schema):
     username: str
+    email: str
     password: str
 
 

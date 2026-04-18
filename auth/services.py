@@ -12,6 +12,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractBaseUser
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.db import IntegrityError
 from django.http import HttpRequest
 
@@ -27,6 +28,10 @@ class InvalidLogin(Exception):
 
 class UsernameTaken(Exception):
     """Chosen username already exists."""
+
+
+class EmailTaken(Exception):
+    """Chosen email already registered."""
 
 
 class InvalidRegistration(Exception):
@@ -67,23 +72,46 @@ def login(request: HttpRequest, *, username: str, password: str) -> str:
     )
 
 
-def register_user(request: HttpRequest, *, username: str, password: str) -> str:
+def register_user(
+    request: HttpRequest,
+    *,
+    username: str,
+    email: str,
+    password: str,
+) -> str:
     """Create user account; returns JWT access token (same shape as login)."""
     User = get_user_model()
     name = username.strip()
+    addr = email.strip()
     if not name:
         raise InvalidRegistration(["Username is required."])
+    if not addr:
+        raise InvalidRegistration(["Email is required."])
+    try:
+        validate_email(addr)
+    except ValidationError as e:
+        raise InvalidRegistration(list(e.messages)) from None
     if User.objects.filter(username=name).exists():
         raise UsernameTaken
-    candidate = User(username=name)
+    if User.objects.filter(email__iexact=addr).exists():
+        raise EmailTaken
+    candidate = User(username=name, email=addr)
     try:
         validate_password(password, user=candidate)
     except ValidationError as e:
         raise InvalidRegistration(list(e.messages)) from None
     try:
-        user = User.objects.create_user(username=name, password=password)
+        user = User.objects.create_user(
+            username=name,
+            email=addr,
+            password=password,
+        )
     except IntegrityError:
-        raise UsernameTaken from None
+        if User.objects.filter(username=name).exists():
+            raise UsernameTaken from None
+        if User.objects.filter(email__iexact=addr).exists():
+            raise EmailTaken from None
+        raise
     return _encode_access_token(
         user_id=user.pk,
         username=user.get_username(),
