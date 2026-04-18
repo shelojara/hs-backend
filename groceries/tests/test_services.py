@@ -13,7 +13,9 @@ from groceries.services import (
     ProductNameConflict,
     add_product_to_basket,
     create_product,
+    create_product_from_lider_info,
     delete_product_from_basket,
+    find_products,
     get_latest_basket_with_products,
     basket_total_price,
     list_products,
@@ -95,6 +97,121 @@ def test_create_product_rejects_duplicate_name_case_insensitive(_mock_gemini):
     with pytest.raises(ProductNameConflict):
         create_product(name="  oat MILK  ")
     assert Product.objects.count() == 1
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_candidates",
+    return_value=[
+        LiderProductInfo(
+            display_name="Colún Leche Entera 1 L",
+            standard_name="Leche entera",
+            brand="Colún",
+            price=Decimal("2590"),
+            format="1 L",
+            emoji="🥛",
+        ),
+    ],
+)
+def test_find_products_returns_gemini_rows_no_db(_mock_candidates):
+    assert Product.objects.count() == 0
+    rows = find_products(query="  leche  ")
+    assert len(rows) == 1
+    assert rows[0].display_name == "Colún Leche Entera 1 L"
+    assert Product.objects.count() == 0
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_candidates",
+    side_effect=RuntimeError("no key"),
+)
+def test_find_products_returns_empty_when_gemini_unconfigured(_mock_candidates):
+    assert find_products(query="milk") == []
+
+
+@pytest.mark.django_db
+def test_find_products_rejects_blank_query():
+    with pytest.raises(ValueError, match="empty"):
+        find_products(query="   ")
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_create_product_from_lider_info_persists_without_gemini(_mock_gemini):
+    pid = create_product_from_lider_info(
+        query_name="  leche  ",
+        info=LiderProductInfo(
+            display_name="Colún Leche Entera 1 L",
+            standard_name="Leche entera",
+            brand="Colún",
+            price=Decimal("2590"),
+            format="1 L",
+            emoji="🥛",
+        ),
+    )
+    row = Product.objects.get(pk=pid)
+    assert row.original_name == "leche"
+    assert row.name == "Colún Leche Entera 1 L"
+    assert row.standard_name == "Leche entera"
+    assert row.brand == "Colún"
+    assert row.price == Decimal("2590.00")
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_create_product_from_lider_info_uses_query_when_display_empty(_mock_gemini):
+    pid = create_product_from_lider_info(
+        query_name="X",
+        info=LiderProductInfo(
+            display_name="",
+            standard_name="",
+            brand="",
+            price=Decimal("0"),
+            format="",
+            emoji="",
+        ),
+    )
+    row = Product.objects.get(pk=pid)
+    assert row.name == "X"
+    assert row.original_name == "X"
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_create_product_from_lider_info_rejects_duplicate_name(_mock_gemini):
+    create_product_from_lider_info(
+        query_name="a",
+        info=LiderProductInfo(
+            display_name="Same",
+            standard_name="",
+            brand="",
+            price=Decimal("0"),
+            format="",
+            emoji="",
+        ),
+    )
+    with pytest.raises(ProductNameConflict):
+        create_product_from_lider_info(
+            query_name="b",
+            info=LiderProductInfo(
+                display_name="same",
+                standard_name="",
+                brand="",
+                price=Decimal("0"),
+                format="",
+                emoji="",
+            ),
+        )
 
 
 @pytest.mark.django_db

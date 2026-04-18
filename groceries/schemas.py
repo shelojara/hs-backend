@@ -22,6 +22,40 @@ class CreateProductResponse(Schema):
     product_id: int
 
 
+class FindProductsRequest(Schema):
+    name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
+
+
+class ProductCandidateSchema(Schema):
+    """Líder-oriented fields from Gemini (or client echo); not yet persisted."""
+
+    original_name: str
+    name: str
+    standard_name: str
+    brand: str
+    price: Decimal
+    format: str
+    emoji: str
+
+
+class FindProductsResponse(Schema):
+    products: list[ProductCandidateSchema]
+
+
+class CreateProductFromCandidateRequest(Schema):
+    original_name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
+    name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
+    standard_name: str = ""
+    brand: str = ""
+    price: Decimal = Decimal("0")
+    format: str = ""
+    emoji: str = ""
+
+
+class CreateProductFromCandidateResponse(Schema):
+    product_id: int
+
+
 class ListProductsRequest(Schema):
     limit: int = 20
     cursor: str | None = None

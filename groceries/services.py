@@ -92,6 +92,50 @@ def _apply_lider_product_info(
     )
 
 
+def find_products(*, query: str) -> list[LiderProductInfo]:
+    """Return up to 10 Gemini Líder product rows for *query*; no DB writes."""
+    normalized = query.strip()
+    if not normalized:
+        msg = "Product name must not be empty."
+        raise ValueError(msg)
+    try:
+        return gemini_service.fetch_lider_product_candidates(query=normalized)
+    except RuntimeError:
+        logger.warning(
+            "Skipped Gemini find products: GEMINI_API_KEY not set.",
+        )
+    except Exception:
+        logger.exception(
+            "Gemini find products failed for query=%r",
+            normalized,
+        )
+    return []
+
+
+def create_product_from_lider_info(*, query_name: str, info: LiderProductInfo) -> int:
+    """Persist product using *info* from a prior find (no Gemini call). Raises ProductNameConflict."""
+    anchor = query_name.strip()
+    if not anchor:
+        msg = "Product name must not be empty."
+        raise ValueError(msg)
+    next_name = (info.display_name or "").strip() or anchor
+    if Product.objects.filter(name__iexact=next_name).exists():
+        raise ProductNameConflict()
+    try:
+        product = Product.objects.create(
+            name=next_name,
+            original_name=anchor,
+            standard_name=info.standard_name,
+            brand=info.brand,
+            price=info.price,
+            format=info.format,
+            emoji=info.emoji,
+        )
+    except IntegrityError as exc:
+        raise ProductNameConflict() from exc
+    return product.pk
+
+
 def create_product(*, name: str) -> int:
     normalized = name.strip()
     if not normalized:
