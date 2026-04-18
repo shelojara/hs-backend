@@ -78,9 +78,18 @@ def _apply_lider_product_info(
     product.format = info.format
     product.details = info.details
     product.standard_name = info.standard_name
+    product.image_url = info.image_url
     product.name = next_name
     product.save(
-        update_fields=["brand", "price", "format", "details", "standard_name", "name"],
+        update_fields=[
+            "brand",
+            "price",
+            "format",
+            "details",
+            "standard_name",
+            "image_url",
+            "name",
+        ],
     )
 
 

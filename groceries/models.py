@@ -12,6 +12,7 @@ class Product(models.Model):
     price = models.CharField(max_length=128, blank=True, default="")
     format = models.CharField(max_length=255, blank=True, default="")
     details = models.TextField(blank=True, default="")
+    image_url = models.URLField(max_length=2048, blank=True, default="")
 
     class Meta:
         ordering = ("name",)
