@@ -40,11 +40,6 @@ class Basket(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     purchased_at = models.DateTimeField(null=True, blank=True)
-    total = models.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        default=Decimal("0"),
-    )
     products = models.ManyToManyField(Product, related_name="baskets", blank=True)
 
     class Meta:

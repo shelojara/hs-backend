@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch, Q, Sum
+from django.db.models import Prefetch, Q
 from django.utils import timezone
 
 from groceries import gemini_service
@@ -192,14 +192,6 @@ def list_products(
     return page, next_cursor
 
 
-def _sync_basket_total_from_products(*, basket: Basket) -> None:
-    """Persist sum of linked ``Product.price`` onto ``basket.total`` (M2M: one row per product)."""
-    agg = basket.products.aggregate(s=Sum("price"))["s"]
-    total = agg if agg is not None else Decimal("0")
-    Basket.objects.filter(pk=basket.pk).update(total=total)
-    basket.total = total
-
-
 def add_product_to_basket(*, product_id: int, user_id: int) -> Basket:
     """Use latest open basket for *user_id*, or create one; append product."""
     product = Product.objects.get(pk=product_id)
@@ -213,7 +205,6 @@ def add_product_to_basket(*, product_id: int, user_id: int) -> Basket:
         if basket is None:
             basket = Basket.objects.create(owner_id=user_id)
         basket.products.add(product)
-        _sync_basket_total_from_products(basket=basket)
     return basket
 
 
@@ -230,7 +221,6 @@ def delete_product_from_basket(*, product_id: int, user_id: int) -> None:
         if basket is None:
             raise NoOpenBasketError()
         basket.products.remove(product)
-        _sync_basket_total_from_products(basket=basket)
 
 
 def get_latest_basket_with_products(*, user_id: int) -> Basket | None:
@@ -243,6 +233,14 @@ def get_latest_basket_with_products(*, user_id: int) -> Basket | None:
         .order_by("-created_at")
         .first()
     )
+
+
+def basket_total_from_prefetched_products(*, basket: Basket) -> Decimal:
+    """Sum ``Product.price`` for basket lines using prefetched products (no extra query if prefetch hit)."""
+    total = Decimal("0")
+    for p in basket.products.all():
+        total += p.price
+    return total
 
 
 def purchase_latest_open_basket(*, user_id: int) -> Basket:
