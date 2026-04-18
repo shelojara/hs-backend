@@ -23,6 +23,7 @@ from pagechecker.services import (
     send_weekly_reports,
     set_page_category,
     set_page_feature_instruction,
+    set_page_highlighted_question,
     set_page_report_interval,
 )
 
@@ -59,6 +60,48 @@ def test_associate_questions_with_page_replaces_skips_unknown_clears_empty():
     associate_questions_with_page(page.id, [], user_id=user.pk)
     page.refresh_from_db()
     assert list(page.questions.values_list("id", flat=True)) == []
+
+
+@pytest.mark.django_db
+def test_associate_questions_with_page_clears_highlight_when_question_removed():
+    user = _owner()
+    page = Page.objects.create(
+        url="https://example.com/highlight-m2m",
+        owner=user,
+    )
+    q1 = Question.objects.create(text="one", owner=user)
+    q2 = Question.objects.create(text="two", owner=user)
+    associate_questions_with_page(page.id, [q1.id, q2.id], user_id=user.pk)
+    set_page_highlighted_question(page.id, q2.id, user_id=user.pk)
+    page.refresh_from_db()
+    assert page.highlighted_question_id == q2.id
+
+    associate_questions_with_page(page.id, [q1.id], user_id=user.pk)
+    page.refresh_from_db()
+    assert page.highlighted_question_id is None
+
+
+@pytest.mark.django_db
+def test_set_page_highlighted_question_requires_linked_question():
+    user = _owner()
+    page = Page.objects.create(url="https://example.com/highlight-guard", owner=user)
+    q = Question.objects.create(text="orphan", owner=user)
+    with pytest.raises(ValueError, match="not linked"):
+        set_page_highlighted_question(page.id, q.id, user_id=user.pk)
+
+
+@pytest.mark.django_db
+def test_set_page_highlighted_question_clear_and_set():
+    user = _owner()
+    page = Page.objects.create(url="https://example.com/highlight-flow", owner=user)
+    q = Question.objects.create(text="main", owner=user)
+    associate_questions_with_page(page.id, [q.id], user_id=user.pk)
+    set_page_highlighted_question(page.id, q.id, user_id=user.pk)
+    page.refresh_from_db()
+    assert page.highlighted_question_id == q.id
+    set_page_highlighted_question(page.id, None, user_id=user.pk)
+    page.refresh_from_db()
+    assert page.highlighted_question_id is None
 
 
 @pytest.mark.django_db

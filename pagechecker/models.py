@@ -92,6 +92,14 @@ class Page(models.Model):
         blank=True,
     )
 
+    highlighted_question = models.ForeignKey(
+        "Question",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="highlighted_on_pages",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     last_checked_at = models.DateTimeField(null=True)

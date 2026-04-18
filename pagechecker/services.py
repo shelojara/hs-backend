@@ -87,7 +87,7 @@ def list_pages(*, user_id: int, limit: int = 20, offset: int = 0) -> list[Page]:
     qs = (
         Page.objects.filter(owner_id=user_id)
         .order_by("-created_at")
-        .select_related("category")
+        .select_related("category", "highlighted_question")
         .prefetch_related("questions")
     )
     return list(qs[offset : offset + limit])
@@ -95,7 +95,7 @@ def list_pages(*, user_id: int, limit: int = 20, offset: int = 0) -> list[Page]:
 
 def get_page(page_id: int, *, user_id: int) -> Page:
     return (
-        Page.objects.select_related("category")
+        Page.objects.select_related("category", "highlighted_question")
         .prefetch_related("questions")
         .get(id=page_id, owner_id=user_id)
     )
@@ -339,6 +339,33 @@ def associate_questions_with_page(
         else []
     )
     page.questions.set(existing_ids)
+    if (
+        page.highlighted_question_id is not None
+        and page.highlighted_question_id not in existing_ids
+    ):
+        page.highlighted_question_id = None
+        page.save(update_fields=["highlighted_question_id"])
+
+
+@transaction.atomic
+def set_page_highlighted_question(
+    page_id: int, question_id: int | None, *, user_id: int
+) -> None:
+    """Set which linked question UI should emphasize; *None* clears."""
+    page = Page.objects.select_for_update().get(id=page_id, owner_id=user_id)
+    if question_id is None:
+        page.highlighted_question_id = None
+        page.save(update_fields=["highlighted_question_id"])
+        return
+    if not page.questions.filter(id=question_id).exists():
+        msg = "Question is not linked to this page."
+        raise ValueError(msg)
+    exists = Question.objects.filter(id=question_id, owner_id=user_id).exists()
+    if not exists:
+        msg = "Question not found."
+        raise ValueError(msg)
+    page.highlighted_question_id = question_id
+    page.save(update_fields=["highlighted_question_id"])
 
 
 def compare_snapshots(

@@ -59,6 +59,7 @@ class Page(Schema):
     last_checked_at: datetime | None = None
     latest_snapshot: Snapshot | None = None
     questions: list[Question] = []
+    highlighted_question_id: int | None = None
 
 
 class CreatePageRequest(Schema):
@@ -187,6 +188,15 @@ class AssociateQuestionsWithPageRequest(Schema):
 
 
 class AssociateQuestionsWithPageResponse(Schema):
+    pass
+
+
+class SetPageHighlightedQuestionRequest(Schema):
+    page_id: int
+    question_id: int | None = None
+
+
+class SetPageHighlightedQuestionResponse(Schema):
     pass
 
 

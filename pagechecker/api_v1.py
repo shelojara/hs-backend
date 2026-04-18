@@ -41,6 +41,8 @@ from pagechecker.schemas import (
     SetPageReportIntervalResponse,
     SetPageFeatureInstructionRequest,
     SetPageFeatureInstructionResponse,
+    SetPageHighlightedQuestionRequest,
+    SetPageHighlightedQuestionResponse,
 )
 
 router = Router(auth=protected_api_auth)
@@ -179,6 +181,25 @@ def set_page_feature_instruction(request, payload: SetPageFeatureInstructionRequ
     except Page.DoesNotExist:
         raise HttpError(404, "Page not found.")
     return SetPageFeatureInstructionResponse()
+
+
+@router.post(
+    "/v1.PageChecker.SetPageHighlightedQuestion",
+    response=SetPageHighlightedQuestionResponse,
+)
+def set_page_highlighted_question(request, payload: SetPageHighlightedQuestionRequest):
+    user = request.auth
+    try:
+        services.set_page_highlighted_question(
+            page_id=payload.page_id,
+            question_id=payload.question_id,
+            user_id=user.pk,
+        )
+    except Page.DoesNotExist:
+        raise HttpError(404, "Page not found.")
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return SetPageHighlightedQuestionResponse()
 
 
 @router.post("/v1.PageChecker.ChangePageUrl", response=ChangePageUrlResponse)
