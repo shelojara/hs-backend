@@ -13,15 +13,16 @@ logger = logging.getLogger(__name__)
 
 FIND_PRODUCTS_MAX = 10
 
-LIDER_PRODUCT_FIND_SYSTEM_INSTRUCTION = (
-    "You help catalog grocery products sold in Chile at Lider (Walmart Chile), website líder.cl. "
-    "Use Google Search to find how products matching the user's query appear on líder.cl or in "
-    "Lider Chile listings when possible. "
+MERCHANT_PRODUCT_FIND_SYSTEM_INSTRUCTION = (
+    "You help catalog grocery products sold in Chile for a specific retail merchant "
+    "(default: Lider / Walmart Chile, website líder.cl). "
+    "Use Google Search to find how products matching the user's query appear on that merchant's site "
+    "or in that merchant's Chile listings when possible. "
     f"Respond with a single JSON array only — no markdown, no code fences, no text before or after. "
     f"The array must have at most {FIND_PRODUCTS_MAX} elements. Each element is one JSON object with the "
     "same keys and rules as for a single-product response: "
     '"display_name" (string: best retail-style product title for lists: proper capitalization, '
-    "brand + product line + key format as on shelf or líder.cl; Spanish Chile; empty if unknown), "
+    "brand + product line + key format as on shelf or the merchant site; Spanish Chile; empty if unknown), "
     '"standard_name" (string: generic product type for grouping across brands and formats: Spanish Chile; '
     "omit marca, precio, and envase/tamaño; short noun phrase e.g. \"Leche entera\", \"Arroz grano largo\"; "
     "empty if unknown), "
@@ -32,16 +33,17 @@ LIDER_PRODUCT_FIND_SYSTEM_INSTRUCTION = (
     '"emoji" (string: one Unicode emoji best matching product type or category, e.g. 🥛 for milk, 🍚 for rice; '
     "empty string \"\" if unsure). "
     "Use empty string \"\" for unknown string fields. Use 0 for unknown price. "
-    "Do not repeat the same líder.cl SKU or identical display_name twice. Prefer distinct products."
+    "Do not repeat the same merchant SKU or identical display_name twice. Prefer distinct products."
 )
 
-LIDER_PRODUCT_SYSTEM_INSTRUCTION = (
-    "You help catalog grocery products sold in Chile at Lider (Walmart Chile), website líder.cl. "
-    "Use Google Search to find how this product appears on líder.cl or in Lider Chile listings "
-    "when possible. "
+MERCHANT_PRODUCT_SYSTEM_INSTRUCTION = (
+    "You help catalog grocery products sold in Chile for a specific retail merchant "
+    "(default: Lider / Walmart Chile, website líder.cl). "
+    "Use Google Search to find how this product appears on that merchant's site or in that merchant's "
+    "Chile listings when possible. "
     "Respond with a single JSON object only — no markdown, no code fences, no text before or after. "
     'Keys: "display_name" (string: best retail-style product title for lists: proper capitalization, '
-    "brand + product line + key format as on shelf or líder.cl; Spanish Chile; empty if unknown), "
+    "brand + product line + key format as on shelf or the merchant site; Spanish Chile; empty if unknown), "
     '"standard_name" (string: generic product type for grouping across brands and formats: Spanish Chile; '
     "omit marca, precio, and envase/tamaño; short noun phrase e.g. \"Leche entera\", \"Arroz grano largo\"; "
     "empty if unknown), "
@@ -56,7 +58,7 @@ LIDER_PRODUCT_SYSTEM_INSTRUCTION = (
 
 
 @dataclass(frozen=True)
-class LiderProductInfo:
+class MerchantProductInfo:
     display_name: str
     standard_name: str
     brand: str
@@ -142,8 +144,8 @@ def _extract_json_object(raw: str) -> str | None:
     return None
 
 
-def _lider_product_info_from_mapping(data: dict[str, Any]) -> LiderProductInfo:
-    return LiderProductInfo(
+def _merchant_product_info_from_mapping(data: dict[str, Any]) -> MerchantProductInfo:
+    return MerchantProductInfo(
         display_name=_normalize_field(data.get("display_name"), 255),
         standard_name=_normalize_field(data.get("standard_name"), 255),
         brand=_normalize_field(data.get("brand"), 255),
@@ -153,7 +155,7 @@ def _lider_product_info_from_mapping(data: dict[str, Any]) -> LiderProductInfo:
     )
 
 
-def _parse_lider_product_payload(raw: str | None) -> LiderProductInfo | None:
+def _parse_merchant_product_payload(raw: str | None) -> MerchantProductInfo | None:
     """Parse model output into structured fields; require valid JSON object."""
     if not raw:
         return None
@@ -166,7 +168,7 @@ def _parse_lider_product_payload(raw: str | None) -> LiderProductInfo | None:
         return None
     if not isinstance(data, dict):
         return None
-    return _lider_product_info_from_mapping(data)
+    return _merchant_product_info_from_mapping(data)
 
 
 def _extract_json_array(raw: str) -> str | None:
@@ -182,22 +184,22 @@ def _extract_json_array(raw: str) -> str | None:
     return None
 
 
-def _parse_lider_product_list_payload(
+def _parse_merchant_product_list_payload(
     raw: str | None,
     *,
     max_items: int,
-) -> list[LiderProductInfo]:
+) -> list[MerchantProductInfo]:
     """Parse model output into zero or more structured products; cap at *max_items*."""
     if not raw or max_items < 1:
         return []
     blob = _extract_json_array(raw)
     if not blob:
-        single = _parse_lider_product_payload(raw)
+        single = _parse_merchant_product_payload(raw)
         return [single] if single else []
     try:
         data = json.loads(blob)
     except json.JSONDecodeError:
-        single = _parse_lider_product_payload(raw)
+        single = _parse_merchant_product_payload(raw)
         return [single] if single else []
     if isinstance(data, dict) and "products" in data and isinstance(data["products"], list):
         data = data["products"]
@@ -205,25 +207,25 @@ def _parse_lider_product_list_payload(
         data = [data]
     if not isinstance(data, list):
         return []
-    out: list[LiderProductInfo] = []
+    out: list[MerchantProductInfo] = []
     for item in data:
         if len(out) >= max_items:
             break
         if not isinstance(item, dict):
             continue
-        out.append(_lider_product_info_from_mapping(item))
+        out.append(_merchant_product_info_from_mapping(item))
     return out
 
 
-def fetch_lider_product_info(*, product_name: str) -> LiderProductInfo | None:
-    """Ask Gemini (with Google Search) for Chile/Líder-oriented structured product info."""
+def fetch_merchant_product_info(*, product_name: str) -> MerchantProductInfo | None:
+    """Ask Gemini (with Google Search) for Chile merchant-structured product info."""
     name = (product_name or "").strip()
     if not name:
         return None
 
     prompt = (
         f"Product name (as entered by user): {name!r}\n\n"
-        "Search and fill the JSON for this or the closest líder.cl / Lider Chile match."
+        "Search and fill the JSON for this or the closest match on the merchant's Chile site."
     )
 
     client = _get_client()
@@ -232,20 +234,20 @@ def fetch_lider_product_info(*, product_name: str) -> LiderProductInfo | None:
         model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
-            system_instruction=LIDER_PRODUCT_SYSTEM_INSTRUCTION,
+            system_instruction=MERCHANT_PRODUCT_SYSTEM_INSTRUCTION,
             temperature=0.25,
             tools=[grounding],
         ),
     )
-    return _parse_lider_product_payload(response.text)
+    return _parse_merchant_product_payload(response.text)
 
 
-def fetch_lider_product_candidates(
+def fetch_merchant_product_candidates(
     *,
     query: str,
     max_products: int = FIND_PRODUCTS_MAX,
-) -> list[LiderProductInfo]:
-    """Ask Gemini for up to *max_products* distinct Líder-oriented product rows for *query*."""
+) -> list[MerchantProductInfo]:
+    """Ask Gemini for up to *max_products* distinct merchant product rows for *query*."""
     name = (query or "").strip()
     if not name:
         return []
@@ -253,7 +255,7 @@ def fetch_lider_product_candidates(
 
     prompt = (
         f"Product search query (as entered by user): {name!r}\n\n"
-        f"Search líder.cl / Lider Chile and return up to {lim} distinct matching products as the "
+        f"Search the merchant's Chile site and return up to {lim} distinct matching products as the "
         "JSON array described in the system instruction."
     )
 
@@ -263,9 +265,18 @@ def fetch_lider_product_candidates(
         model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
-            system_instruction=LIDER_PRODUCT_FIND_SYSTEM_INSTRUCTION,
+            system_instruction=MERCHANT_PRODUCT_FIND_SYSTEM_INSTRUCTION,
             temperature=0.25,
             tools=[grounding],
         ),
     )
-    return _parse_lider_product_list_payload(response.text, max_items=lim)
+    return _parse_merchant_product_list_payload(response.text, max_items=lim)
+
+
+# Backwards compatibility — older name when only Lider was modeled
+LiderProductInfo = MerchantProductInfo
+fetch_lider_product_info = fetch_merchant_product_info
+fetch_lider_product_candidates = fetch_merchant_product_candidates
+_parse_lider_product_payload = _parse_merchant_product_payload
+_parse_lider_product_list_payload = _parse_merchant_product_list_payload
+_lider_product_info_from_mapping = _merchant_product_info_from_mapping

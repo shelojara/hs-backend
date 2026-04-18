@@ -27,7 +27,7 @@ class FindProductsRequest(Schema):
 
 
 class ProductCandidateSchema(Schema):
-    """Líder-oriented fields from Gemini (or client echo); not yet persisted."""
+    """Merchant-oriented fields from Gemini (or client echo); not yet persisted."""
 
     original_name: str
     name: str

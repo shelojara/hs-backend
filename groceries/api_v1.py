@@ -3,7 +3,7 @@ from ninja.errors import HttpError
 
 from auth.security import protected_api_auth
 from groceries import services
-from groceries.gemini_service import LiderProductInfo
+from groceries.gemini_service import MerchantProductInfo
 from groceries.schemas import (
     AddProductToBasketRequest,
     AddProductToBasketResponse,
@@ -71,7 +71,7 @@ def find_products(request, payload: FindProductsRequest):
 
 @router.post("/v1.Groceries.CreateProductFromCandidate", response=CreateProductFromCandidateResponse)
 def create_product_from_candidate(request, payload: CreateProductFromCandidateRequest):
-    info = LiderProductInfo(
+    info = MerchantProductInfo(
         display_name=payload.name,
         standard_name=payload.standard_name,
         brand=payload.brand,
@@ -80,7 +80,7 @@ def create_product_from_candidate(request, payload: CreateProductFromCandidateRe
         emoji=payload.emoji,
     )
     try:
-        product_id = services.create_product_from_lider_info(
+        product_id = services.create_product_from_merchant_info(
             query_name=payload.original_name,
             info=info,
         )

@@ -9,7 +9,7 @@ from django.db.models import Prefetch, Q
 from django.utils import timezone
 
 from groceries import gemini_service
-from groceries.gemini_service import LiderProductInfo
+from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Basket, Product
 
 logger = logging.getLogger(__name__)
@@ -44,29 +44,31 @@ _GEMINI_SUGGESTED_NAME_CONFLICT = (
 )
 
 
-def _fetch_lider_product_info_or_none(*, product_name: str, product_id: int) -> LiderProductInfo | None:
+def _fetch_merchant_product_info_or_none(
+    *, product_name: str, product_id: int
+) -> MerchantProductInfo | None:
     try:
-        return gemini_service.fetch_lider_product_info(product_name=product_name)
+        return gemini_service.fetch_merchant_product_info(product_name=product_name)
     except RuntimeError:
         logger.warning(
-            "Skipped Gemini Líder product info: GEMINI_API_KEY not set (product id=%s).",
+            "Skipped Gemini merchant product info: GEMINI_API_KEY not set (product id=%s).",
             product_id,
         )
     except Exception:
         logger.exception(
-            "Gemini Líder product info failed for product id=%s",
+            "Gemini merchant product info failed for product id=%s",
             product_id,
         )
     return None
 
 
-def _apply_lider_product_info(
+def _apply_merchant_product_info(
     product: Product,
-    info: LiderProductInfo,
+    info: MerchantProductInfo,
     *,
     anchor: str,
 ) -> None:
-    """Write Gemini Líder fields onto *product*; *anchor* resolves empty display_name."""
+    """Write Gemini merchant fields onto *product*; *anchor* resolves empty display_name."""
     next_name = (info.display_name or anchor).strip() or product.name
     if (
         Product.objects.filter(name__iexact=next_name)
@@ -92,14 +94,14 @@ def _apply_lider_product_info(
     )
 
 
-def find_products(*, query: str) -> list[LiderProductInfo]:
-    """Return up to 10 Gemini Líder product rows for *query*; no DB writes."""
+def find_products(*, query: str) -> list[MerchantProductInfo]:
+    """Return up to 10 Gemini merchant product rows for *query*; no DB writes."""
     normalized = query.strip()
     if not normalized:
         msg = "Product name must not be empty."
         raise ValueError(msg)
     try:
-        return gemini_service.fetch_lider_product_candidates(query=normalized)
+        return gemini_service.fetch_merchant_product_candidates(query=normalized)
     except RuntimeError:
         logger.warning(
             "Skipped Gemini find products: GEMINI_API_KEY not set.",
@@ -112,7 +114,7 @@ def find_products(*, query: str) -> list[LiderProductInfo]:
     return []
 
 
-def create_product_from_lider_info(*, query_name: str, info: LiderProductInfo) -> int:
+def create_product_from_merchant_info(*, query_name: str, info: MerchantProductInfo) -> int:
     """Persist product using *info* from a prior find (no Gemini call). Raises ProductNameConflict."""
     anchor = query_name.strip()
     if not anchor:
@@ -148,12 +150,12 @@ def create_product(*, name: str) -> int:
     except IntegrityError as exc:
         raise ProductNameConflict() from exc
 
-    info = _fetch_lider_product_info_or_none(
+    info = _fetch_merchant_product_info_or_none(
         product_name=normalized,
         product_id=product.pk,
     )
     if info:
-        _apply_lider_product_info(product, info, anchor=normalized)
+        _apply_merchant_product_info(product, info, anchor=normalized)
 
     return product.pk
 
@@ -164,13 +166,19 @@ def _anchor_name_for_gemini(product: Product) -> str:
 
 
 def recheck_product_from_gemini(*, product_id: int) -> Product:
-    """Reload Líder-oriented fields from Gemini for existing product. Raises Product.DoesNotExist."""
+    """Reload merchant-oriented fields from Gemini for existing product. Raises Product.DoesNotExist."""
     product = Product.objects.get(pk=product_id)
     anchor = _anchor_name_for_gemini(product)
-    info = _fetch_lider_product_info_or_none(product_name=anchor, product_id=product.pk)
+    info = _fetch_merchant_product_info_or_none(product_name=anchor, product_id=product.pk)
     if info:
-        _apply_lider_product_info(product, info, anchor=anchor)
+        _apply_merchant_product_info(product, info, anchor=anchor)
     return product
+
+
+# Backwards compatibility
+_fetch_lider_product_info_or_none = _fetch_merchant_product_info_or_none
+_apply_lider_product_info = _apply_merchant_product_info
+create_product_from_lider_info = create_product_from_merchant_info
 
 
 def _b64url_encode(raw: bytes) -> str:
