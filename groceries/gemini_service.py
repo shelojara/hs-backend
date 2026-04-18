@@ -271,12 +271,3 @@ def fetch_merchant_product_candidates(
         ),
     )
     return _parse_merchant_product_list_payload(response.text, max_items=lim)
-
-
-# Backwards compatibility — older name when only Lider was modeled
-LiderProductInfo = MerchantProductInfo
-fetch_lider_product_info = fetch_merchant_product_info
-fetch_lider_product_candidates = fetch_merchant_product_candidates
-_parse_lider_product_payload = _parse_merchant_product_payload
-_parse_lider_product_list_payload = _parse_merchant_product_list_payload
-_lider_product_info_from_mapping = _merchant_product_info_from_mapping

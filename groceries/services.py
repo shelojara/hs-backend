@@ -175,12 +175,6 @@ def recheck_product_from_gemini(*, product_id: int) -> Product:
     return product
 
 
-# Backwards compatibility
-_fetch_lider_product_info_or_none = _fetch_merchant_product_info_or_none
-_apply_lider_product_info = _apply_merchant_product_info
-create_product_from_lider_info = create_product_from_merchant_info
-
-
 def _b64url_encode(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
