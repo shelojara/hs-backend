@@ -6,8 +6,11 @@ from groceries import services
 from groceries.schemas import (
     AddProductToBasketRequest,
     AddProductToBasketResponse,
+    BasketWithProductsSchema,
     CreateProductRequest,
     CreateProductResponse,
+    GetLatestBasketRequest,
+    GetLatestBasketResponse,
     ListProductsRequest,
     ListProductsResponse,
     ProductSchema,
@@ -74,3 +77,29 @@ def add_product_to_basket(request, payload: AddProductToBasketRequest):
     except Product.DoesNotExist as exc:
         raise HttpError(404, "Product not found.") from exc
     return AddProductToBasketResponse(basket_id=basket.pk)
+
+
+@router.post("/v1.Groceries.GetLatestBasket", response=GetLatestBasketResponse)
+def get_latest_basket(request, payload: GetLatestBasketRequest):
+    basket = services.get_latest_basket_with_products()
+    if basket is None:
+        return GetLatestBasketResponse(basket=None)
+    return GetLatestBasketResponse(
+        basket=BasketWithProductsSchema(
+            basket_id=basket.pk,
+            created_at=basket.created_at,
+            purchased_at=basket.purchased_at,
+            products=[
+                ProductSchema(
+                    product_id=p.pk,
+                    name=p.name,
+                    original_name=p.original_name,
+                    brand=p.brand,
+                    price=p.price,
+                    format=p.format,
+                    details=p.details,
+                )
+                for p in basket.products.all()
+            ],
+        ),
+    )

@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 
 from groceries import gemini_service
 from groceries.gemini_service import LiderProductInfo
@@ -189,3 +189,14 @@ def add_product_to_basket(*, product_id: int) -> Basket:
             basket = Basket.objects.create()
         basket.products.add(product)
     return basket
+
+
+def get_latest_basket_with_products() -> Basket | None:
+    """Latest basket by created_at (any purchase state), with products ordered by name."""
+    return (
+        Basket.objects.prefetch_related(
+            Prefetch("products", queryset=Product.objects.order_by("name", "pk")),
+        )
+        .order_by("-created_at")
+        .first()
+    )
