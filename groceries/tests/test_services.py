@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 
 from groceries.models import Product
@@ -10,20 +12,53 @@ from groceries.services import (
 
 
 @pytest.mark.django_db
-def test_create_product_persists_and_returns_id():
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_details",
+    return_value=None,
+)
+def test_create_product_persists_and_returns_id(_mock_gemini):
     pid = create_product(name="  Oat milk  ")
     assert pid == Product.objects.get(pk=pid).pk
     assert Product.objects.get(pk=pid).name == "Oat milk"
 
 
 @pytest.mark.django_db
-def test_create_product_rejects_blank_name():
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_details",
+    return_value="Leche de avena 1 L en lácteos.",
+)
+def test_create_product_stores_gemini_lider_details(_mock_gemini):
+    pid = create_product(name="Avena")
+    row = Product.objects.get(pk=pid)
+    assert row.details == "Leche de avena 1 L en lácteos."
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_details",
+    return_value=None,
+)
+def test_create_product_leaves_details_empty_when_gemini_returns_none(_mock_gemini):
+    pid = create_product(name="X")
+    assert Product.objects.get(pk=pid).details == ""
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_details",
+    return_value=None,
+)
+def test_create_product_rejects_blank_name(_mock_gemini):
     with pytest.raises(ValueError, match="empty"):
         create_product(name="   ")
 
 
 @pytest.mark.django_db
-def test_create_product_rejects_duplicate_name_case_insensitive():
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_details",
+    return_value=None,
+)
+def test_create_product_rejects_duplicate_name_case_insensitive(_mock_gemini):
     create_product(name="Oat milk")
     with pytest.raises(ProductNameConflict):
         create_product(name="  oat MILK  ")
@@ -31,7 +66,11 @@ def test_create_product_rejects_duplicate_name_case_insensitive():
 
 
 @pytest.mark.django_db
-def test_list_products_orders_by_name_and_paginates():
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_details",
+    return_value=None,
+)
+def test_list_products_orders_by_name_and_paginates(_mock_gemini):
     create_product(name="Apple")
     create_product(name="Banana")
     create_product(name="Carrot")
@@ -44,7 +83,11 @@ def test_list_products_orders_by_name_and_paginates():
 
 
 @pytest.mark.django_db
-def test_list_products_search_icontains_ordered_by_name():
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_details",
+    return_value=None,
+)
+def test_list_products_search_icontains_ordered_by_name(_mock_gemini):
     create_product(name="Oat milk")
     create_product(name="Whole oat flakes")
     create_product(name="Rice milk")
@@ -53,7 +96,11 @@ def test_list_products_search_icontains_ordered_by_name():
 
 
 @pytest.mark.django_db
-def test_list_products_search_paginates_with_cursor():
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_details",
+    return_value=None,
+)
+def test_list_products_search_paginates_with_cursor(_mock_gemini):
     create_product(name="Oat milk")
     create_product(name="Oat bar")
     create_product(name="Whole oat flakes")
@@ -67,7 +114,11 @@ def test_list_products_search_paginates_with_cursor():
 
 
 @pytest.mark.django_db
-def test_list_products_rejects_mismatched_cursor():
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_details",
+    return_value=None,
+)
+def test_list_products_rejects_mismatched_cursor(_mock_gemini):
     create_product(name="X")
     create_product(name="Y")
     _, cur = list_products(limit=1)

@@ -1,11 +1,15 @@
 import base64
 import json
+import logging
 from typing import Any
 
 from django.db import IntegrityError
 from django.db.models import Q
 
+from groceries import gemini_service
 from groceries.models import Product
+
+logger = logging.getLogger(__name__)
 
 
 class ProductNameConflict(Exception):
@@ -37,6 +41,21 @@ def create_product(*, name: str) -> int:
         product = Product.objects.create(name=normalized)
     except IntegrityError as exc:
         raise ProductNameConflict() from exc
+
+    try:
+        details = gemini_service.fetch_lider_product_details(product_name=normalized)
+    except RuntimeError:
+        logger.warning(
+            "Skipped Gemini Líder product details: GEMINI_API_KEY not set (product id=%s).",
+            product.pk,
+        )
+    except Exception:
+        logger.exception("Gemini Líder product details failed for product id=%s", product.pk)
+    else:
+        if details:
+            product.details = details
+            product.save(update_fields=["details"])
+
     return product.pk
 
 
