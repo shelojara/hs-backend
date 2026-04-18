@@ -9,6 +9,7 @@ from groceries.services import (
     ProductNameConflict,
     create_product,
     list_products,
+    recheck_product_from_gemini,
 )
 
 
@@ -145,3 +146,80 @@ def test_list_products_rejects_mismatched_cursor(_mock_gemini):
 def test_list_products_rejects_invalid_cursor():
     with pytest.raises(InvalidProductListCursorError):
         list_products(cursor="not-a-token")
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=LiderProductInfo(
+        display_name="New Title",
+        brand="B",
+        price="1000",
+        format="1 kg",
+        details="D",
+    ),
+)
+def test_recheck_product_from_gemini_updates_fields(_mock_gemini):
+    pid = create_product(name="Old")
+    out = recheck_product_from_gemini(product_id=pid)
+    assert out.pk == pid
+    assert out.name == "New Title"
+    assert out.original_name == "Old"
+    assert out.brand == "B"
+    assert out.price == "1000"
+    assert out.format == "1 kg"
+    assert out.details == "D"
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_recheck_product_from_gemini_noop_when_gemini_returns_none(_mock_gemini):
+    pid = create_product(name="X")
+    row = Product.objects.get(pk=pid)
+    before = (row.name, row.brand, row.details)
+    out = recheck_product_from_gemini(product_id=pid)
+    assert (out.name, out.brand, out.details) == before
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    side_effect=RuntimeError("no key"),
+)
+def test_recheck_product_from_gemini_noop_when_gemini_key_missing(_mock_gemini):
+    pid = create_product(name="Y")
+    row = Product.objects.get(pk=pid)
+    before = (row.name, row.brand)
+    out = recheck_product_from_gemini(product_id=pid)
+    assert (out.name, out.brand) == before
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=LiderProductInfo(
+        display_name="Taken",
+        brand="",
+        price="",
+        format="",
+        details="",
+    ),
+)
+def test_recheck_product_from_gemini_raises_when_display_name_conflicts(_mock_gemini):
+    Product.objects.create(name="Taken", original_name="Taken")
+    other = Product.objects.create(name="Other", original_name="Other")
+    with pytest.raises(ProductNameConflict):
+        recheck_product_from_gemini(product_id=other.pk)
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_lider_product_info",
+    return_value=None,
+)
+def test_recheck_product_from_gemini_raises_when_missing(_mock_gemini):
+    with pytest.raises(Product.DoesNotExist):
+        recheck_product_from_gemini(product_id=99999)

@@ -67,6 +67,51 @@ def create_product(*, name: str) -> int:
     return product.pk
 
 
+def _anchor_name_for_gemini(product: Product) -> str:
+    s = (product.original_name or "").strip()
+    return s or product.name
+
+
+def recheck_product_from_gemini(*, product_id: int) -> Product:
+    """Reload Líder-oriented fields from Gemini for existing product. Raises Product.DoesNotExist."""
+    product = Product.objects.get(pk=product_id)
+    anchor = _anchor_name_for_gemini(product)
+    try:
+        info = gemini_service.fetch_lider_product_info(product_name=anchor)
+    except RuntimeError:
+        logger.warning(
+            "Skipped Gemini Líder product recheck: GEMINI_API_KEY not set (product id=%s).",
+            product.pk,
+        )
+        return product
+    except Exception:
+        logger.exception("Gemini Líder product recheck failed for product id=%s", product.pk)
+        return product
+
+    if not info:
+        return product
+
+    next_name = (info.display_name or anchor).strip() or product.name
+    if next_name.lower() != product.name.lower():
+        conflict = (
+            Product.objects.filter(name__iexact=next_name).exclude(pk=product.pk).exists()
+        )
+        if conflict:
+            raise ProductNameConflict(
+                "Another product already uses the name suggested by Gemini.",
+            )
+
+    product.brand = info.brand
+    product.price = info.price
+    product.format = info.format
+    product.details = info.details
+    product.name = next_name
+    product.save(
+        update_fields=["brand", "price", "format", "details", "name"],
+    )
+    return product
+
+
 def _b64url_encode(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
