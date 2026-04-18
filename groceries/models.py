@@ -5,6 +5,9 @@ from django.db.models.functions import Lower
 
 class Product(models.Model):
     name = models.CharField(max_length=255)
+    brand = models.CharField(max_length=255, blank=True, default="")
+    price = models.CharField(max_length=128, blank=True, default="")
+    format = models.CharField(max_length=255, blank=True, default="")
     details = models.TextField(blank=True, default="")
 
     class Meta:

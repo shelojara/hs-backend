@@ -39,6 +39,9 @@ def list_products(request, payload: ListProductsRequest):
             ProductSchema(
                 product_id=p.pk,
                 name=p.name,
+                brand=p.brand,
+                price=p.price,
+                format=p.format,
                 details=p.details,
             )
             for p in items
