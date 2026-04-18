@@ -36,6 +36,7 @@ class ProductSchema(Schema):
     price: str
     format: str
     details: str
+    image_url: str
 
 
 class ListProductsResponse(Schema):

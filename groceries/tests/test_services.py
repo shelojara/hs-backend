@@ -49,6 +49,7 @@ def test_create_product_persists_and_returns_id(_mock_gemini):
         price="$3.990",
         format="1 L",
         details="Leche de avena 1 L en lácteos.",
+        image_url="https://lider.cl/p/oatly.jpg",
     ),
 )
 def test_create_product_stores_gemini_lider_details(_mock_gemini):
@@ -61,6 +62,7 @@ def test_create_product_stores_gemini_lider_details(_mock_gemini):
     assert row.price == "$3.990"
     assert row.format == "1 L"
     assert row.details == "Leche de avena 1 L en lácteos."
+    assert row.image_url == "https://lider.cl/p/oatly.jpg"
 
 
 @pytest.mark.django_db
@@ -173,6 +175,7 @@ def test_list_products_rejects_invalid_cursor():
         price="1000",
         format="1 kg",
         details="D",
+        image_url="https://example.com/i.png",
     ),
 )
 def test_recheck_product_from_gemini_updates_fields(_mock_gemini):
@@ -186,6 +189,7 @@ def test_recheck_product_from_gemini_updates_fields(_mock_gemini):
     assert out.price == "1000"
     assert out.format == "1 kg"
     assert out.details == "D"
+    assert out.image_url == "https://example.com/i.png"
 
 
 @pytest.mark.django_db
@@ -224,6 +228,7 @@ def test_recheck_product_from_gemini_noop_when_gemini_key_missing(_mock_gemini):
         price="",
         format="",
         details="",
+        image_url="",
     ),
 )
 def test_recheck_product_from_gemini_raises_when_display_name_conflicts(_mock_gemini):

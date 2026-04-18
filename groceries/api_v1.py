@@ -61,6 +61,7 @@ def list_products(request, payload: ListProductsRequest):
                 price=p.price,
                 format=p.format,
                 details=p.details,
+                image_url=p.image_url,
             )
             for p in items
         ],
@@ -138,6 +139,7 @@ def get_latest_basket(request, payload: GetLatestBasketRequest):
                     price=p.price,
                     format=p.format,
                     details=p.details,
+                    image_url=p.image_url,
                 )
                 for p in basket.products.all()
             ],
