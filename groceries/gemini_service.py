@@ -3,6 +3,8 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from typing import Any
 
 from google import genai
 from google.genai import types
@@ -14,20 +16,18 @@ LIDER_PRODUCT_SYSTEM_INSTRUCTION = (
     "Use Google Search to find how this product appears on líder.cl or in Lider Chile listings "
     "when possible. "
     "Respond with a single JSON object only — no markdown, no code fences, no text before or after. "
-    'Keys (all strings): "display_name" (best retail-style product title for lists: proper capitalization, '
+    'Keys: "display_name" (string: best retail-style product title for lists: proper capitalization, '
     "brand + product line + key format as on shelf or líder.cl; Spanish Chile; empty if unknown), "
-    '"standard_name" (generic product type for grouping across brands and formats: Spanish Chile; '
+    '"standard_name" (string: generic product type for grouping across brands and formats: Spanish Chile; '
     "omit marca, precio, and envase/tamaño; short noun phrase e.g. \"Leche entera\", \"Arroz grano largo\"; "
     "empty if unknown), "
-    '"brand" (marca comercial or empty), '
-    '"price" (typical shelf price in Chilean pesos or CLP text as found, or empty if unknown), '
-    '"format" (presentation: size, units, e.g. "1 L", "6 x 330 ml", "500 g"; empty if unknown), '
-    '"details" (one short paragraph in Spanish (Chile): category/aisle and one concrete fact if known; '
-    "if no líder.cl hit, say briefly that results are general or uncertain), "
-    '"emoji" (one Unicode emoji best matching product type or category, e.g. 🥛 for milk, 🍚 for rice; '
+    '"brand" (string: marca comercial or empty), '
+    '"price" (number: typical shelf price in Chilean pesos CLP as a plain number — integer pesos, '
+    "no thousands separators, no currency symbol; e.g. 3990 for a shelf label like $3.990; use 0 if unknown), "
+    '"format" (string: presentation: size, units, e.g. "1 L", "6 x 330 ml", "500 g"; empty if unknown), '
+    '"emoji" (string: one Unicode emoji best matching product type or category, e.g. 🥛 for milk, 🍚 for rice; '
     "empty string \"\" if unsure). "
-    "Use empty string \"\" for any unknown field. "
-    "Keep \"details\" under 900 characters."
+    "Use empty string \"\" for unknown string fields. Use 0 for unknown price."
 )
 
 
@@ -36,9 +36,8 @@ class LiderProductInfo:
     display_name: str
     standard_name: str
     brand: str
-    price: str
+    price: Decimal
     format: str
-    details: str
     emoji: str
 
 
@@ -66,6 +65,39 @@ def _normalize_field(s: str | None, max_len: int) -> str:
     return _clip(text, max_len) if text else ""
 
 
+def _quantize_clp(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _parse_price_value(raw: Any) -> Decimal:
+    """Turn Gemini JSON price (number or legacy string like '$3.990') into Decimal CLP."""
+    if raw is None:
+        return Decimal("0")
+    if isinstance(raw, bool):
+        return Decimal("0")
+    if isinstance(raw, int):
+        return _quantize_clp(Decimal(raw))
+    if isinstance(raw, float):
+        return _quantize_clp(Decimal(str(raw)))
+    if isinstance(raw, Decimal):
+        return _quantize_clp(raw)
+    s = str(raw).strip()
+    if not s:
+        return Decimal("0")
+    cleaned = s.replace("$", "").replace("CLP", "").strip()
+    cleaned = re.sub(r"\s+", "", cleaned)
+    digits_only = re.sub(r"[^\d]", "", cleaned)
+    if digits_only:
+        try:
+            return _quantize_clp(Decimal(digits_only))
+        except InvalidOperation:
+            pass
+    try:
+        return _quantize_clp(Decimal(cleaned.replace(",", ".")))
+    except InvalidOperation:
+        return Decimal("0")
+
+
 _JSON_FENCE = re.compile(r"^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$", re.IGNORECASE)
 
 
@@ -87,37 +119,25 @@ def _extract_json_object(raw: str) -> str | None:
 
 
 def _parse_lider_product_payload(raw: str | None) -> LiderProductInfo | None:
-    """Parse model output into structured fields; fallback prose → details only."""
+    """Parse model output into structured fields; require valid JSON object."""
     if not raw:
         return None
     blob = _extract_json_object(raw)
-    if blob:
-        try:
-            data = json.loads(blob)
-        except json.JSONDecodeError:
-            data = None
-        if isinstance(data, dict):
-            return LiderProductInfo(
-                display_name=_normalize_field(data.get("display_name"), 255),
-                standard_name=_normalize_field(data.get("standard_name"), 255),
-                brand=_normalize_field(data.get("brand"), 255),
-                price=_normalize_field(data.get("price"), 128),
-                format=_normalize_field(data.get("format"), 255),
-                details=_normalize_field(data.get("details"), 4000),
-                emoji=_normalize_field(data.get("emoji"), 64),
-            )
-    # Legacy: plain text → details only
-    details = _normalize_field(raw, 4000)
-    if not details:
+    if not blob:
+        return None
+    try:
+        data = json.loads(blob)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
         return None
     return LiderProductInfo(
-        display_name="",
-        standard_name="",
-        brand="",
-        price="",
-        format="",
-        details=details,
-        emoji="",
+        display_name=_normalize_field(data.get("display_name"), 255),
+        standard_name=_normalize_field(data.get("standard_name"), 255),
+        brand=_normalize_field(data.get("brand"), 255),
+        price=_parse_price_value(data.get("price")),
+        format=_normalize_field(data.get("format"), 255),
+        emoji=_normalize_field(data.get("emoji"), 64),
     )
 
 

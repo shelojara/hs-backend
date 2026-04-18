@@ -1,3 +1,4 @@
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from groceries import gemini_service
@@ -9,8 +10,8 @@ def test_fetch_lider_product_info_returns_structured_fields(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = (
         '{"display_name": "Colún Leche Entera 1 L", "standard_name": "Leche entera", '
-        '"brand": "Colún", "price": "$2.590", '
-        '"format": "1 L", "details": "Leche entera, góndola lácteos.", '
+        '"brand": "Colún", "price": 2590, '
+        '"format": "1 L", '
         '"emoji": "🥛"}'
     )
     mock_client = MagicMock()
@@ -23,9 +24,8 @@ def test_fetch_lider_product_info_returns_structured_fields(mock_get_client):
         display_name="Colún Leche Entera 1 L",
         standard_name="Leche entera",
         brand="Colún",
-        price="$2.590",
+        price=Decimal("2590.00"),
         format="1 L",
-        details="Leche entera, góndola lácteos.",
         emoji="🥛",
     )
     mock_client.models.generate_content.assert_called_once()
@@ -37,7 +37,7 @@ def test_fetch_lider_product_info_returns_structured_fields(mock_get_client):
 def test_fetch_lider_product_info_strips_json_fence(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = """```json
-{"display_name": "", "standard_name": "Arroz grano largo", "brand": "", "price": "", "format": "500 g", "details": "Arroz.", "emoji": ""}
+{"display_name": "", "standard_name": "Arroz grano largo", "brand": "", "price": 0, "format": "500 g", "emoji": ""}
 ```"""
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = mock_response
@@ -48,9 +48,8 @@ def test_fetch_lider_product_info_strips_json_fence(mock_get_client):
         display_name="",
         standard_name="Arroz grano largo",
         brand="",
-        price="",
+        price=Decimal("0"),
         format="500 g",
-        details="Arroz.",
         emoji="",
     )
 
@@ -61,27 +60,9 @@ def test_fetch_lider_product_info_empty_name_returns_none(mock_get_client):
     mock_get_client.assert_not_called()
 
 
-def test_parse_legacy_plain_text_maps_to_details_only():
-    out = _parse_lider_product_payload("  Solo texto.  ")
-    assert out == LiderProductInfo(
-        display_name="",
-        standard_name="",
-        brand="",
-        price="",
-        format="",
-        details="Solo texto.",
-        emoji="",
-    )
+def test_parse_plain_text_without_json_returns_none():
+    assert _parse_lider_product_payload("  Solo texto.  ") is None
 
 
-def test_parse_invalid_json_falls_back_to_plain_text():
-    out = _parse_lider_product_payload("{not json")
-    assert out == LiderProductInfo(
-        display_name="",
-        standard_name="",
-        brand="",
-        price="",
-        format="",
-        details="{not json",
-        emoji="",
-    )
+def test_parse_invalid_json_returns_none():
+    assert _parse_lider_product_payload("{not json") is None

@@ -76,7 +76,6 @@ def _apply_lider_product_info(
     product.brand = info.brand
     product.price = info.price
     product.format = info.format
-    product.details = info.details
     product.standard_name = info.standard_name
     product.emoji = info.emoji
     product.name = next_name
@@ -85,7 +84,6 @@ def _apply_lider_product_info(
             "brand",
             "price",
             "format",
-            "details",
             "standard_name",
             "emoji",
             "name",
