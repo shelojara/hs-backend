@@ -58,6 +58,14 @@ class AddProductToBasketResponse(Schema):
     basket_id: int
 
 
+class DeleteProductFromBasketRequest(Schema):
+    product_id: int
+
+
+class DeleteProductFromBasketResponse(Schema):
+    pass
+
+
 class BasketSchema(Schema):
     basket_id: int
     created_at: datetime

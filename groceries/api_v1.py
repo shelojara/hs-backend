@@ -7,6 +7,8 @@ from groceries.schemas import (
     AddProductToBasketRequest,
     AddProductToBasketResponse,
     BasketSchema,
+    DeleteProductFromBasketRequest,
+    DeleteProductFromBasketResponse,
     CreateProductRequest,
     CreateProductResponse,
     GetLatestBasketRequest,
@@ -18,7 +20,11 @@ from groceries.schemas import (
     RecheckProductResponse,
 )
 from groceries.models import Product
-from groceries.services import InvalidProductListCursorError, ProductNameConflict
+from groceries.services import (
+    InvalidProductListCursorError,
+    NoOpenBasketError,
+    ProductNameConflict,
+)
 
 router = Router(auth=protected_api_auth, tags=["Groceries"])
 
@@ -77,6 +83,17 @@ def add_product_to_basket(request, payload: AddProductToBasketRequest):
     except Product.DoesNotExist as exc:
         raise HttpError(404, "Product not found.") from exc
     return AddProductToBasketResponse(basket_id=basket.pk)
+
+
+@router.post("/v1.Groceries.DeleteProductFromBasket", response=DeleteProductFromBasketResponse)
+def delete_product_from_basket(request, payload: DeleteProductFromBasketRequest):
+    try:
+        services.delete_product_from_basket(product_id=payload.product_id)
+    except Product.DoesNotExist as exc:
+        raise HttpError(404, "Product not found.") from exc
+    except NoOpenBasketError as exc:
+        raise HttpError(404, str(exc)) from exc
+    return DeleteProductFromBasketResponse()
 
 
 @router.post("/v1.Groceries.GetLatestBasket", response=GetLatestBasketResponse)

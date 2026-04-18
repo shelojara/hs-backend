@@ -27,6 +27,13 @@ class InvalidProductListCursorError(Exception):
         super().__init__(message)
 
 
+class NoOpenBasketError(Exception):
+    """No basket with purchased_at unset exists."""
+
+    def __init__(self, message: str = "No open basket.") -> None:
+        super().__init__(message)
+
+
 DEFAULT_LIST_LIMIT = 20
 MAX_LIST_LIMIT = 100
 
@@ -189,6 +196,21 @@ def add_product_to_basket(*, product_id: int) -> Basket:
             basket = Basket.objects.create()
         basket.products.add(product)
     return basket
+
+
+def delete_product_from_basket(*, product_id: int) -> None:
+    """Remove product from latest open basket (purchased_at unset). No-op if not in basket."""
+    product = Product.objects.get(pk=product_id)
+    with transaction.atomic():
+        basket = (
+            Basket.objects.select_for_update()
+            .filter(purchased_at__isnull=True)
+            .order_by("-created_at")
+            .first()
+        )
+        if basket is None:
+            raise NoOpenBasketError()
+        basket.products.remove(product)
 
 
 def get_latest_basket_with_products() -> Basket | None:
