@@ -154,3 +154,25 @@ class RunningLowSuggestionSchema(Schema):
 
 class SuggestRunningLowResponse(Schema):
     suggestions: list[RunningLowSuggestionSchema]
+
+
+class WhiteboardLineSchema(Schema):
+    tool: str
+    points: list[float]
+    color: str
+
+
+class SaveWhiteboardRequest(Schema):
+    data: list[WhiteboardLineSchema]
+
+
+class SaveWhiteboardResponse(Schema):
+    pass
+
+
+class GetWhiteboardRequest(Schema):
+    """No fields; POST body may be `{}` for RPC transport."""
+
+
+class GetWhiteboardResponse(Schema):
+    data: list[WhiteboardLineSchema]
