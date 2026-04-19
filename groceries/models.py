@@ -76,11 +76,21 @@ class Merchant(models.Model):
     name = models.CharField(max_length=255)
     website = models.URLField(max_length=2048)
     favicon_url = models.URLField(max_length=2048, blank=True, default="")
+    preference_order = models.PositiveIntegerField(
+        default=0,
+        help_text="Lower = higher priority (first in preferred list).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ("name",)
+        ordering = ("preference_order", "pk")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("user", "preference_order"),
+                name="groceries_merchant_user_preference_order_uniq",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.name

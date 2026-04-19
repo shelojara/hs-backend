@@ -4,10 +4,13 @@ from unittest.mock import MagicMock, patch
 from groceries import gemini_service
 from groceries.gemini_service import (
     MerchantProductInfo,
+    PreferredMerchantContext,
     RunningLowSuggestion,
     _parse_merchant_product_list_payload,
     _parse_merchant_product_payload,
     _parse_running_low_suggestions,
+    merchant_product_find_system_instruction,
+    merchant_product_single_system_instruction,
 )
 
 
@@ -169,6 +172,18 @@ def test_fetch_merchant_product_candidates_returns_list(mock_get_client):
     mock_client.models.generate_content.assert_called_once()
     cfg = mock_client.models.generate_content.call_args.kwargs["config"]
     assert "array" in (cfg.system_instruction or "").lower()
+
+
+def test_merchant_product_instructions_include_preferred_merchant():
+    pref = [
+        PreferredMerchantContext(name="Jumbo", website="https://www.jumbo.cl/"),
+    ]
+    single = merchant_product_single_system_instruction(preferred=pref)
+    assert "Jumbo" in single
+    assert "jumbo.cl" in single
+    find = merchant_product_find_system_instruction(preferred=pref)
+    assert "Jumbo" in find
+    assert "JSON array" in find
 
 
 def test_parse_running_low_suggestions_array():

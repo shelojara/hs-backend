@@ -7,7 +7,8 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo, RunningLowSuggestion
-from groceries.models import Basket, Product
+from groceries.gemini_service import PreferredMerchantContext
+from groceries.models import Basket, Merchant, Product
 from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 from groceries.services import (
     InvalidProductListCursorError,
@@ -65,8 +66,9 @@ def _catalog_product(name: str, *, owner=None) -> Product:
     ],
 )
 def test_find_product_candidates_returns_gemini_rows_no_db(_mock_candidates):
+    u = _user(username="find_cand")
     assert Product.objects.count() == 0
-    rows = find_product_candidates(query="  leche  ")
+    rows = find_product_candidates(query="  leche  ", user_id=u.pk)
     assert len(rows) == 1
     assert rows[0].display_name == "Colún Leche Entera 1 L"
     assert Product.objects.count() == 0
@@ -78,13 +80,57 @@ def test_find_product_candidates_returns_gemini_rows_no_db(_mock_candidates):
     side_effect=RuntimeError("no key"),
 )
 def test_find_product_candidates_returns_empty_when_gemini_unconfigured(_mock_candidates):
-    assert find_product_candidates(query="milk") == []
+    u = _user(username="find_cand_nokey")
+    assert find_product_candidates(query="milk", user_id=u.pk) == []
 
 
 @pytest.mark.django_db
 def test_find_product_candidates_rejects_blank_query():
+    u = _user(username="find_cand_blank")
     with pytest.raises(ValueError, match="empty"):
-        find_product_candidates(query="   ")
+        find_product_candidates(query="   ", user_id=u.pk)
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+def test_find_product_candidates_passes_preferred_merchants(mock_fetch):
+    u = _user(username="find_pref")
+    Merchant.objects.create(
+        user=u,
+        name="Jumbo",
+        website="https://www.jumbo.cl/",
+    )
+    mock_fetch.return_value = []
+    find_product_candidates(query="leche", user_id=u.pk)
+    mock_fetch.assert_called_once()
+    ctx = mock_fetch.call_args.kwargs["preferred_merchants"]
+    assert len(ctx) == 1
+    assert ctx[0] == PreferredMerchantContext(
+        name="Jumbo",
+        website="https://www.jumbo.cl/",
+    )
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+def test_find_product_candidates_passes_merchants_in_preference_order(mock_fetch):
+    u = _user(username="find_pref_order")
+    Merchant.objects.create(
+        user=u,
+        name="Second",
+        website="https://second.cl/",
+        preference_order=1,
+    )
+    Merchant.objects.create(
+        user=u,
+        name="First",
+        website="https://first.cl/",
+        preference_order=0,
+    )
+    mock_fetch.return_value = []
+    find_product_candidates(query="leche", user_id=u.pk)
+    ctx = mock_fetch.call_args.kwargs["preferred_merchants"]
+    assert [c.name for c in ctx] == ["First", "Second"]
 
 
 @pytest.mark.django_db
@@ -360,6 +406,34 @@ def test_recheck_product_price_updates_price_only(_mock_identity):
     assert out.brand == "Colún"
     assert out.format == "1 L"
     assert out.price == Decimal("2700.00")
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_merchant_product_info_by_identity")
+def test_recheck_product_price_passes_preferred_merchants(mock_identity):
+    mock_identity.return_value = None
+    owner = _catalog_owner_user()
+    Merchant.objects.create(
+        user=owner,
+        name="Unimarc",
+        website="https://www.unimarc.cl/",
+    )
+    p = Product.objects.create(
+        name="X",
+        standard_name="Leche entera",
+        brand="Colún",
+        format="1 L",
+        price=Decimal("100"),
+        user=owner,
+    )
+    recheck_product_price(product_id=p.pk, user_id=owner.pk)
+    mock_identity.assert_called_once()
+    ctx = mock_identity.call_args.kwargs["preferred_merchants"]
+    assert len(ctx) == 1
+    assert ctx[0] == PreferredMerchantContext(
+        name="Unimarc",
+        website="https://www.unimarc.cl/",
+    )
 
 
 @pytest.mark.django_db
