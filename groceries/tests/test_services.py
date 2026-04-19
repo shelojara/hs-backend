@@ -7,12 +7,12 @@ from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Basket, Product
+from groceries.schemas import ProductCandidateSchema
 from groceries.services import (
     InvalidProductListCursorError,
     NoOpenBasketError,
-    ProductNameConflict,
     add_product_to_basket,
-    create_product_from_merchant_info,
+    create_product_from_candidate,
     delete_product_from_basket,
     find_products,
     get_latest_basket_with_products,
@@ -76,11 +76,10 @@ def test_find_products_rejects_blank_query():
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_create_product_from_merchant_info_persists_without_gemini(_mock_gemini):
-    pid = create_product_from_merchant_info(
-        query_name="  leche  ",
-        info=MerchantProductInfo(
-            display_name="Colún Leche Entera 1 L",
+def test_create_product_from_candidate_persists_without_gemini(_mock_gemini):
+    pid = create_product_from_candidate(
+        candidate=ProductCandidateSchema(
+            name="Colún Leche Entera 1 L",
             standard_name="Leche entera",
             brand="Colún",
             price=Decimal("2590"),
@@ -101,11 +100,10 @@ def test_create_product_from_merchant_info_persists_without_gemini(_mock_gemini)
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_create_product_from_merchant_info_sets_is_custom(_mock_gemini):
-    pid = create_product_from_merchant_info(
-        query_name="custom",
-        info=MerchantProductInfo(
-            display_name="Custom item",
+def test_create_product_from_candidate_sets_is_custom(_mock_gemini):
+    pid = create_product_from_candidate(
+        candidate=ProductCandidateSchema(
+            name="Custom item",
             standard_name="",
             brand="",
             price=Decimal("0"),
@@ -122,51 +120,21 @@ def test_create_product_from_merchant_info_sets_is_custom(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_create_product_from_merchant_info_uses_query_when_display_empty(_mock_gemini):
-    pid = create_product_from_merchant_info(
-        query_name="X",
-        info=MerchantProductInfo(
-            display_name="",
+def test_create_product_from_candidate_assigns_user(_mock_gemini):
+    u = _user()
+    pid = create_product_from_candidate(
+        candidate=ProductCandidateSchema(
+            name="Owned item",
             standard_name="",
             brand="",
             price=Decimal("0"),
             format="",
             emoji="",
         ),
+        user_id=u.pk,
     )
     row = Product.objects.get(pk=pid)
-    assert row.name == "X"
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_create_product_from_merchant_info_rejects_duplicate_name(_mock_gemini):
-    create_product_from_merchant_info(
-        query_name="a",
-        info=MerchantProductInfo(
-            display_name="Same",
-            standard_name="",
-            brand="",
-            price=Decimal("0"),
-            format="",
-            emoji="",
-        ),
-    )
-    with pytest.raises(ProductNameConflict):
-        create_product_from_merchant_info(
-            query_name="b",
-            info=MerchantProductInfo(
-                display_name="same",
-                standard_name="",
-                brand="",
-                price=Decimal("0"),
-                format="",
-                emoji="",
-            ),
-        )
+    assert row.user_id == u.pk
 
 
 @pytest.mark.django_db
@@ -290,25 +258,6 @@ def test_recheck_product_from_gemini_noop_when_gemini_key_missing(_mock_gemini):
 @pytest.mark.django_db
 @patch(
     "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=MerchantProductInfo(
-        display_name="Taken",
-        standard_name="",
-        brand="",
-        price=Decimal("0"),
-        format="",
-        emoji="",
-    ),
-)
-def test_recheck_product_from_gemini_raises_when_display_name_conflicts(_mock_gemini):
-    Product.objects.create(name="Taken")
-    other = Product.objects.create(name="Other")
-    with pytest.raises(ProductNameConflict):
-        recheck_product_from_gemini(product_id=other.pk)
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
 def test_recheck_product_from_gemini_raises_when_missing(_mock_gemini):
@@ -417,7 +366,9 @@ def test_delete_product_from_basket_noop_when_product_not_in_basket(_mock_gemini
     pid = _catalog_product("Y").pk
     Basket.objects.create(owner=user)
     delete_product_from_basket(product_id=pid, user_id=user.pk)
-    assert Basket.objects.get(owner=user, purchased_at__isnull=True).products.count() == 0
+    assert (
+        Basket.objects.get(owner=user, purchased_at__isnull=True).products.count() == 0
+    )
 
 
 @pytest.mark.django_db
@@ -460,7 +411,9 @@ def test_get_latest_basket_with_products_none_when_empty(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_get_latest_basket_with_products_returns_newest_and_ordered_products(_mock_gemini):
+def test_get_latest_basket_with_products_returns_newest_and_ordered_products(
+    _mock_gemini,
+):
     user = _user()
     pid_a = _catalog_product("Apple").pk
     pid_b = _catalog_product("Banana").pk

@@ -27,7 +27,7 @@ class FindProductsRequest(Schema):
 
 
 class ProductCandidateSchema(Schema):
-    """Merchant-oriented fields from Gemini (or client echo); not yet persisted."""
+    """Fields from Gemini; not yet persisted."""
 
     name: str
     standard_name: str
@@ -42,12 +42,7 @@ class FindProductsResponse(Schema):
 
 
 class CreateProductFromCandidateRequest(Schema):
-    name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
-    standard_name: str = ""
-    brand: str = ""
-    price: Decimal = Decimal("0")
-    format: str = ""
-    emoji: str = ""
+    canditate: ProductCandidateSchema
     is_custom: bool = False
 
 

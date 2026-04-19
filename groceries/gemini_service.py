@@ -24,15 +24,15 @@ MERCHANT_PRODUCT_FIND_SYSTEM_INSTRUCTION = (
     '"display_name" (string: best retail-style product title for lists: proper capitalization, '
     "brand + product line + key format as on shelf or the merchant site; Spanish Chile; empty if unknown), "
     '"standard_name" (string: generic product type for grouping across brands and formats: Spanish Chile; '
-    "omit marca, precio, and envase/tamaño; short noun phrase e.g. \"Leche entera\", \"Arroz grano largo\"; "
+    'omit marca, precio, and envase/tamaño; short noun phrase e.g. "Leche entera", "Arroz grano largo"; '
     "empty if unknown), "
     '"brand" (string: marca comercial or empty), '
     '"price" (number: typical shelf price in Chilean pesos CLP as a plain number — integer pesos, '
     "no thousands separators, no currency symbol; e.g. 3990 for a shelf label like $3.990; use 0 if unknown), "
     '"format" (string: presentation: size, units, e.g. "1 L", "6 x 330 ml", "500 g"; empty if unknown), '
     '"emoji" (string: one Unicode emoji best matching product type or category, e.g. 🥛 for milk, 🍚 for rice; '
-    "empty string \"\" if unsure). "
-    "Use empty string \"\" for unknown string fields. Use 0 for unknown price. "
+    'empty string "" if unsure). '
+    'Use empty string "" for unknown string fields. Use 0 for unknown price. '
     "Do not repeat the same merchant SKU or identical display_name twice. Prefer distinct products."
 )
 
@@ -45,15 +45,15 @@ MERCHANT_PRODUCT_SYSTEM_INSTRUCTION = (
     'Keys: "display_name" (string: best retail-style product title for lists: proper capitalization, '
     "brand + product line + key format as on shelf or the merchant site; Spanish Chile; empty if unknown), "
     '"standard_name" (string: generic product type for grouping across brands and formats: Spanish Chile; '
-    "omit marca, precio, and envase/tamaño; short noun phrase e.g. \"Leche entera\", \"Arroz grano largo\"; "
+    'omit marca, precio, and envase/tamaño; short noun phrase e.g. "Leche entera", "Arroz grano largo"; '
     "empty if unknown), "
     '"brand" (string: marca comercial or empty), '
     '"price" (number: typical shelf price in Chilean pesos CLP as a plain number — integer pesos, '
     "no thousands separators, no currency symbol; e.g. 3990 for a shelf label like $3.990; use 0 if unknown), "
     '"format" (string: presentation: size, units, e.g. "1 L", "6 x 330 ml", "500 g"; empty if unknown), '
     '"emoji" (string: one Unicode emoji best matching product type or category, e.g. 🥛 for milk, 🍚 for rice; '
-    "empty string \"\" if unsure). "
-    "Use empty string \"\" for unknown string fields. Use 0 for unknown price."
+    'empty string "" if unsure). '
+    'Use empty string "" for unknown string fields. Use 0 for unknown price.'
 )
 
 
@@ -201,7 +201,11 @@ def _parse_merchant_product_list_payload(
     except json.JSONDecodeError:
         single = _parse_merchant_product_payload(raw)
         return [single] if single else []
-    if isinstance(data, dict) and "products" in data and isinstance(data["products"], list):
+    if (
+        isinstance(data, dict)
+        and "products" in data
+        and isinstance(data["products"], list)
+    ):
         data = data["products"]
     elif isinstance(data, dict):
         data = [data]
