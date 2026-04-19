@@ -2,8 +2,6 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
-from django.db.models import UniqueConstraint
-from django.db.models.functions import Lower
 
 
 class Product(models.Model):
@@ -20,9 +18,7 @@ class Product(models.Model):
     is_custom = models.BooleanField(default=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        on_delete=models.CASCADE,
         related_name="products",
     )
 
