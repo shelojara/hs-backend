@@ -58,7 +58,10 @@ router = Router(auth=protected_api_auth, tags=["Groceries"])
 )
 def find_product_candidates(request, payload: FindProductCandidatesRequest):
     try:
-        items = services.find_product_candidates(query=payload.query)
+        items = services.find_product_candidates(
+            query=payload.query,
+            user_id=request.auth.pk,
+        )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     return FindProductCandidatesResponse(

@@ -10,11 +10,23 @@ from django.utils import timezone
 
 from groceries import gemini_service
 from groceries.favicon_service import fetch_favicon_url, normalize_website_url
-from groceries.gemini_service import MerchantProductInfo, RunningLowSuggestion
+from groceries.gemini_service import (
+    MerchantProductInfo,
+    PreferredMerchantContext,
+    RunningLowSuggestion,
+)
 from groceries.models import Basket, Merchant, Product, Whiteboard
 from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 
 logger = logging.getLogger(__name__)
+
+
+def _preferred_merchant_context_for_user(user_id: int) -> list[PreferredMerchantContext]:
+    rows = Merchant.objects.filter(user_id=user_id).order_by("name", "pk")
+    return [
+        PreferredMerchantContext(name=m.name, website=m.website)
+        for m in rows
+    ]
 
 
 class InvalidProductListCursorError(Exception):
@@ -42,12 +54,14 @@ def _fetch_merchant_product_info_by_identity_or_none(
     brand: str,
     format: str,
     product_id: int,
+    user_id: int,
 ) -> MerchantProductInfo | None:
     try:
         return gemini_service.fetch_merchant_product_info_by_identity(
             standard_name=standard_name,
             brand=brand,
             format=format,
+            preferred_merchants=_preferred_merchant_context_for_user(user_id),
         )
     except RuntimeError:
         logger.warning(
@@ -67,14 +81,21 @@ def _apply_merchant_price_only(product: Product, info: MerchantProductInfo) -> N
     product.save(update_fields=["price"])
 
 
-def find_product_candidates(*, query: str) -> list[MerchantProductInfo]:
+def find_product_candidates(
+    *,
+    query: str,
+    user_id: int,
+) -> list[MerchantProductInfo]:
     """Return up to 10 Gemini merchant product rows for *query*; no DB writes."""
     normalized = query.strip()
     if not normalized:
         msg = "Query must not be empty."
         raise ValueError(msg)
     try:
-        return gemini_service.fetch_merchant_product_candidates(query=normalized)
+        return gemini_service.fetch_merchant_product_candidates(
+            query=normalized,
+            preferred_merchants=_preferred_merchant_context_for_user(user_id),
+        )
     except RuntimeError:
         logger.warning(
             "Skipped Gemini find product candidates: GEMINI_API_KEY not set.",
@@ -150,6 +171,7 @@ def recheck_product_price(*, product_id: int, user_id: int) -> Product:
         brand=br,
         format=fmt,
         product_id=product.pk,
+        user_id=user_id,
     )
     if info:
         _apply_merchant_price_only(product, info)
@@ -355,6 +377,7 @@ def suggest_running_low_products(*, user_id: int) -> list[RunningLowSuggestion]:
     try:
         return gemini_service.suggest_running_low_from_purchase_history(
             history_markdown=block,
+            preferred_merchants=_preferred_merchant_context_for_user(user_id),
         )
     except RuntimeError:
         logger.warning(

@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
@@ -35,13 +36,7 @@ RUNNING_LOW_SYSTEM_INSTRUCTION = (
 )
 
 
-MERCHANT_PRODUCT_FIND_SYSTEM_INSTRUCTION = (
-    "You help catalog grocery products sold in Chile for a specific retail merchant "
-    "(default: Lider / Walmart Chile, website líder.cl). "
-    "Use Google Search to find how products matching the user's query appear on that merchant's site "
-    "or in that merchant's Chile listings when possible. "
-    f"Respond with a single JSON array only — no markdown, no code fences, no text before or after. "
-    f"The array must have at most {FIND_PRODUCTS_MAX} elements. Each element is one JSON object with the "
+_MERCHANT_PRODUCT_JSON_KEYS_FIND = (
     "same keys and rules as for a single-product response: "
     '"display_name" (string: best retail-style product title for lists: proper capitalization, '
     "brand + product line + key format as on shelf or the merchant site; Spanish Chile; empty if unknown), "
@@ -58,12 +53,7 @@ MERCHANT_PRODUCT_FIND_SYSTEM_INSTRUCTION = (
     "Do not repeat the same merchant SKU or identical display_name twice. Prefer distinct products."
 )
 
-MERCHANT_PRODUCT_SYSTEM_INSTRUCTION = (
-    "You help catalog grocery products sold in Chile for a specific retail merchant "
-    "(default: Lider / Walmart Chile, website líder.cl). "
-    "Use Google Search to find how this product appears on that merchant's site or in that merchant's "
-    "Chile listings when possible. "
-    "Respond with a single JSON object only — no markdown, no code fences, no text before or after. "
+_MERCHANT_PRODUCT_JSON_KEYS_SINGLE = (
     'Keys: "display_name" (string: best retail-style product title for lists: proper capitalization, '
     "brand + product line + key format as on shelf or the merchant site; Spanish Chile; empty if unknown), "
     '"standard_name" (string: generic product type for grouping across brands and formats: Spanish Chile; '
@@ -77,6 +67,98 @@ MERCHANT_PRODUCT_SYSTEM_INSTRUCTION = (
     'empty string "" if unsure). '
     'Use empty string "" for unknown string fields. Use 0 for unknown price.'
 )
+
+
+@dataclass(frozen=True)
+class PreferredMerchantContext:
+    """User-preferred store (name + site) for Gemini Chile grocery search."""
+
+    name: str
+    website: str
+
+
+def _merchant_scope_paragraph(
+    *,
+    preferred: Sequence[PreferredMerchantContext] | None,
+    multi_query: bool,
+) -> str:
+    """Intro paragraph: default Lider or user's preferred merchant list."""
+    if not preferred:
+        return (
+            "You help catalog grocery products sold in Chile for a specific retail merchant "
+            "(default: Lider / Walmart Chile, website líder.cl). "
+            + (
+                "Use Google Search to find how products matching the user's query appear on that merchant's site "
+                "or in that merchant's Chile listings when possible. "
+                if multi_query
+                else "Use Google Search to find how this product appears on that merchant's site or in that merchant's "
+                "Chile listings when possible. "
+            )
+        )
+    lines = [
+        "You help catalog grocery products sold in Chile for the shopper's preferred retail merchant(s).",
+        "Preferred merchants (earlier = higher priority when choosing one site):",
+    ]
+    for i, m in enumerate(preferred, start=1):
+        nm = (m.name or "").strip() or f"Merchant {i}"
+        web = (m.website or "").strip()
+        lines.append(f"{i}. {nm} — {web}" if web else f"{i}. {nm}")
+    tail = (
+        "Use Google Search to find listings on these site(s); prefer the first merchant when several apply. "
+        + (
+            "Match products matching the user's query."
+            if multi_query
+            else "Match this product."
+        )
+    )
+    lines.append(tail)
+    return "\n".join(lines)
+
+
+def merchant_product_find_system_instruction(
+    *,
+    preferred: Sequence[PreferredMerchantContext] | None = None,
+) -> str:
+    """System instruction for multi-product search JSON array."""
+    head = _merchant_scope_paragraph(preferred=preferred, multi_query=True)
+    return (
+        f"{head}"
+        f"Respond with a single JSON array only — no markdown, no code fences, no text before or after. "
+        f"The array must have at most {FIND_PRODUCTS_MAX} elements. Each element is one JSON object with the "
+        f"{_MERCHANT_PRODUCT_JSON_KEYS_FIND}"
+    )
+
+
+def merchant_product_single_system_instruction(
+    *,
+    preferred: Sequence[PreferredMerchantContext] | None = None,
+) -> str:
+    """System instruction for single-product JSON object."""
+    head = _merchant_scope_paragraph(preferred=preferred, multi_query=False)
+    return (
+        f"{head}"
+        "Respond with a single JSON object only — no markdown, no code fences, no text before or after. "
+        f"{_MERCHANT_PRODUCT_JSON_KEYS_SINGLE}"
+    )
+
+
+def running_low_instruction_with_merchants(
+    *,
+    preferred: Sequence[PreferredMerchantContext] | None = None,
+) -> str:
+    """Running-low system instruction; optional preferred merchant context."""
+    if not preferred:
+        return RUNNING_LOW_SYSTEM_INSTRUCTION
+    block_lines = [
+        "The shopper prefers these Chile retail merchant(s) when restocking context matters "
+        "(earlier = higher priority):",
+    ]
+    for i, m in enumerate(preferred, start=1):
+        nm = (m.name or "").strip() or f"Merchant {i}"
+        web = (m.website or "").strip()
+        block_lines.append(f"- {nm} — {web}" if web else f"- {nm}")
+    block = "\n".join(block_lines)
+    return f"{RUNNING_LOW_SYSTEM_INSTRUCTION}\n\n{block}"
 
 
 @dataclass(frozen=True)
@@ -250,7 +332,11 @@ def _parse_merchant_product_list_payload(
     return out
 
 
-def fetch_merchant_product_info(*, product_name: str) -> MerchantProductInfo | None:
+def fetch_merchant_product_info(
+    *,
+    product_name: str,
+    preferred_merchants: Sequence[PreferredMerchantContext] | None = None,
+) -> MerchantProductInfo | None:
     """Ask Gemini (with Google Search) for Chile merchant-structured product info."""
     name = (product_name or "").strip()
     if not name:
@@ -267,7 +353,9 @@ def fetch_merchant_product_info(*, product_name: str) -> MerchantProductInfo | N
         model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
-            system_instruction=MERCHANT_PRODUCT_SYSTEM_INSTRUCTION,
+            system_instruction=merchant_product_single_system_instruction(
+                preferred=preferred_merchants,
+            ),
             temperature=0.25,
             tools=[grounding],
         ),
@@ -280,6 +368,7 @@ def fetch_merchant_product_info_by_identity(
     standard_name: str,
     brand: str,
     format: str,
+    preferred_merchants: Sequence[PreferredMerchantContext] | None = None,
 ) -> MerchantProductInfo | None:
     """Same JSON shape as :func:`fetch_merchant_product_info`, keyed by catalog identity fields."""
     sn = (standard_name or "").strip()
@@ -303,7 +392,9 @@ def fetch_merchant_product_info_by_identity(
         model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
-            system_instruction=MERCHANT_PRODUCT_SYSTEM_INSTRUCTION,
+            system_instruction=merchant_product_single_system_instruction(
+                preferred=preferred_merchants,
+            ),
             temperature=0.25,
             tools=[grounding],
         ),
@@ -315,6 +406,7 @@ def fetch_merchant_product_candidates(
     *,
     query: str,
     max_products: int = FIND_PRODUCTS_MAX,
+    preferred_merchants: Sequence[PreferredMerchantContext] | None = None,
 ) -> list[MerchantProductInfo]:
     """Ask Gemini for up to *max_products* distinct merchant product rows for *query*."""
     name = (query or "").strip()
@@ -334,7 +426,9 @@ def fetch_merchant_product_candidates(
         model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
-            system_instruction=MERCHANT_PRODUCT_FIND_SYSTEM_INSTRUCTION,
+            system_instruction=merchant_product_find_system_instruction(
+                preferred=preferred_merchants,
+            ),
             temperature=0.25,
             tools=[grounding],
         ),
@@ -402,6 +496,7 @@ def suggest_running_low_from_purchase_history(
     *,
     history_markdown: str,
     max_suggestions: int = RUNNING_LOW_MAX_SUGGESTIONS,
+    preferred_merchants: Sequence[PreferredMerchantContext] | None = None,
 ) -> list[RunningLowSuggestion]:
     """Ask Gemini which products from *history_markdown* may run out soon.
 
@@ -424,7 +519,9 @@ def suggest_running_low_from_purchase_history(
         model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
-            system_instruction=RUNNING_LOW_SYSTEM_INSTRUCTION,
+            system_instruction=running_low_instruction_with_merchants(
+                preferred=preferred_merchants,
+            ),
             temperature=0.35,
         ),
     )
