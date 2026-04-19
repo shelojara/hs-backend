@@ -160,7 +160,7 @@ def test_create_product_from_candidate_assigns_user(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_list_products_orders_by_name_and_paginates(_mock_gemini):
+def test_list_products_orders_by_purchase_count_then_name_and_paginates(_mock_gemini):
     owner = _catalog_owner_user()
     _catalog_product("Apple")
     _catalog_product("Banana")
@@ -178,13 +178,32 @@ def test_list_products_orders_by_name_and_paginates(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_list_products_search_icontains_ordered_by_name(_mock_gemini):
+def test_list_products_orders_by_purchase_count_desc(_mock_gemini):
     owner = _catalog_owner_user()
-    _catalog_product("Oat milk")
-    _catalog_product("Whole oat flakes")
-    _catalog_product("Rice milk")
+    hi = _catalog_product("Often bought", owner=owner)
+    Product.objects.filter(pk=hi.pk).update(purchase_count=5)
+    lo = _catalog_product("Rare", owner=owner)
+    Product.objects.filter(pk=lo.pk).update(purchase_count=1)
+    mid = _catalog_product("Medium", owner=owner)
+    Product.objects.filter(pk=mid.pk).update(purchase_count=3)
+    items, _ = list_products(user_id=owner.pk, limit=10)
+    assert [p.pk for p in items] == [hi.pk, mid.pk, lo.pk]
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_list_products_search_icontains_ordered_by_purchase_count_then_name(_mock_gemini):
+    owner = _catalog_owner_user()
+    flakes = _catalog_product("Whole oat flakes", owner=owner)
+    milk = _catalog_product("Oat milk", owner=owner)
+    _catalog_product("Rice milk", owner=owner)
+    Product.objects.filter(pk=flakes.pk).update(purchase_count=2)
+    Product.objects.filter(pk=milk.pk).update(purchase_count=1)
     items, _ = list_products(user_id=owner.pk, search="oat", limit=10)
-    assert [i.name for i in items] == ["Oat milk", "Whole oat flakes"]
+    assert [i.name for i in items] == ["Whole oat flakes", "Oat milk"]
 
 
 @pytest.mark.django_db
@@ -194,15 +213,19 @@ def test_list_products_search_icontains_ordered_by_name(_mock_gemini):
 )
 def test_list_products_search_paginates_with_cursor(_mock_gemini):
     owner = _catalog_owner_user()
-    _catalog_product("Oat milk")
-    _catalog_product("Oat bar")
-    _catalog_product("Whole oat flakes")
+    milk = _catalog_product("Oat milk", owner=owner)
+    bar = _catalog_product("Oat bar", owner=owner)
+    flakes = _catalog_product("Whole oat flakes", owner=owner)
+    Product.objects.filter(pk=bar.pk).update(purchase_count=2)
+    Product.objects.filter(pk=milk.pk).update(purchase_count=1)
+    Product.objects.filter(pk=flakes.pk).update(purchase_count=0)
     first, nxt = list_products(user_id=owner.pk, search="oat", limit=1)
     assert len(first) == 1
+    assert first[0].name == "Oat bar"
     assert nxt is not None
     second, nxt2 = list_products(user_id=owner.pk, search="oat", limit=1, cursor=nxt)
     assert len(second) == 1
-    assert second[0].name != first[0].name
+    assert second[0].name == "Oat milk"
     assert nxt2 is not None
 
 
