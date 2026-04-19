@@ -16,6 +16,7 @@ class Product(models.Model):
     format = models.CharField(max_length=255, blank=True, default="")
     emoji = models.CharField(max_length=64, blank=True, default="")
     is_custom = models.BooleanField(default=False)
+    purchase_count = models.PositiveIntegerField(default=0)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,

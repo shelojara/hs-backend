@@ -65,6 +65,7 @@ class ProductSchema(Schema):
     format: str
     emoji: str
     is_custom: bool
+    purchase_count: int
 
 
 class ListProductsResponse(Schema):

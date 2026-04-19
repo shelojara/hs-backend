@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 from django.db import transaction
-from django.db.models import Prefetch, Q
+from django.db.models import F, Prefetch, Q
 from django.utils import timezone
 
 from groceries import gemini_service
@@ -286,8 +286,13 @@ def purchase_latest_open_basket(*, user_id: int) -> Basket:
         basket = get_current_basket(user_id=user_id, select_for_update=True)
         if basket is None:
             raise NoOpenBasketError()
+        product_ids = list(basket.products.values_list("pk", flat=True))
         basket.purchased_at = timezone.now()
         basket.save(update_fields=["purchased_at"])
+        if product_ids:
+            Product.objects.filter(pk__in=product_ids).update(
+                purchase_count=F("purchase_count") + 1
+            )
     return basket
 
 
