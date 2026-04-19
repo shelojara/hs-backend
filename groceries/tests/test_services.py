@@ -881,11 +881,6 @@ def test_suggest_running_low_calls_gemini_with_history(mock_suggest, _mock_info)
         ),
     ]
     user = _user(username="runlow")
-    Merchant.objects.create(
-        user=user,
-        name="Santa Isabel",
-        website="https://www.santaisabel.cl/",
-    )
     milk = _catalog_product("Leche entera", owner=user)
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
     b.products.add(milk)
@@ -899,12 +894,6 @@ def test_suggest_running_low_calls_gemini_with_history(mock_suggest, _mock_info)
     assert "history_markdown" in call_kw
     assert "Leche entera" in call_kw["history_markdown"]
     assert "Basket 1" in call_kw["history_markdown"]
-    pm = call_kw["preferred_merchants"]
-    assert len(pm) == 1
-    assert pm[0] == PreferredMerchantContext(
-        name="Santa Isabel",
-        website="https://www.santaisabel.cl/",
-    )
 
 
 @pytest.mark.django_db

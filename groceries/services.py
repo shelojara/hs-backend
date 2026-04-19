@@ -380,7 +380,6 @@ def suggest_running_low_products(*, user_id: int) -> list[RunningLowSuggestion]:
     try:
         return gemini_service.suggest_running_low_from_purchase_history(
             history_markdown=block,
-            preferred_merchants=_preferred_merchant_context_for_user(user_id),
         )
     except RuntimeError:
         logger.warning(

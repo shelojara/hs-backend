@@ -142,25 +142,6 @@ def merchant_product_single_system_instruction(
     )
 
 
-def running_low_instruction_with_merchants(
-    *,
-    preferred: Sequence[PreferredMerchantContext] | None = None,
-) -> str:
-    """Running-low system instruction; optional preferred merchant context."""
-    if not preferred:
-        return RUNNING_LOW_SYSTEM_INSTRUCTION
-    block_lines = [
-        "The shopper prefers these Chile retail merchant(s) when restocking context matters "
-        "(earlier = higher priority):",
-    ]
-    for i, m in enumerate(preferred, start=1):
-        nm = (m.name or "").strip() or f"Merchant {i}"
-        web = (m.website or "").strip()
-        block_lines.append(f"- {nm} — {web}" if web else f"- {nm}")
-    block = "\n".join(block_lines)
-    return f"{RUNNING_LOW_SYSTEM_INSTRUCTION}\n\n{block}"
-
-
 @dataclass(frozen=True)
 class MerchantProductInfo:
     display_name: str
@@ -496,7 +477,6 @@ def suggest_running_low_from_purchase_history(
     *,
     history_markdown: str,
     max_suggestions: int = RUNNING_LOW_MAX_SUGGESTIONS,
-    preferred_merchants: Sequence[PreferredMerchantContext] | None = None,
 ) -> list[RunningLowSuggestion]:
     """Ask Gemini which products from *history_markdown* may run out soon.
 
@@ -519,9 +499,7 @@ def suggest_running_low_from_purchase_history(
         model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
-            system_instruction=running_low_instruction_with_merchants(
-                preferred=preferred_merchants,
-            ),
+            system_instruction=RUNNING_LOW_SYSTEM_INSTRUCTION,
             temperature=0.35,
         ),
     )
