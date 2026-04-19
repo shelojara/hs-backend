@@ -7,6 +7,10 @@ from groceries.schemas import (
     AddProductToBasketRequest,
     AddProductToBasketResponse,
     BasketSchema,
+    CreateMerchantRequest,
+    CreateMerchantResponse,
+    DeleteMerchantRequest,
+    DeleteMerchantResponse,
     DeleteProductFromBasketRequest,
     DeleteProductFromBasketResponse,
     CreateProductFromCandidateRequest,
@@ -17,10 +21,13 @@ from groceries.schemas import (
     GetCurrentBasketResponse,
     GetWhiteboardRequest,
     GetWhiteboardResponse,
+    ListMerchantsRequest,
+    ListMerchantsResponse,
     ListProductsRequest,
     ListProductsResponse,
     ListPurchasedBasketsRequest,
     ListPurchasedBasketsResponse,
+    MerchantSchema,
     ProductCandidateSchema,
     ProductSchema,
     PurchaseBasketRequest,
@@ -32,10 +39,12 @@ from groceries.schemas import (
     SaveWhiteboardResponse,
     SuggestRunningLowRequest,
     SuggestRunningLowResponse,
+    UpdateMerchantRequest,
+    UpdateMerchantResponse,
     UpdateProductRequest,
     UpdateProductResponse,
 )
-from groceries.models import Product
+from groceries.models import Merchant, Product
 from groceries.services import (
     InvalidProductListCursorError,
     NoOpenBasketError,
@@ -273,3 +282,60 @@ def save_whiteboard(request, payload: SaveWhiteboardRequest):
 def get_whiteboard(request, payload: GetWhiteboardRequest):
     lines = services.get_whiteboard(user_id=request.auth.pk)
     return GetWhiteboardResponse(data=lines)
+
+
+@router.post("/v1.Groceries.ListMerchants", response=ListMerchantsResponse)
+def list_merchants(request, payload: ListMerchantsRequest):
+    rows = services.list_user_merchants(user_id=request.auth.pk)
+    return ListMerchantsResponse(
+        merchants=[
+            MerchantSchema(
+                merchant_id=m.pk,
+                name=m.name,
+                website=m.website,
+                favicon_url=m.favicon_url,
+            )
+            for m in rows
+        ],
+    )
+
+
+@router.post("/v1.Groceries.CreateMerchant", response=CreateMerchantResponse)
+def create_merchant(request, payload: CreateMerchantRequest):
+    try:
+        m = services.create_user_merchant(
+            user_id=request.auth.pk,
+            name=payload.name,
+            website=payload.website,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return CreateMerchantResponse(merchant_id=m.pk)
+
+
+@router.post("/v1.Groceries.UpdateMerchant", response=UpdateMerchantResponse)
+def update_merchant(request, payload: UpdateMerchantRequest):
+    try:
+        m = services.update_user_merchant(
+            user_id=request.auth.pk,
+            merchant_id=payload.merchant_id,
+            name=payload.name,
+            website=payload.website,
+        )
+    except Merchant.DoesNotExist as exc:
+        raise HttpError(404, "Merchant not found.") from exc
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return UpdateMerchantResponse(merchant_id=m.pk)
+
+
+@router.post("/v1.Groceries.DeleteMerchant", response=DeleteMerchantResponse)
+def delete_merchant(request, payload: DeleteMerchantRequest):
+    try:
+        services.delete_user_merchant(
+            user_id=request.auth.pk,
+            merchant_id=payload.merchant_id,
+        )
+    except Merchant.DoesNotExist as exc:
+        raise HttpError(404, "Merchant not found.") from exc
+    return DeleteMerchantResponse()

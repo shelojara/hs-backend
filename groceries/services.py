@@ -9,8 +9,9 @@ from django.db.models import F, Prefetch, Q
 from django.utils import timezone
 
 from groceries import gemini_service
+from groceries.favicon_service import fetch_favicon_url, normalize_website_url
 from groceries.gemini_service import MerchantProductInfo, RunningLowSuggestion
-from groceries.models import Basket, Product, Whiteboard
+from groceries.models import Basket, Merchant, Product, Whiteboard
 from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 
 logger = logging.getLogger(__name__)
@@ -396,3 +397,51 @@ def get_whiteboard(*, user_id: int) -> list[WhiteboardLineSchema]:
     except Whiteboard.DoesNotExist:
         return []
     return [WhiteboardLineSchema.model_validate(item) for item in row.data]
+
+
+def list_user_merchants(*, user_id: int) -> list[Merchant]:
+    """Preferred merchants for *user_id*, ordered by name."""
+    return list(Merchant.objects.filter(user_id=user_id).order_by("name", "pk"))
+
+
+def create_user_merchant(*, user_id: int, name: str, website: str) -> Merchant:
+    """Persist a merchant and resolve ``favicon_url`` from *website*."""
+    label = name.strip()
+    if not label:
+        msg = "Merchant name must not be empty."
+        raise ValueError(msg)
+    normalized = normalize_website_url(website)
+    fav = fetch_favicon_url(website) or ""
+    return Merchant.objects.create(
+        user_id=user_id,
+        name=label,
+        website=normalized,
+        favicon_url=fav,
+    )
+
+
+def update_user_merchant(
+    *,
+    user_id: int,
+    merchant_id: int,
+    name: str,
+    website: str,
+) -> Merchant:
+    """Update merchant fields and refresh favicon when *website* changes."""
+    label = name.strip()
+    if not label:
+        msg = "Merchant name must not be empty."
+        raise ValueError(msg)
+    merchant = Merchant.objects.get(pk=merchant_id, user_id=user_id)
+    normalized = normalize_website_url(website)
+    merchant.name = label
+    merchant.website = normalized
+    merchant.favicon_url = fetch_favicon_url(website) or ""
+    merchant.save()
+    return merchant
+
+
+def delete_user_merchant(*, user_id: int, merchant_id: int) -> None:
+    """Delete a merchant owned by *user_id*."""
+    merchant = Merchant.objects.get(pk=merchant_id, user_id=user_id)
+    merchant.delete()

@@ -63,3 +63,24 @@ class Whiteboard(models.Model):
 
     def __str__(self) -> str:
         return f"Whiteboard(user={self.user_id})"
+
+
+class Merchant(models.Model):
+    """User-preferred merchant (store) with optional resolved favicon URL."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="merchants",
+    )
+    name = models.CharField(max_length=255)
+    website = models.URLField(max_length=2048)
+    favicon_url = models.URLField(max_length=2048, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("name",)
+
+    def __str__(self) -> str:
+        return self.name
