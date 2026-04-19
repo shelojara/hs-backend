@@ -284,14 +284,14 @@ def delete_product_from_basket(*, product_id: int, user_id: int) -> None:
 
 
 def get_current_basket_with_products(*, user_id: int) -> Basket | None:
-    """Newest basket for *user* by created_at (any purchase state)."""
+    """Latest open basket for *user_id* with prefetched products, or ``None``."""
+    qs = Basket.objects.filter(owner_id=user_id, purchased_at__isnull=True).order_by(
+        "-created_at"
+    )
     return (
-        Basket.objects.filter(owner_id=user_id)
-        .prefetch_related(
+        qs.prefetch_related(
             Prefetch("products", queryset=Product.objects.order_by("name", "pk")),
-        )
-        .order_by("-created_at")
-        .first()
+        ).first()
     )
 
 

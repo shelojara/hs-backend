@@ -592,15 +592,33 @@ def test_get_current_basket_with_products_returns_newest_and_ordered_products(
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_get_current_basket_with_products_includes_purchased(_mock_gemini):
+def test_get_current_basket_with_products_excludes_purchased_only(_mock_gemini):
     user = _user()
     pid = _catalog_product("Z").pk
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
     b.products.add(pid)
+    assert get_current_basket_with_products(user_id=user.pk) is None
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_get_current_basket_with_products_prefers_open_when_newer_is_purchased(
+    _mock_gemini,
+):
+    user = _user()
+    pid_open = _catalog_product("Open").pk
+    pid_bought = _catalog_product("Bought").pk
+    older_open = Basket.objects.create(owner=user)
+    older_open.products.add(pid_open)
+    newer_purchased = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    newer_purchased.products.add(pid_bought)
     out = get_current_basket_with_products(user_id=user.pk)
     assert out is not None
-    assert out.pk == b.pk
-    assert list(out.products.values_list("pk", flat=True)) == [pid]
+    assert out.pk == older_open.pk
+    assert list(out.products.values_list("pk", flat=True)) == [pid_open]
 
 
 @pytest.mark.django_db
