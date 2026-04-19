@@ -106,6 +106,29 @@ def create_product_from_candidate(
     return product.pk
 
 
+def update_product(
+    *,
+    product_id: int,
+    user_id: int,
+    standard_name: str,
+    brand: str,
+    format: str,
+    price: Decimal,
+    emoji: str,
+) -> Product:
+    """Update persisted merchant fields; no Gemini call."""
+    product = Product.objects.get(pk=product_id, user_id=user_id)
+    product.standard_name = standard_name
+    product.brand = brand
+    product.format = format
+    product.price = price
+    product.emoji = emoji
+    product.save(
+        update_fields=["standard_name", "brand", "format", "price", "emoji"],
+    )
+    return product
+
+
 def recheck_product_price(*, product_id: int, user_id: int) -> Product:
     """Refresh *price* from Gemini using *product*'s standard_name, brand, format (identity prompt).
 

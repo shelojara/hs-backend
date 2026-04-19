@@ -28,6 +28,8 @@ from groceries.schemas import (
     RunningLowSuggestionSchema,
     SuggestRunningLowRequest,
     SuggestRunningLowResponse,
+    UpdateProductRequest,
+    UpdateProductResponse,
 )
 from groceries.models import Product
 from groceries.services import (
@@ -75,6 +77,23 @@ def create_product_from_candidate(request, payload: CreateProductFromCandidateRe
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     return CreateProductFromCandidateResponse(product_id=product_id)
+
+
+@router.post("/v1.Groceries.UpdateProduct", response=UpdateProductResponse)
+def update_product(request, payload: UpdateProductRequest):
+    try:
+        product = services.update_product(
+            product_id=payload.product_id,
+            user_id=request.auth.pk,
+            standard_name=payload.standard_name,
+            brand=payload.brand,
+            format=payload.format,
+            price=payload.price,
+            emoji=payload.emoji,
+        )
+    except Product.DoesNotExist as exc:
+        raise HttpError(404, "Product not found.") from exc
+    return UpdateProductResponse(product_id=product.pk)
 
 
 @router.post("/v1.Groceries.ListProducts", response=ListProductsResponse)

@@ -50,6 +50,19 @@ class CreateProductFromCandidateResponse(Schema):
     product_id: int
 
 
+class UpdateProductRequest(Schema):
+    product_id: int
+    standard_name: str
+    brand: str
+    format: str
+    price: Decimal
+    emoji: str
+
+
+class UpdateProductResponse(Schema):
+    product_id: int
+
+
 class ListProductsRequest(Schema):
     limit: int = 20
     cursor: str | None = None
