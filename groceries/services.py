@@ -115,9 +115,12 @@ def create_product_from_candidate(
     return product.pk
 
 
-def recheck_product_from_gemini(*, product_id: int) -> Product:
-    """Reload merchant-oriented fields from Gemini for existing product. Raises Product.DoesNotExist."""
-    product = Product.objects.get(pk=product_id)
+def recheck_product_from_gemini(*, product_id: int, user_id: int) -> Product:
+    """Reload merchant-oriented fields from Gemini for existing product owned by *user_id*.
+
+    Raises Product.DoesNotExist when no row matches *product_id* and *user_id*.
+    """
+    product = Product.objects.get(pk=product_id, user_id=user_id)
     info = _fetch_merchant_product_info_or_none(
         product_name=product.name, product_id=product.pk
     )
