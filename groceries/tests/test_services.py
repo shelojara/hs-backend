@@ -22,7 +22,6 @@ from groceries.services import (
     list_products,
     list_purchased_baskets,
     purchase_latest_open_basket,
-    recheck_product_from_gemini,
     recheck_product_price,
     suggest_running_low_products,
 )
@@ -280,83 +279,6 @@ def test_list_products_rejects_cursor_from_different_user_context(_mock_gemini):
     assert cur is not None
     with pytest.raises(InvalidProductListCursorError):
         list_products(user_id=bob.pk, limit=1, cursor=cur)
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=MerchantProductInfo(
-        display_name="New Title",
-        standard_name="Arroz",
-        brand="B",
-        price=Decimal("1000"),
-        format="1 kg",
-        emoji="🍚",
-    ),
-)
-def test_recheck_product_from_gemini_updates_fields(_mock_gemini):
-    owner = _catalog_owner_user()
-    pid = _catalog_product("Old", owner=owner).pk
-    out = recheck_product_from_gemini(product_id=pid, user_id=owner.pk)
-    assert out.pk == pid
-    assert out.name == "New Title"
-    assert out.standard_name == "Arroz"
-    assert out.brand == "B"
-    assert out.price == Decimal("1000.00")
-    assert out.format == "1 kg"
-    assert out.emoji == "🍚"
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_recheck_product_from_gemini_noop_when_gemini_returns_none(_mock_gemini):
-    owner = _catalog_owner_user()
-    pid = _catalog_product("X", owner=owner).pk
-    row = Product.objects.get(pk=pid)
-    before = (row.name, row.brand, row.price)
-    out = recheck_product_from_gemini(product_id=pid, user_id=owner.pk)
-    assert (out.name, out.brand, out.price) == before
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    side_effect=RuntimeError("no key"),
-)
-def test_recheck_product_from_gemini_noop_when_gemini_key_missing(_mock_gemini):
-    owner = _catalog_owner_user()
-    pid = _catalog_product("Y", owner=owner).pk
-    row = Product.objects.get(pk=pid)
-    before = (row.name, row.brand)
-    out = recheck_product_from_gemini(product_id=pid, user_id=owner.pk)
-    assert (out.name, out.brand) == before
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_recheck_product_from_gemini_raises_when_missing(_mock_gemini):
-    owner = _catalog_owner_user()
-    with pytest.raises(Product.DoesNotExist):
-        recheck_product_from_gemini(product_id=99999, user_id=owner.pk)
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_recheck_product_from_gemini_raises_when_not_owner(_mock_gemini):
-    alice = _user("alice_recheck")
-    bob = _user("bob_recheck")
-    p = _catalog_product("OwnedByAlice", owner=alice)
-    with pytest.raises(Product.DoesNotExist):
-        recheck_product_from_gemini(product_id=p.pk, user_id=bob.pk)
 
 
 @pytest.mark.django_db

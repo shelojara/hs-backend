@@ -73,14 +73,6 @@ class ListProductsResponse(Schema):
     next_cursor: str | None = None
 
 
-class RecheckProductRequest(Schema):
-    product_id: int
-
-
-class RecheckProductResponse(Schema):
-    pass
-
-
 class RecheckProductPriceRequest(Schema):
     product_id: int
 
