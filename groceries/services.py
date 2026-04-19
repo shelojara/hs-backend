@@ -35,24 +35,6 @@ MAX_LIST_LIMIT = 100
 LIST_PURCHASED_BASKETS_LIMIT = 5
 
 
-def _fetch_merchant_product_info_or_none(
-    *, product_name: str, product_id: int
-) -> MerchantProductInfo | None:
-    try:
-        return gemini_service.fetch_merchant_product_info(product_name=product_name)
-    except RuntimeError:
-        logger.warning(
-            "Skipped Gemini merchant product info: GEMINI_API_KEY not set (product id=%s).",
-            product_id,
-        )
-    except Exception:
-        logger.exception(
-            "Gemini merchant product info failed for product id=%s",
-            product_id,
-        )
-    return None
-
-
 def _fetch_merchant_product_info_by_identity_or_none(
     *,
     standard_name: str,
@@ -82,29 +64,6 @@ def _fetch_merchant_product_info_by_identity_or_none(
 def _apply_merchant_price_only(product: Product, info: MerchantProductInfo) -> None:
     product.price = info.price
     product.save(update_fields=["price"])
-
-
-def _apply_merchant_product_info(
-    product: Product,
-    info: MerchantProductInfo,
-) -> None:
-    """Write Gemini merchant fields onto *product*"""
-    product.brand = info.brand
-    product.price = info.price
-    product.format = info.format
-    product.standard_name = info.standard_name
-    product.emoji = info.emoji
-    product.name = info.display_name.strip()
-    product.save(
-        update_fields=[
-            "brand",
-            "price",
-            "format",
-            "standard_name",
-            "emoji",
-            "name",
-        ],
-    )
 
 
 def find_product_candidates(*, query: str) -> list[MerchantProductInfo]:
@@ -145,20 +104,6 @@ def create_product_from_candidate(
         user_id=user_id,
     )
     return product.pk
-
-
-def recheck_product_from_gemini(*, product_id: int, user_id: int) -> Product:
-    """Reload merchant-oriented fields from Gemini for existing product owned by *user_id*.
-
-    Raises Product.DoesNotExist when no row matches *product_id* and *user_id*.
-    """
-    product = Product.objects.get(pk=product_id, user_id=user_id)
-    info = _fetch_merchant_product_info_or_none(
-        product_name=product.name, product_id=product.pk
-    )
-    if info:
-        _apply_merchant_product_info(product, info)
-    return product
 
 
 def recheck_product_price(*, product_id: int, user_id: int) -> Product:
