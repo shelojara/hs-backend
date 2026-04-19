@@ -122,6 +122,29 @@ def test_create_product_from_merchant_info_sets_is_custom(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
+def test_create_product_from_merchant_info_assigns_user(_mock_gemini):
+    u = _user()
+    pid = create_product_from_merchant_info(
+        query_name="owned",
+        info=MerchantProductInfo(
+            display_name="Owned item",
+            standard_name="",
+            brand="",
+            price=Decimal("0"),
+            format="",
+            emoji="",
+        ),
+        user_id=u.pk,
+    )
+    row = Product.objects.get(pk=pid)
+    assert row.user_id == u.pk
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
 def test_create_product_from_merchant_info_uses_query_when_display_empty(_mock_gemini):
     pid = create_product_from_merchant_info(
         query_name="X",

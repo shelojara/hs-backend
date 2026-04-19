@@ -12,6 +12,8 @@ from groceries.schemas import (
     DeleteProductFromBasketResponse,
     CreateProductFromCandidateRequest,
     CreateProductFromCandidateResponse,
+    CreateProductRequest,
+    CreateProductResponse,
     FindProductsRequest,
     FindProductsResponse,
     GetLatestBasketRequest,
@@ -78,6 +80,32 @@ def create_product_from_candidate(request, payload: CreateProductFromCandidateRe
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     return CreateProductFromCandidateResponse(product_id=product_id)
+
+
+@router.post("/v1.Groceries.CreateProduct", response=CreateProductResponse)
+def create_product(request, payload: CreateProductRequest):
+    user = request.auth
+    c = payload.candidate
+    info = MerchantProductInfo(
+        display_name=c.name,
+        standard_name=c.standard_name,
+        brand=c.brand,
+        price=c.price,
+        format=c.format,
+        emoji=c.emoji,
+    )
+    try:
+        product_id = services.create_product_from_merchant_info(
+            query_name=c.name,
+            info=info,
+            is_custom=payload.is_custom,
+            user_id=user.pk,
+        )
+    except ProductNameConflict as exc:
+        raise HttpError(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return CreateProductResponse(product_id=product_id)
 
 
 @router.post("/v1.Groceries.ListProducts", response=ListProductsResponse)

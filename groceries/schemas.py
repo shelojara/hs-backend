@@ -55,6 +55,15 @@ class CreateProductFromCandidateResponse(Schema):
     product_id: int
 
 
+class CreateProductRequest(Schema):
+    candidate: ProductCandidateSchema
+    is_custom: bool = False
+
+
+class CreateProductResponse(Schema):
+    product_id: int
+
+
 class ListProductsRequest(Schema):
     limit: int = 20
     cursor: str | None = None
