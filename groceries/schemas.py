@@ -125,14 +125,6 @@ class PurchaseBasketResponse(Schema):
     basket_id: int
 
 
-class AssociateProductsWithUserRequest(Schema):
-    product_ids: list[int]
-
-
-class AssociateProductsWithUserResponse(Schema):
-    pass
-
-
 class ListAssociatedProductsRequest(Schema):
     """No fields; POST body may be `{}` for RPC transport."""
 

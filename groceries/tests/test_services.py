@@ -12,7 +12,6 @@ from groceries.services import (
     NoOpenBasketError,
     ProductNameConflict,
     add_product_to_basket,
-    associate_products_with_user,
     create_product_from_merchant_info,
     delete_product_from_basket,
     find_products,
@@ -587,37 +586,11 @@ def test_basket_operations_isolated_per_user(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_associate_products_with_user_replaces_and_omits_unknown(_mock_gemini):
-    user = _user()
-    a = _catalog_product("A")
-    b = _catalog_product("B")
-    c = _catalog_product("C")
-    associate_products_with_user(user_id=user.pk, product_ids=[a.pk, 99999])
-    assert list(
-        Product.objects.filter(associated_user_id=user.pk)
-        .order_by("name")
-        .values_list("pk", flat=True)
-    ) == [a.pk]
-    associate_products_with_user(user_id=user.pk, product_ids=[c.pk, b.pk])
-    assert list(
-        Product.objects.filter(associated_user_id=user.pk)
-        .order_by("name")
-        .values_list("pk", flat=True)
-    ) == [b.pk, c.pk]
-    associate_products_with_user(user_id=user.pk, product_ids=[])
-    assert Product.objects.filter(associated_user_id=user.pk).count() == 0
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
 def test_list_associated_products_orders_by_name(_mock_gemini):
     user = _user()
     z = _catalog_product("Zed")
     a = _catalog_product("Apple")
-    Product.objects.filter(pk__in=[z.pk, a.pk]).update(associated_user_id=user.pk)
+    Product.objects.filter(pk__in=[z.pk, a.pk]).update(user_id=user.pk)
     out = list_associated_products(user_id=user.pk)
     assert [p.pk for p in out] == [a.pk, z.pk]
 
@@ -627,23 +600,14 @@ def test_list_associated_products_orders_by_name(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_associate_products_with_user_raises_when_user_missing(_mock_gemini):
-    with pytest.raises(get_user_model().DoesNotExist):
-        associate_products_with_user(user_id=99999, product_ids=[])
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_associated_products_isolated_per_user(_mock_gemini):
+def test_list_associated_products_filters_by_user(_mock_gemini):
     alice = _user(username="alice")
     bob = _user(username="bob")
-    p = _catalog_product("Shared")
-    associate_products_with_user(user_id=alice.pk, product_ids=[p.pk])
-    assert list_associated_products(user_id=bob.pk) == []
-    assert [x.pk for x in list_associated_products(user_id=alice.pk)] == [p.pk]
-    associate_products_with_user(user_id=bob.pk, product_ids=[p.pk])
-    assert list_associated_products(user_id=alice.pk) == []
-    assert [x.pk for x in list_associated_products(user_id=bob.pk)] == [p.pk]
+    pa = _catalog_product("A")
+    pb = _catalog_product("B")
+    pa.user_id = alice.pk
+    pa.save(update_fields=["user_id"])
+    pb.user_id = bob.pk
+    pb.save(update_fields=["user_id"])
+    assert [x.pk for x in list_associated_products(user_id=alice.pk)] == [pa.pk]
+    assert [x.pk for x in list_associated_products(user_id=bob.pk)] == [pb.pk]

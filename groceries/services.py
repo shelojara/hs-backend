@@ -4,7 +4,6 @@ import logging
 from decimal import Decimal
 from typing import Any
 
-from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch, Q
 from django.utils import timezone
@@ -12,8 +11,6 @@ from django.utils import timezone
 from groceries import gemini_service
 from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Basket, Product
-
-User = get_user_model()
 
 logger = logging.getLogger(__name__)
 
@@ -274,32 +271,9 @@ def basket_total_price(*, basket: Basket) -> Decimal:
     return total
 
 
-def associate_products_with_user(*, user_id: int, product_ids: list[int]) -> None:
-    """Replace caller's associated products. Each product links to at most one user.
-
-    Unknown *product_ids* omitted. Empty list clears caller's associations.
-    Products in the new set are assigned to this user (reassigning from others if needed).
-    """
-    if product_ids:
-        existing_ids = list(
-            Product.objects.filter(pk__in=product_ids).values_list("pk", flat=True)
-        )
-    else:
-        existing_ids = []
-    with transaction.atomic():
-        User.objects.select_for_update().get(pk=user_id)
-        Product.objects.filter(associated_user_id=user_id).exclude(
-            pk__in=existing_ids
-        ).update(associated_user=None)
-        if existing_ids:
-            Product.objects.filter(pk__in=existing_ids).update(associated_user_id=user_id)
-
-
 def list_associated_products(*, user_id: int) -> list[Product]:
-    """Catalog products with ``associated_user`` = *user*, ordered by name."""
-    return list(
-        Product.objects.filter(associated_user_id=user_id).order_by("name", "pk")
-    )
+    """Catalog products with ``user`` = *user_id*, ordered by name."""
+    return list(Product.objects.filter(user_id=user_id).order_by("name", "pk"))
 
 
 def purchase_latest_open_basket(*, user_id: int) -> Basket:
