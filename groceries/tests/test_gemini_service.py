@@ -36,6 +36,7 @@ def test_fetch_merchant_product_info_returns_structured_fields(mock_get_client):
         price=Decimal("2590.00"),
         format="1 L",
         emoji="🥛",
+        merchant="",
     )
     mock_client.models.generate_content.assert_called_once()
     cfg = mock_client.models.generate_content.call_args.kwargs["config"]
@@ -60,6 +61,7 @@ def test_fetch_merchant_product_info_strips_json_fence(mock_get_client):
         price=Decimal("0"),
         format="500 g",
         emoji="",
+        merchant="",
     )
 
 
@@ -110,6 +112,7 @@ def test_fetch_merchant_product_info_by_identity_parses_json(mock_get_client):
         price=Decimal("2590.00"),
         format="1 L",
         emoji="🥛",
+        merchant="",
     )
     mock_client.models.generate_content.assert_called_once()
     call_kw = mock_client.models.generate_content.call_args.kwargs
@@ -128,14 +131,16 @@ def test_parse_invalid_json_returns_none():
 def test_parse_merchant_product_list_payload_array():
     raw = (
         '[{"display_name": "A", "standard_name": "Sa", "brand": "", "price": 100, '
-        '"format": "", "emoji": ""}, '
+        '"format": "", "emoji": "", "merchant": "Jumbo"}, '
         '{"display_name": "B", "standard_name": "Sb", "brand": "X", "price": 0, '
         '"format": "1 L", "emoji": "🥛"}]'
     )
     out = _parse_merchant_product_list_payload(raw, max_items=10)
     assert len(out) == 2
     assert out[0].display_name == "A"
+    assert out[0].merchant == "Jumbo"
     assert out[1].format == "1 L"
+    assert out[1].merchant == ""
 
 
 def test_parse_merchant_product_list_payload_caps_max_items():
@@ -160,7 +165,7 @@ def test_fetch_merchant_product_candidates_returns_list(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = (
         '[{"display_name": "One", "standard_name": "T", "brand": "", "price": 1, '
-        '"format": "", "emoji": ""}]'
+        '"format": "", "emoji": "", "merchant": "Lider"}]'
     )
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = mock_response
@@ -169,6 +174,7 @@ def test_fetch_merchant_product_candidates_returns_list(mock_get_client):
     out = gemini_service.fetch_merchant_product_candidates(query="  milk  ")
     assert len(out) == 1
     assert out[0].display_name == "One"
+    assert out[0].merchant == "Lider"
     mock_client.models.generate_content.assert_called_once()
     cfg = mock_client.models.generate_content.call_args.kwargs["config"]
     assert "array" in (cfg.system_instruction or "").lower()
