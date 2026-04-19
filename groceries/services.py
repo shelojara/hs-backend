@@ -244,8 +244,8 @@ def delete_product_from_basket(*, product_id: int, user_id: int) -> None:
         basket.products.remove(product)
 
 
-def get_latest_basket_with_products(*, user_id: int) -> Basket | None:
-    """Latest basket for *user* by created_at (any purchase state)."""
+def get_current_basket_with_products(*, user_id: int) -> Basket | None:
+    """Newest basket for *user* by created_at (any purchase state)."""
     return (
         Basket.objects.filter(owner_id=user_id)
         .prefetch_related(
@@ -260,7 +260,7 @@ def basket_total_price(*, basket: Basket) -> Decimal:
     """Sum of ``Product.price`` for lines in *basket*.
 
     Uses in-memory sum over ``basket.products.all()`` — pair with
-    :func:`get_latest_basket_with_products` (prefetch) to avoid extra queries.
+    :func:`get_current_basket_with_products` (prefetch) to avoid extra queries.
     """
     total = Decimal("0")
     for p in basket.products.all():

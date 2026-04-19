@@ -13,8 +13,8 @@ from groceries.schemas import (
     CreateProductFromCandidateResponse,
     FindProductCandidatesRequest,
     FindProductCandidatesResponse,
-    GetLatestBasketRequest,
-    GetLatestBasketResponse,
+    GetCurrentBasketRequest,
+    GetCurrentBasketResponse,
     ListProductsRequest,
     ListProductsResponse,
     ProductCandidateSchema,
@@ -153,13 +153,13 @@ def purchase_basket(request, payload: PurchaseBasketRequest):
     return PurchaseBasketResponse(basket_id=basket.pk)
 
 
-@router.post("/v1.Groceries.GetLatestBasket", response=GetLatestBasketResponse)
-def get_latest_basket(request, payload: GetLatestBasketRequest):
+@router.post("/v1.Groceries.GetCurrentBasket", response=GetCurrentBasketResponse)
+def get_current_basket(request, payload: GetCurrentBasketRequest):
     user = request.auth
-    basket = services.get_latest_basket_with_products(user_id=user.pk)
+    basket = services.get_current_basket_with_products(user_id=user.pk)
     if basket is None:
-        return GetLatestBasketResponse(basket=None)
-    return GetLatestBasketResponse(
+        return GetCurrentBasketResponse(basket=None)
+    return GetCurrentBasketResponse(
         basket=BasketSchema(
             basket_id=basket.pk,
             created_at=basket.created_at,
