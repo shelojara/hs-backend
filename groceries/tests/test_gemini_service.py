@@ -197,11 +197,13 @@ def test_parse_running_low_suggestions_array():
             product_name="Leche",
             reason="Consumo frecuente.",
             urgency="high",
+            product_ids=(),
         ),
         RunningLowSuggestion(
             product_name="Pan",
             reason="Ya pasaron días.",
             urgency="medium",
+            product_ids=(),
         ),
     ]
 
@@ -213,6 +215,16 @@ def test_parse_running_low_suggestions_maps_legacy_spanish_urgency():
     )
     out = _parse_running_low_suggestions(raw, max_items=10)
     assert [x.urgency for x in out] == ["high", "low"]
+
+
+def test_parse_running_low_suggestions_product_ids():
+    raw = (
+        '[{"product_name": "A", "reason": "r.", "urgency": "low", "product_ids": [1, 2]}, '
+        '{"product_name": "B", "reason": "s.", "urgency": "low", "product_ids": [3.0]}]'
+    )
+    out = _parse_running_low_suggestions(raw, max_items=10)
+    assert out[0].product_ids == (1, 2)
+    assert out[1].product_ids == (3,)
 
 
 @patch("groceries.gemini_service._get_client")

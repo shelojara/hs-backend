@@ -19,20 +19,21 @@ RUNNING_LOW_MAX_SUGGESTIONS = 15
 RUNNING_LOW_SYSTEM_INSTRUCTION = (
     "You help a household grocery shopper anywhere in the world. "
     "You receive purchase history: up to 5 completed shopping baskets, newest first, "
-    "each with purchase timestamp and product lines (emoji, name, optional format/size). "
+    "each with purchase timestamp and product lines. Each line starts with "
+    '"[product_id=N]" where N is that row’s database id — use these ids to tie suggestions to products. '
     "Infer which items the shopper is likely running low on soon, based on: "
     "typical consumption rates for those product types, time since last purchase in each basket, "
     "and whether staples appear less often than expected. "
     "This is a rough heuristic — be practical and concise. "
     "Respond with a single JSON array only — no markdown, no code fences, no text before or after. "
     f"At most {RUNNING_LOW_MAX_SUGGESTIONS} elements. Each element is one JSON object with keys: "
-    '"product_name" (string: short label in the same language as the product lines when possible, '
-    "e.g. the standard product type or line name), "
+    '"product_name" (string: short label in the same language as the product lines when possible), '
     '"reason" (string: one short sentence why it may run out soon), '
-    '"urgency" (string: one of \"high\", \"medium\", \"low\"). '
+    '"urgency" (string: one of \"high\", \"medium\", \"low\"), '
+    '"product_ids" (JSON array of integers: which [product_id=...] values from the history apply; '
+    "omit or use [] only when unsure). "
     "If there is not enough history to infer anything useful, return []. "
-    "Do not invent products that never appear in the history; only refer to types or lines similar "
-    "to what was bought."
+    "Do not invent product_ids that never appear in the history."
 )
 
 
@@ -157,6 +158,7 @@ class RunningLowSuggestion:
     product_name: str
     reason: str
     urgency: str
+    product_ids: tuple[int, ...] = ()
 
 
 def _get_client() -> genai.Client:
@@ -463,11 +465,22 @@ def _parse_running_low_suggestions(
             urgency = u_raw
         else:
             urgency = "medium"
+        pid_raw = item.get("product_ids")
+        pids: list[int] = []
+        if isinstance(pid_raw, list):
+            for x in pid_raw:
+                if isinstance(x, bool):
+                    continue
+                if isinstance(x, int):
+                    pids.append(x)
+                elif isinstance(x, float) and float(x).is_integer():
+                    pids.append(int(x))
         out.append(
             RunningLowSuggestion(
                 product_name=name,
                 reason=reason,
                 urgency=urgency,
+                product_ids=tuple(pids),
             ),
         )
     return out

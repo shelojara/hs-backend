@@ -87,6 +87,7 @@ class ProductSchema(Schema):
     emoji: str
     is_custom: bool
     purchase_count: int
+    running_low: bool = False
 
 
 class ListProductsResponse(Schema):
@@ -147,20 +148,6 @@ class ListPurchasedBasketsRequest(Schema):
 
 class ListPurchasedBasketsResponse(Schema):
     baskets: list[BasketSchema]
-
-
-class SuggestRunningLowRequest(Schema):
-    """No fields; POST body may be `{}` for RPC transport."""
-
-
-class RunningLowSuggestionSchema(Schema):
-    product_name: str
-    reason: str
-    urgency: str  # high | medium | low
-
-
-class SuggestRunningLowResponse(Schema):
-    suggestions: list[RunningLowSuggestionSchema]
 
 
 class WhiteboardLineSchema(Schema):

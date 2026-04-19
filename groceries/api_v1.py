@@ -34,11 +34,8 @@ from groceries.schemas import (
     PurchaseBasketResponse,
     RecheckProductPriceRequest,
     RecheckProductPriceResponse,
-    RunningLowSuggestionSchema,
     SaveWhiteboardRequest,
     SaveWhiteboardResponse,
-    SuggestRunningLowRequest,
-    SuggestRunningLowResponse,
     UpdateMerchantRequest,
     UpdateMerchantResponse,
     UpdateProductRequest,
@@ -135,6 +132,7 @@ def list_products(request, payload: ListProductsRequest):
                 emoji=p.emoji,
                 is_custom=p.is_custom,
                 purchase_count=p.purchase_count,
+                running_low=p.running_low,
             )
             for p in items
         ],
@@ -218,6 +216,7 @@ def get_current_basket(request, payload: GetCurrentBasketRequest):
                     emoji=p.emoji,
                     is_custom=p.is_custom,
                     purchase_count=p.purchase_count,
+                    running_low=p.running_low,
                 )
                 for p in basket.products.all()
             ],
@@ -248,27 +247,12 @@ def list_purchased_baskets(request, payload: ListPurchasedBasketsRequest):
                         emoji=p.emoji,
                         is_custom=p.is_custom,
                         purchase_count=p.purchase_count,
+                        running_low=p.running_low,
                     )
                     for p in basket.products.all()
                 ],
             )
             for basket in rows
-        ],
-    )
-
-
-@router.post("/v1.Groceries.SuggestRunningLow", response=SuggestRunningLowResponse)
-def suggest_running_low(request, payload: SuggestRunningLowRequest):
-    user = request.auth
-    items = services.suggest_running_low_products(user_id=user.pk)
-    return SuggestRunningLowResponse(
-        suggestions=[
-            RunningLowSuggestionSchema(
-                product_name=s.product_name,
-                reason=s.reason,
-                urgency=s.urgency,
-            )
-            for s in items
         ],
     )
 

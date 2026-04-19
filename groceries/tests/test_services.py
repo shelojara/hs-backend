@@ -25,7 +25,8 @@ from groceries.services import (
     purchase_latest_open_basket,
     recheck_product_price,
     save_whiteboard,
-    suggest_running_low_products,
+    sync_running_low_flags_for_all_users,
+    sync_running_low_flags_for_user,
     update_product,
 )
 
@@ -859,9 +860,12 @@ def test_list_purchased_baskets_isolated_per_user(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_suggest_running_low_empty_without_purchased_baskets(_mock_gemini):
+def test_sync_running_low_clears_when_no_purchased_baskets(_mock_gemini):
     user = _user(username="noruns")
-    assert suggest_running_low_products(user_id=user.pk) == []
+    p = _catalog_product("X", owner=user)
+    Product.objects.filter(pk=p.pk).update(running_low=True)
+    sync_running_low_flags_for_user(user_id=user.pk)
+    assert not Product.objects.get(pk=p.pk).running_low
 
 
 @pytest.mark.django_db
@@ -872,12 +876,13 @@ def test_suggest_running_low_empty_without_purchased_baskets(_mock_gemini):
 @patch(
     "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
 )
-def test_suggest_running_low_calls_gemini_with_history(mock_suggest, _mock_info):
+def test_sync_running_low_calls_gemini_and_sets_flags(mock_suggest, _mock_info):
     mock_suggest.return_value = [
         RunningLowSuggestion(
             product_name="Leche",
             reason="Última compra hace tiempo.",
             urgency="medium",
+            product_ids=(999,),
         ),
     ]
     user = _user(username="runlow")
@@ -885,15 +890,26 @@ def test_suggest_running_low_calls_gemini_with_history(mock_suggest, _mock_info)
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
     b.products.add(milk)
 
-    out = suggest_running_low_products(user_id=user.pk)
+    sync_running_low_flags_for_user(user_id=user.pk)
 
-    assert len(out) == 1
-    assert out[0].product_name == "Leche"
     mock_suggest.assert_called_once()
     call_kw = mock_suggest.call_args.kwargs
     assert "history_markdown" in call_kw
     assert "Leche entera" in call_kw["history_markdown"]
+    assert f"[product_id={milk.pk}]" in call_kw["history_markdown"]
     assert "Basket 1" in call_kw["history_markdown"]
+    assert not Product.objects.get(pk=milk.pk).running_low
+
+    mock_suggest.return_value = [
+        RunningLowSuggestion(
+            product_name="Leche",
+            reason="x.",
+            urgency="medium",
+            product_ids=(milk.pk,),
+        ),
+    ]
+    sync_running_low_flags_for_user(user_id=user.pk)
+    assert Product.objects.get(pk=milk.pk).running_low
 
 
 @pytest.mark.django_db
@@ -905,15 +921,35 @@ def test_suggest_running_low_calls_gemini_with_history(mock_suggest, _mock_info)
     "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
     side_effect=RuntimeError("no key"),
 )
-def test_suggest_running_low_returns_empty_when_gemini_unconfigured(
+def test_sync_running_low_clears_when_gemini_unconfigured(
     _mock_suggest,
     _mock_info,
 ):
     user = _user(username="nokey")
     milk = _catalog_product("Leche", owner=user)
+    Product.objects.filter(pk=milk.pk).update(running_low=True)
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
     b.products.add(milk)
-    assert suggest_running_low_products(user_id=user.pk) == []
+    sync_running_low_flags_for_user(user_id=user.pk)
+    assert not Product.objects.get(pk=milk.pk).running_low
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+@patch("groceries.services.sync_running_low_flags_for_user")
+def test_sync_running_low_for_all_users_calls_per_user(mock_one, _mock_info):
+    a = _user(username="rl_a")
+    b = _user(username="rl_b")
+    _catalog_product("p", owner=a)
+    _catalog_product("q", owner=b)
+    n = sync_running_low_flags_for_all_users()
+    assert n == 2
+    assert mock_one.call_count == 2
+    uids = {c.kwargs["user_id"] for c in mock_one.call_args_list}
+    assert uids == {a.pk, b.pk}
 
 
 @pytest.mark.django_db

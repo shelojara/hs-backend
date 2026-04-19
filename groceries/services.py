@@ -10,11 +10,7 @@ from django.utils import timezone
 
 from groceries import gemini_service
 from groceries.favicon_service import fetch_favicon_url, normalize_website_url
-from groceries.gemini_service import (
-    MerchantProductInfo,
-    PreferredMerchantContext,
-    RunningLowSuggestion,
-)
+from groceries.gemini_service import MerchantProductInfo, PreferredMerchantContext
 from groceries.models import Basket, Merchant, Product, Whiteboard
 from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 
@@ -363,7 +359,7 @@ def _format_purchased_baskets_for_running_low(baskets: list[Basket]) -> str:
             fmt = (p.format or "").strip()
             em = (p.emoji or "").strip()
             name = (p.name or "").strip()
-            bit = f"- {em + ' ' if em else ''}{name}"
+            bit = f"- [product_id={p.pk}] {em + ' ' if em else ''}{name}"
             if fmt:
                 bit += f" — {fmt}"
             lines.append(bit)
@@ -371,27 +367,51 @@ def _format_purchased_baskets_for_running_low(baskets: list[Basket]) -> str:
     return "\n".join(lines).strip()
 
 
-def suggest_running_low_products(*, user_id: int) -> list[RunningLowSuggestion]:
-    """Ask Gemini which products may run low soon, from up to 5 newest purchased baskets."""
+def sync_running_low_flags_for_user(*, user_id: int) -> None:
+    """Set ``Product.running_low`` from Gemini, using up to 5 newest purchased baskets.
+
+    Clears ``running_low`` for all of the user's products first, then sets it for ids
+    returned in model suggestions (matched to this user's product rows).
+    """
+    Product.objects.filter(user_id=user_id).update(running_low=False)
     baskets = list_purchased_baskets(user_id=user_id)
     if not baskets:
-        return []
+        return
     block = _format_purchased_baskets_for_running_low(baskets)
     try:
-        return gemini_service.suggest_running_low_from_purchase_history(
+        suggestions = gemini_service.suggest_running_low_from_purchase_history(
             history_markdown=block,
         )
     except RuntimeError:
         logger.warning(
-            "Skipped Gemini running-low suggestions: GEMINI_API_KEY not set (user id=%s).",
+            "Skipped Gemini running-low sync: GEMINI_API_KEY not set (user id=%s).",
             user_id,
         )
+        return
     except Exception:
         logger.exception(
-            "Gemini running-low suggestions failed for user id=%s",
+            "Gemini running-low sync failed for user id=%s",
             user_id,
         )
-    return []
+        return
+    pids: set[int] = set()
+    for s in suggestions:
+        for pid in s.product_ids:
+            if pid > 0:
+                pids.add(pid)
+    if not pids:
+        return
+    Product.objects.filter(user_id=user_id, pk__in=pids).update(running_low=True)
+
+
+def sync_running_low_flags_for_all_users() -> int:
+    """Run :func:`sync_running_low_flags_for_user` for every user that has at least one product."""
+    user_ids = Product.objects.values_list("user_id", flat=True).distinct()
+    n = 0
+    for uid in user_ids:
+        sync_running_low_flags_for_user(user_id=uid)
+        n += 1
+    return n
 
 
 def save_whiteboard(*, user_id: int, lines: list[WhiteboardLineSchema]) -> None:
