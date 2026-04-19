@@ -185,7 +185,22 @@ JWT_ACCESS_TOKEN_LIFETIME_SECONDS = int(
 )
 
 # django-flags — https://cfpb.github.io/django-flags/
-FLAGS: dict[str, list] = {}
+# RUNNING_LOW_SCHEDULED_SYNC: groceries daily django-q enqueue for Gemini running-low.
+# Override with env FLAG_RUNNING_LOW_SCHEDULED_SYNC=false (or 0, no, off).
+_RL_SCHED_RAW = os.getenv("FLAG_RUNNING_LOW_SCHEDULED_SYNC", "").strip().lower()
+_RUNNING_LOW_SCHEDULED_SYNC_ENABLED = _RL_SCHED_RAW not in (
+    "0",
+    "false",
+    "no",
+    "off",
+    "n",
+    "f",
+)
+FLAGS: dict[str, list] = {
+    "RUNNING_LOW_SCHEDULED_SYNC": [
+        {"condition": "boolean", "value": _RUNNING_LOW_SCHEDULED_SYNC_ENABLED},
+    ],
+}
 
 # django-q2 task queue — ORM broker (uses the default SQLite database)
 Q_CLUSTER = {

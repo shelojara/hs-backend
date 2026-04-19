@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django_q.models import Schedule
 
 from groceries.models import Product
@@ -17,6 +18,24 @@ def test_daily_running_low_schedule_cron_9am_santiago():
     row = Schedule.objects.get(name="groceries_daily_running_low_sync")
     assert row.schedule_type == Schedule.CRON
     assert row.cron == "0 9 * * *"
+
+
+@pytest.mark.django_db
+@override_settings(
+    FLAGS={
+        "RUNNING_LOW_SCHEDULED_SYNC": [
+            {"condition": "boolean", "value": False},
+        ],
+    }
+)
+@patch("groceries.scheduled_tasks.async_task")
+def test_run_daily_running_low_sync_skips_when_flag_disabled(mock_async):
+    a = User.objects.create_user(username="sched_rl_off_a", password="pw")
+    Product.objects.create(name="pa", user=a)
+
+    out = run_daily_running_low_sync()
+    assert out == []
+    mock_async.assert_not_called()
 
 
 @pytest.mark.django_db
