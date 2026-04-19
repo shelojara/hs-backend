@@ -307,18 +307,6 @@ def list_purchased_baskets(*, user_id: int) -> list[Basket]:
     )
 
 
-def basket_total_price(*, basket: Basket) -> Decimal:
-    """Sum of ``Product.price`` for lines in *basket*.
-
-    Uses in-memory sum over ``basket.products.all()`` — pair with
-    :func:`get_current_basket_with_products` (prefetch) to avoid extra queries.
-    """
-    total = Decimal("0")
-    for p in basket.products.all():
-        total += p.price
-    return total
-
-
 def purchase_latest_open_basket(*, user_id: int) -> Basket:
     """Set purchased_at on user's latest open basket."""
     with transaction.atomic():

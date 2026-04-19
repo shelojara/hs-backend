@@ -204,7 +204,6 @@ def get_current_basket(request, payload: GetCurrentBasketRequest):
             basket_id=basket.pk,
             created_at=basket.created_at,
             purchased_at=basket.purchased_at,
-            total_price=services.basket_total_price(basket=basket),
             products=[
                 ProductSchema(
                     product_id=p.pk,
@@ -235,7 +234,6 @@ def list_purchased_baskets(request, payload: ListPurchasedBasketsRequest):
                 basket_id=basket.pk,
                 created_at=basket.created_at,
                 purchased_at=basket.purchased_at,
-                total_price=services.basket_total_price(basket=basket),
                 products=[
                     ProductSchema(
                         product_id=p.pk,
