@@ -116,22 +116,20 @@ def find_products(*, query: str) -> list[MerchantProductInfo]:
 
 def create_product_from_merchant_info(
     *,
-    query_name: str,
     info: MerchantProductInfo,
     is_custom: bool = False,
 ) -> int:
     """Persist product using *info* from a prior find (no Gemini call). Raises ProductNameConflict."""
-    anchor = query_name.strip()
-    if not anchor:
+    next_name = (info.display_name or "").strip()
+    if not next_name:
         msg = "Product name must not be empty."
         raise ValueError(msg)
-    next_name = (info.display_name or "").strip() or anchor
     if Product.objects.filter(name__iexact=next_name).exists():
         raise ProductNameConflict()
     try:
         product = Product.objects.create(
             name=next_name,
-            original_name=anchor,
+            original_name=next_name,
             standard_name=info.standard_name,
             brand=info.brand,
             price=info.price,
