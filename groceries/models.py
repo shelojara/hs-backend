@@ -45,3 +45,21 @@ class Basket(models.Model):
 
     def __str__(self) -> str:
         return f"Basket({self.pk}) at {self.created_at}"
+
+
+class UserWhiteboard(models.Model):
+    """Single persisted drawing per user (Groceries app)."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="groceries_whiteboard",
+    )
+    data = models.JSONField(default=list)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "user whiteboard"
+
+    def __str__(self) -> str:
+        return f"Whiteboard(user={self.user_id})"

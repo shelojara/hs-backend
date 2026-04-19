@@ -15,6 +15,8 @@ from groceries.schemas import (
     FindProductCandidatesResponse,
     GetCurrentBasketRequest,
     GetCurrentBasketResponse,
+    GetWhiteboardRequest,
+    GetWhiteboardResponse,
     ListProductsRequest,
     ListProductsResponse,
     ListPurchasedBasketsRequest,
@@ -26,6 +28,8 @@ from groceries.schemas import (
     RecheckProductPriceRequest,
     RecheckProductPriceResponse,
     RunningLowSuggestionSchema,
+    SaveWhiteboardRequest,
+    SaveWhiteboardResponse,
     SuggestRunningLowRequest,
     SuggestRunningLowResponse,
     UpdateProductRequest,
@@ -257,3 +261,15 @@ def suggest_running_low(request, payload: SuggestRunningLowRequest):
             for s in items
         ],
     )
+
+
+@router.post("/v1.Groceries.SaveWhiteboard", response=SaveWhiteboardResponse)
+def save_whiteboard(request, payload: SaveWhiteboardRequest):
+    services.save_whiteboard(user_id=request.auth.pk, lines=payload.data)
+    return SaveWhiteboardResponse()
+
+
+@router.post("/v1.Groceries.GetWhiteboard", response=GetWhiteboardResponse)
+def get_whiteboard(request, payload: GetWhiteboardRequest):
+    lines = services.get_whiteboard(user_id=request.auth.pk)
+    return GetWhiteboardResponse(data=lines)

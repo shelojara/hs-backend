@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo, RunningLowSuggestion
 from groceries.models import Basket, Product
-from groceries.schemas import ProductCandidateSchema
+from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 from groceries.services import (
     InvalidProductListCursorError,
     LIST_PURCHASED_BASKETS_LIMIT,
@@ -18,11 +18,13 @@ from groceries.services import (
     delete_product_from_basket,
     find_product_candidates,
     get_current_basket_with_products,
+    get_whiteboard,
     basket_total_price,
     list_products,
     list_purchased_baskets,
     purchase_latest_open_basket,
     recheck_product_price,
+    save_whiteboard,
     suggest_running_low_products,
     update_product,
 )
@@ -868,3 +870,32 @@ def test_suggest_running_low_returns_empty_when_gemini_unconfigured(
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
     b.products.add(milk)
     assert suggest_running_low_products(user_id=user.pk) == []
+
+
+@pytest.mark.django_db
+def test_get_whiteboard_empty_when_never_saved():
+    user = _user(username="wb_empty")
+    assert get_whiteboard(user_id=user.pk) == []
+
+
+@pytest.mark.django_db
+def test_save_whiteboard_round_trip_and_replace():
+    user = _user(username="wb1")
+    lines = [
+        WhiteboardLineSchema(tool="pen", points=[0.0, 1.0, 2.5], color="#000"),
+        WhiteboardLineSchema(tool="erase", points=[3.0], color="#fff"),
+    ]
+    save_whiteboard(user_id=user.pk, lines=lines)
+    out = get_whiteboard(user_id=user.pk)
+    assert len(out) == 2
+    assert out[0].tool == "pen"
+    assert out[0].points == [0.0, 1.0, 2.5]
+    assert out[0].color == "#000"
+
+    save_whiteboard(
+        user_id=user.pk,
+        lines=[WhiteboardLineSchema(tool="line", points=[], color="red")],
+    )
+    out2 = get_whiteboard(user_id=user.pk)
+    assert len(out2) == 1
+    assert out2[0].tool == "line"
