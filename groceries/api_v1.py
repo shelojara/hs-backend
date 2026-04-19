@@ -11,8 +11,8 @@ from groceries.schemas import (
     DeleteProductFromBasketResponse,
     CreateProductFromCandidateRequest,
     CreateProductFromCandidateResponse,
-    FindProductsRequest,
-    FindProductsResponse,
+    FindProductCandidatesRequest,
+    FindProductCandidatesResponse,
     GetLatestBasketRequest,
     GetLatestBasketResponse,
     ListProductsRequest,
@@ -33,13 +33,15 @@ from groceries.services import (
 router = Router(auth=protected_api_auth, tags=["Groceries"])
 
 
-@router.post("/v1.Groceries.FindProducts", response=FindProductsResponse)
-def find_product_candidates(request, payload: FindProductsRequest):
+@router.post(
+    "/v1.Groceries.FindProductCandidates", response=FindProductCandidatesResponse
+)
+def find_product_candidates(request, payload: FindProductCandidatesRequest):
     try:
         items = services.find_product_candidates(query=payload.query)
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    return FindProductsResponse(
+    return FindProductCandidatesResponse(
         products=[
             ProductCandidateSchema(
                 name=(p.display_name or payload.query.strip()).strip(),
