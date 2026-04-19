@@ -37,12 +37,14 @@ def test_create_merchant_normalizes_website_and_stores_favicon(_mock_fav):
 
 @pytest.mark.django_db
 @patch("groceries.services.fetch_favicon_url", return_value="")
-def test_list_merchants_ordered_by_name(_mock_fav):
+def test_list_merchants_ordered_by_preference_order(_mock_fav):
     u = _user()
-    create_user_merchant(user_id=u.pk, name="Zed", website="https://z.com")
-    create_user_merchant(user_id=u.pk, name="Alpha", website="https://a.com")
+    first = create_user_merchant(user_id=u.pk, name="Zed", website="https://z.com")
+    second = create_user_merchant(user_id=u.pk, name="Alpha", website="https://a.com")
     rows = list_user_merchants(user_id=u.pk)
-    assert [r.name for r in rows] == ["Alpha", "Zed"]
+    assert [r.name for r in rows] == ["Zed", "Alpha"]
+    assert first.preference_order == 0
+    assert second.preference_order == 1
 
 
 @pytest.mark.django_db

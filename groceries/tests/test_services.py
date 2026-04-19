@@ -112,6 +112,28 @@ def test_find_product_candidates_passes_preferred_merchants(mock_fetch):
 
 
 @pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+def test_find_product_candidates_passes_merchants_in_preference_order(mock_fetch):
+    u = _user(username="find_pref_order")
+    Merchant.objects.create(
+        user=u,
+        name="Second",
+        website="https://second.cl/",
+        preference_order=1,
+    )
+    Merchant.objects.create(
+        user=u,
+        name="First",
+        website="https://first.cl/",
+        preference_order=0,
+    )
+    mock_fetch.return_value = []
+    find_product_candidates(query="leche", user_id=u.pk)
+    ctx = mock_fetch.call_args.kwargs["preferred_merchants"]
+    assert [c.name for c in ctx] == ["First", "Second"]
+
+
+@pytest.mark.django_db
 @patch(
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,

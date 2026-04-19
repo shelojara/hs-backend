@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 from django.db import transaction
-from django.db.models import F, Prefetch, Q
+from django.db.models import F, Max, Prefetch, Q
 from django.utils import timezone
 
 from groceries import gemini_service
@@ -22,7 +22,10 @@ logger = logging.getLogger(__name__)
 
 
 def _preferred_merchant_context_for_user(user_id: int) -> list[PreferredMerchantContext]:
-    rows = Merchant.objects.filter(user_id=user_id).order_by("name", "pk")
+    rows = Merchant.objects.filter(user_id=user_id).order_by(
+        "preference_order",
+        "pk",
+    )
     return [
         PreferredMerchantContext(name=m.name, website=m.website)
         for m in rows
@@ -411,8 +414,10 @@ def get_whiteboard(*, user_id: int) -> list[WhiteboardLineSchema]:
 
 
 def list_user_merchants(*, user_id: int) -> list[Merchant]:
-    """Preferred merchants for *user_id*, ordered by name."""
-    return list(Merchant.objects.filter(user_id=user_id).order_by("name", "pk"))
+    """Preferred merchants for *user_id*, ordered by preference (then pk)."""
+    return list(
+        Merchant.objects.filter(user_id=user_id).order_by("preference_order", "pk"),
+    )
 
 
 def create_user_merchant(*, user_id: int, name: str, website: str) -> Merchant:
@@ -423,11 +428,14 @@ def create_user_merchant(*, user_id: int, name: str, website: str) -> Merchant:
         raise ValueError(msg)
     normalized = normalize_website_url(website)
     fav = fetch_favicon_url(website) or ""
+    agg = Merchant.objects.filter(user_id=user_id).aggregate(m=Max("preference_order"))
+    next_order = (agg["m"] if agg["m"] is not None else -1) + 1
     return Merchant.objects.create(
         user_id=user_id,
         name=label,
         website=normalized,
         favicon_url=fav,
+        preference_order=next_order,
     )
 
 
