@@ -7,11 +7,13 @@ from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Basket, Product
+from groceries.schemas import ProductCandidateSchema
 from groceries.services import (
     InvalidProductListCursorError,
     NoOpenBasketError,
     ProductNameConflict,
     add_product_to_basket,
+    create_product_from_candidate,
     create_product_from_merchant_info,
     delete_product_from_basket,
     find_products,
@@ -76,11 +78,10 @@ def test_find_products_rejects_blank_query():
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_create_product_from_merchant_info_persists_without_gemini(_mock_gemini):
-    pid = create_product_from_merchant_info(
-        query_name="  leche  ",
-        info=MerchantProductInfo(
-            display_name="Colún Leche Entera 1 L",
+def test_create_product_from_candidate_persists_without_gemini(_mock_gemini):
+    pid = create_product_from_candidate(
+        candidate=ProductCandidateSchema(
+            name="Colún Leche Entera 1 L",
             standard_name="Leche entera",
             brand="Colún",
             price=Decimal("2590"),
@@ -101,11 +102,10 @@ def test_create_product_from_merchant_info_persists_without_gemini(_mock_gemini)
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_create_product_from_merchant_info_sets_is_custom(_mock_gemini):
-    pid = create_product_from_merchant_info(
-        query_name="custom",
-        info=MerchantProductInfo(
-            display_name="Custom item",
+def test_create_product_from_candidate_sets_is_custom(_mock_gemini):
+    pid = create_product_from_candidate(
+        candidate=ProductCandidateSchema(
+            name="Custom item",
             standard_name="",
             brand="",
             price=Decimal("0"),
@@ -122,12 +122,11 @@ def test_create_product_from_merchant_info_sets_is_custom(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_create_product_from_merchant_info_assigns_user(_mock_gemini):
+def test_create_product_from_candidate_assigns_user(_mock_gemini):
     u = _user()
-    pid = create_product_from_merchant_info(
-        query_name="owned",
-        info=MerchantProductInfo(
-            display_name="Owned item",
+    pid = create_product_from_candidate(
+        candidate=ProductCandidateSchema(
+            name="Owned item",
             standard_name="",
             brand="",
             price=Decimal("0"),
@@ -145,32 +144,10 @@ def test_create_product_from_merchant_info_assigns_user(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_create_product_from_merchant_info_uses_query_when_display_empty(_mock_gemini):
-    pid = create_product_from_merchant_info(
-        query_name="X",
-        info=MerchantProductInfo(
-            display_name="",
-            standard_name="",
-            brand="",
-            price=Decimal("0"),
-            format="",
-            emoji="",
-        ),
-    )
-    row = Product.objects.get(pk=pid)
-    assert row.name == "X"
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_create_product_from_merchant_info_rejects_duplicate_name(_mock_gemini):
-    create_product_from_merchant_info(
-        query_name="a",
-        info=MerchantProductInfo(
-            display_name="Same",
+def test_create_product_from_candidate_rejects_duplicate_name(_mock_gemini):
+    create_product_from_candidate(
+        candidate=ProductCandidateSchema(
+            name="Same",
             standard_name="",
             brand="",
             price=Decimal("0"),
@@ -179,10 +156,9 @@ def test_create_product_from_merchant_info_rejects_duplicate_name(_mock_gemini):
         ),
     )
     with pytest.raises(ProductNameConflict):
-        create_product_from_merchant_info(
-            query_name="b",
-            info=MerchantProductInfo(
-                display_name="same",
+        create_product_from_candidate(
+            candidate=ProductCandidateSchema(
+                name="same",
                 standard_name="",
                 brand="",
                 price=Decimal("0"),
@@ -190,6 +166,24 @@ def test_create_product_from_merchant_info_rejects_duplicate_name(_mock_gemini):
                 emoji="",
             ),
         )
+
+
+@pytest.mark.django_db
+def test_create_product_from_merchant_info_deprecated_empty_display_uses_query():
+    with pytest.warns(DeprecationWarning, match="create_product_from_merchant_info"):
+        pid = create_product_from_merchant_info(
+            query_name="X",
+            info=MerchantProductInfo(
+                display_name="",
+                standard_name="",
+                brand="",
+                price=Decimal("0"),
+                format="",
+                emoji="",
+            ),
+        )
+    row = Product.objects.get(pk=pid)
+    assert row.name == "X"
 
 
 @pytest.mark.django_db

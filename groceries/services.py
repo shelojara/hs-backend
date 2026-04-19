@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import warnings
 from decimal import Decimal
 from typing import Any
 
@@ -11,6 +12,7 @@ from django.utils import timezone
 from groceries import gemini_service
 from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Basket, Product
+from groceries.schemas import ProductCandidateSchema
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +116,36 @@ def find_products(*, query: str) -> list[MerchantProductInfo]:
     return []
 
 
+def create_product_from_candidate(
+    *,
+    candidate: ProductCandidateSchema,
+    is_custom: bool = False,
+    user_id: int | None = None,
+) -> int:
+    """Persist product from merchant candidate fields (no Gemini call). Raises ProductNameConflict."""
+    anchor = candidate.name.strip()
+    if not anchor:
+        msg = "Product name must not be empty."
+        raise ValueError(msg)
+    next_name = anchor
+    if Product.objects.filter(name__iexact=next_name).exists():
+        raise ProductNameConflict()
+    try:
+        product = Product.objects.create(
+            name=next_name,
+            standard_name=candidate.standard_name,
+            brand=candidate.brand,
+            price=candidate.price,
+            format=candidate.format,
+            emoji=candidate.emoji,
+            is_custom=is_custom,
+            user_id=user_id,
+        )
+    except IntegrityError as exc:
+        raise ProductNameConflict() from exc
+    return product.pk
+
+
 def create_product_from_merchant_info(
     *,
     query_name: str,
@@ -121,28 +153,34 @@ def create_product_from_merchant_info(
     is_custom: bool = False,
     user_id: int | None = None,
 ) -> int:
-    """Persist product using *info* from a prior find (no Gemini call). Raises ProductNameConflict."""
+    """Persist product using *info* from a prior find (no Gemini call). Raises ProductNameConflict.
+
+    .. deprecated::
+        Use :func:`create_product_from_candidate` with a :class:`~groceries.schemas.ProductCandidateSchema`.
+    """
+    warnings.warn(
+        "create_product_from_merchant_info is deprecated; use create_product_from_candidate instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     anchor = query_name.strip()
     if not anchor:
         msg = "Product name must not be empty."
         raise ValueError(msg)
     next_name = (info.display_name or "").strip() or anchor
-    if Product.objects.filter(name__iexact=next_name).exists():
-        raise ProductNameConflict()
-    try:
-        product = Product.objects.create(
-            name=next_name,
-            standard_name=info.standard_name,
-            brand=info.brand,
-            price=info.price,
-            format=info.format,
-            emoji=info.emoji,
-            is_custom=is_custom,
-            user_id=user_id,
-        )
-    except IntegrityError as exc:
-        raise ProductNameConflict() from exc
-    return product.pk
+    candidate = ProductCandidateSchema(
+        name=next_name,
+        standard_name=info.standard_name,
+        brand=info.brand,
+        price=info.price,
+        format=info.format,
+        emoji=info.emoji,
+    )
+    return create_product_from_candidate(
+        candidate=candidate,
+        is_custom=is_custom,
+        user_id=user_id,
+    )
 
 
 def recheck_product_from_gemini(*, product_id: int) -> Product:

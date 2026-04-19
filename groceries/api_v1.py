@@ -3,7 +3,6 @@ from ninja.errors import HttpError
 
 from auth.security import protected_api_auth
 from groceries import services
-from groceries.gemini_service import MerchantProductInfo
 from groceries.schemas import (
     AddProductToBasketRequest,
     AddProductToBasketResponse,
@@ -60,9 +59,9 @@ def find_products(request, payload: FindProductsRequest):
 
 
 @router.post("/v1.Groceries.CreateProductFromCandidate", response=CreateProductFromCandidateResponse)
-def create_product_from_candidate(request, payload: CreateProductFromCandidateRequest):
-    info = MerchantProductInfo(
-        display_name=payload.name,
+def create_product_from_candidate_rpc(request, payload: CreateProductFromCandidateRequest):
+    candidate = ProductCandidateSchema(
+        name=payload.name,
         standard_name=payload.standard_name,
         brand=payload.brand,
         price=payload.price,
@@ -70,9 +69,8 @@ def create_product_from_candidate(request, payload: CreateProductFromCandidateRe
         emoji=payload.emoji,
     )
     try:
-        product_id = services.create_product_from_merchant_info(
-            query_name=payload.name,
-            info=info,
+        product_id = services.create_product_from_candidate(
+            candidate=candidate,
             is_custom=payload.is_custom,
         )
     except ProductNameConflict as exc:
@@ -85,19 +83,9 @@ def create_product_from_candidate(request, payload: CreateProductFromCandidateRe
 @router.post("/v1.Groceries.CreateProduct", response=CreateProductResponse)
 def create_product(request, payload: CreateProductRequest):
     user = request.auth
-    c = payload.candidate
-    info = MerchantProductInfo(
-        display_name=c.name,
-        standard_name=c.standard_name,
-        brand=c.brand,
-        price=c.price,
-        format=c.format,
-        emoji=c.emoji,
-    )
     try:
-        product_id = services.create_product_from_merchant_info(
-            query_name=c.name,
-            info=info,
+        product_id = services.create_product_from_candidate(
+            candidate=payload.candidate,
             is_custom=payload.is_custom,
             user_id=user.pk,
         )
