@@ -99,6 +99,7 @@ def list_products(request, payload: ListProductsRequest):
                 format=p.format,
                 emoji=p.emoji,
                 is_custom=p.is_custom,
+                purchase_count=p.purchase_count,
             )
             for p in items
         ],
@@ -180,6 +181,7 @@ def get_current_basket(request, payload: GetCurrentBasketRequest):
                     format=p.format,
                     emoji=p.emoji,
                     is_custom=p.is_custom,
+                    purchase_count=p.purchase_count,
                 )
                 for p in basket.products.all()
             ],
@@ -210,6 +212,7 @@ def list_purchased_baskets(request, payload: ListPurchasedBasketsRequest):
                         format=p.format,
                         emoji=p.emoji,
                         is_custom=p.is_custom,
+                        purchase_count=p.purchase_count,
                     )
                     for p in basket.products.all()
                 ],

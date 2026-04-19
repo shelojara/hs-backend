@@ -551,12 +551,52 @@ def test_purchase_latest_open_basket_sets_purchased_at(_mock_gemini):
     user = _user()
     older = Basket.objects.create(owner=user)
     newer = Basket.objects.create(owner=user)
+    p = Product.objects.create(name="Milk", user=user)
+    newer.products.add(p)
     out = purchase_latest_open_basket(user_id=user.pk)
     assert out.pk == newer.pk
     newer.refresh_from_db()
     older.refresh_from_db()
     assert newer.purchased_at is not None
     assert older.purchased_at is None
+    p.refresh_from_db()
+    assert p.purchase_count == 1
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_purchase_latest_open_basket_increments_each_product_once(_mock_gemini):
+    user = _user()
+    b = Basket.objects.create(owner=user)
+    a = Product.objects.create(name="A", user=user)
+    c = Product.objects.create(name="C", user=user)
+    b.products.add(a, c)
+    purchase_latest_open_basket(user_id=user.pk)
+    a.refresh_from_db()
+    c.refresh_from_db()
+    assert a.purchase_count == 1
+    assert c.purchase_count == 1
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_second_purchase_increments_again(_mock_gemini):
+    user = _user()
+    p = Product.objects.create(name="Eggs", user=user)
+    b1 = Basket.objects.create(owner=user)
+    b1.products.add(p)
+    purchase_latest_open_basket(user_id=user.pk)
+    b2 = Basket.objects.create(owner=user)
+    b2.products.add(p)
+    purchase_latest_open_basket(user_id=user.pk)
+    p.refresh_from_db()
+    assert p.purchase_count == 2
 
 
 @pytest.mark.django_db
