@@ -4,7 +4,7 @@ import logging
 from decimal import Decimal
 from typing import Any
 
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.utils import timezone
 
@@ -98,8 +98,8 @@ def find_products(*, query: str) -> list[MerchantProductInfo]:
 def create_product_from_candidate(
     *,
     candidate: ProductCandidateSchema,
+    user_id: int,
     is_custom: bool = False,
-    user_id: int | None = None,
 ) -> int:
     """Persist product from merchant candidate fields (no Gemini call)."""
     product = Product.objects.create(

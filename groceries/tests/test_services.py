@@ -29,9 +29,19 @@ def _user(username: str = "u1", **kwargs):
     return User.objects.create_user(username=username, password="pw", **kwargs)
 
 
-def _catalog_product(name: str) -> Product:
+def _catalog_owner_user():
+    """Stable user for catalog rows when test does not care which owner."""
+    existing = User.objects.filter(username="_catalog_owner").first()
+    if existing is not None:
+        return existing
+    return User.objects.create_user(username="_catalog_owner", password="pw")
+
+
+def _catalog_product(name: str, *, owner=None) -> Product:
     """Insert catalog row (no Gemini). Stand-in for removed create_product()."""
-    return Product.objects.create(name=name.strip())
+    if owner is None:
+        owner = _catalog_owner_user()
+    return Product.objects.create(name=name.strip(), user=owner)
 
 
 @pytest.mark.django_db
@@ -77,6 +87,7 @@ def test_find_products_rejects_blank_query():
     return_value=None,
 )
 def test_create_product_from_candidate_persists_without_gemini(_mock_gemini):
+    u = _user()
     pid = create_product_from_candidate(
         candidate=ProductCandidateSchema(
             name="Colún Leche Entera 1 L",
@@ -86,6 +97,7 @@ def test_create_product_from_candidate_persists_without_gemini(_mock_gemini):
             format="1 L",
             emoji="🥛",
         ),
+        user_id=u.pk,
     )
     row = Product.objects.get(pk=pid)
     assert row.name == "Colún Leche Entera 1 L"
@@ -101,6 +113,7 @@ def test_create_product_from_candidate_persists_without_gemini(_mock_gemini):
     return_value=None,
 )
 def test_create_product_from_candidate_sets_is_custom(_mock_gemini):
+    u = _user()
     pid = create_product_from_candidate(
         candidate=ProductCandidateSchema(
             name="Custom item",
@@ -110,6 +123,7 @@ def test_create_product_from_candidate_sets_is_custom(_mock_gemini):
             format="",
             emoji="",
         ),
+        user_id=u.pk,
         is_custom=True,
     )
     assert Product.objects.get(pk=pid).is_custom is True
@@ -450,8 +464,8 @@ def test_get_latest_basket_with_products_includes_purchased(_mock_gemini):
 )
 def test_basket_total_price_sums_product_prices(_mock_gemini):
     user = _user()
-    pa = Product.objects.create(name="A", price=Decimal("1.50"))
-    pb = Product.objects.create(name="B", price=Decimal("2.25"))
+    pa = Product.objects.create(name="A", price=Decimal("1.50"), user=user)
+    pb = Product.objects.create(name="B", price=Decimal("2.25"), user=user)
     b = Basket.objects.create(owner=user)
     b.products.add(pa, pb)
     b = get_latest_basket_with_products(user_id=user.pk)
