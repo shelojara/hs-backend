@@ -22,7 +22,7 @@ def _strip_nonempty_query(v: str) -> str:
     return s
 
 
-class FindProductsRequest(Schema):
+class FindProductCandidatesRequest(Schema):
     query: Annotated[str, AfterValidator(_strip_nonempty_query)]
 
 
@@ -37,7 +37,7 @@ class ProductCandidateSchema(Schema):
     emoji: str
 
 
-class FindProductsResponse(Schema):
+class FindProductCandidatesResponse(Schema):
     products: list[ProductCandidateSchema]
 
 

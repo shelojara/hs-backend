@@ -75,7 +75,7 @@ def _apply_merchant_product_info(
     )
 
 
-def find_products(*, query: str) -> list[MerchantProductInfo]:
+def find_product_candidates(*, query: str) -> list[MerchantProductInfo]:
     """Return up to 10 Gemini merchant product rows for *query*; no DB writes."""
     normalized = query.strip()
     if not normalized:
@@ -85,11 +85,11 @@ def find_products(*, query: str) -> list[MerchantProductInfo]:
         return gemini_service.fetch_merchant_product_candidates(query=normalized)
     except RuntimeError:
         logger.warning(
-            "Skipped Gemini find products: GEMINI_API_KEY not set.",
+            "Skipped Gemini find product candidates: GEMINI_API_KEY not set.",
         )
     except Exception:
         logger.exception(
-            "Gemini find products failed for query=%r",
+            "Gemini find product candidates failed for query=%r",
             normalized,
         )
     return []
