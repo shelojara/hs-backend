@@ -17,6 +17,8 @@ from groceries.schemas import (
     GetCurrentBasketResponse,
     ListProductsRequest,
     ListProductsResponse,
+    ListPurchasedBasketsRequest,
+    ListPurchasedBasketsResponse,
     ProductCandidateSchema,
     ProductSchema,
     PurchaseBasketRequest,
@@ -179,4 +181,36 @@ def get_current_basket(request, payload: GetCurrentBasketRequest):
                 for p in basket.products.all()
             ],
         ),
+    )
+
+
+@router.post(
+    "/v1.Groceries.ListPurchasedBaskets", response=ListPurchasedBasketsResponse
+)
+def list_purchased_baskets(request, payload: ListPurchasedBasketsRequest):
+    user = request.auth
+    rows = services.list_purchased_baskets(user_id=user.pk)
+    return ListPurchasedBasketsResponse(
+        baskets=[
+            BasketSchema(
+                basket_id=basket.pk,
+                created_at=basket.created_at,
+                purchased_at=basket.purchased_at,
+                total_price=services.basket_total_price(basket=basket),
+                products=[
+                    ProductSchema(
+                        product_id=p.pk,
+                        name=p.name,
+                        standard_name=p.standard_name,
+                        brand=p.brand,
+                        price=p.price,
+                        format=p.format,
+                        emoji=p.emoji,
+                        is_custom=p.is_custom,
+                    )
+                    for p in basket.products.all()
+                ],
+            )
+            for basket in rows
+        ],
     )
