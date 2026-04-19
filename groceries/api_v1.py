@@ -3,7 +3,6 @@ from ninja.errors import HttpError
 
 from auth.security import protected_api_auth
 from groceries import services
-from groceries.gemini_service import MerchantProductInfo
 from groceries.schemas import (
     AddProductToBasketRequest,
     AddProductToBasketResponse,
@@ -29,7 +28,6 @@ from groceries.models import Product
 from groceries.services import (
     InvalidProductListCursorError,
     NoOpenBasketError,
-    ProductNameConflict,
 )
 
 router = Router(auth=protected_api_auth, tags=["Groceries"])
@@ -41,11 +39,10 @@ def find_products(request, payload: FindProductsRequest):
         items = services.find_products(query=payload.query)
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    anchor = payload.query.strip()
     return FindProductsResponse(
         products=[
             ProductCandidateSchema(
-                name=(p.display_name or anchor).strip() or anchor,
+                name=(p.display_name or payload.query.strip()).strip(),
                 standard_name=p.standard_name,
                 brand=p.brand,
                 price=p.price,
@@ -57,24 +54,17 @@ def find_products(request, payload: FindProductsRequest):
     )
 
 
-@router.post("/v1.Groceries.CreateProductFromCandidate", response=CreateProductFromCandidateResponse)
+@router.post(
+    "/v1.Groceries.CreateProductFromCandidate",
+    response=CreateProductFromCandidateResponse,
+)
 def create_product_from_candidate(request, payload: CreateProductFromCandidateRequest):
-    info = MerchantProductInfo(
-        display_name=payload.name,
-        standard_name=payload.standard_name,
-        brand=payload.brand,
-        price=payload.price,
-        format=payload.format,
-        emoji=payload.emoji,
-    )
     try:
-        product_id = services.create_product_from_merchant_info(
-            query_name=payload.name,
-            info=info,
+        product_id = services.create_product_from_candidate(
+            candidate=payload.canditate,
             is_custom=payload.is_custom,
+            user_id=request.auth.pk,
         )
-    except ProductNameConflict as exc:
-        raise HttpError(409, str(exc)) from exc
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     return CreateProductFromCandidateResponse(product_id=product_id)
@@ -114,8 +104,6 @@ def recheck_product(request, payload: RecheckProductRequest):
         services.recheck_product_from_gemini(product_id=payload.product_id)
     except Product.DoesNotExist as exc:
         raise HttpError(404, "Product not found.") from exc
-    except ProductNameConflict as exc:
-        raise HttpError(409, str(exc)) from exc
     return RecheckProductResponse()
 
 
@@ -132,7 +120,9 @@ def add_product_to_basket(request, payload: AddProductToBasketRequest):
     return AddProductToBasketResponse(basket_id=basket.pk)
 
 
-@router.post("/v1.Groceries.DeleteProductFromBasket", response=DeleteProductFromBasketResponse)
+@router.post(
+    "/v1.Groceries.DeleteProductFromBasket", response=DeleteProductFromBasketResponse
+)
 def delete_product_from_basket(request, payload: DeleteProductFromBasketRequest):
     user = request.auth
     try:

@@ -11,15 +11,9 @@ from django.utils import timezone
 from groceries import gemini_service
 from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Basket, Product
+from groceries.schemas import ProductCandidateSchema
 
 logger = logging.getLogger(__name__)
-
-
-class ProductNameConflict(Exception):
-    """Another product already uses this name (case-insensitive)."""
-
-    def __init__(self, message: str = "A product with this name already exists.") -> None:
-        super().__init__(message)
 
 
 class InvalidProductListCursorError(Exception):
@@ -38,10 +32,6 @@ class NoOpenBasketError(Exception):
 
 DEFAULT_LIST_LIMIT = 20
 MAX_LIST_LIMIT = 100
-
-_GEMINI_SUGGESTED_NAME_CONFLICT = (
-    "Another product already uses the name suggested by Gemini."
-)
 
 
 def _fetch_merchant_product_info_or_none(
@@ -65,23 +55,14 @@ def _fetch_merchant_product_info_or_none(
 def _apply_merchant_product_info(
     product: Product,
     info: MerchantProductInfo,
-    *,
-    anchor: str,
 ) -> None:
-    """Write Gemini merchant fields onto *product*; *anchor* resolves empty display_name."""
-    next_name = (info.display_name or anchor).strip() or product.name
-    if (
-        Product.objects.filter(name__iexact=next_name)
-        .exclude(pk=product.pk)
-        .exists()
-    ):
-        raise ProductNameConflict(_GEMINI_SUGGESTED_NAME_CONFLICT)
+    """Write Gemini merchant fields onto *product*"""
     product.brand = info.brand
     product.price = info.price
     product.format = info.format
     product.standard_name = info.standard_name
     product.emoji = info.emoji
-    product.name = next_name
+    product.name = info.display_name.strip()
     product.save(
         update_fields=[
             "brand",
@@ -114,42 +95,34 @@ def find_products(*, query: str) -> list[MerchantProductInfo]:
     return []
 
 
-def create_product_from_merchant_info(
+def create_product_from_candidate(
     *,
-    query_name: str,
-    info: MerchantProductInfo,
+    candidate: ProductCandidateSchema,
     is_custom: bool = False,
+    user_id: int | None = None,
 ) -> int:
-    """Persist product using *info* from a prior find (no Gemini call). Raises ProductNameConflict."""
-    anchor = query_name.strip()
-    if not anchor:
-        msg = "Product name must not be empty."
-        raise ValueError(msg)
-    next_name = (info.display_name or "").strip() or anchor
-    if Product.objects.filter(name__iexact=next_name).exists():
-        raise ProductNameConflict()
-    try:
-        product = Product.objects.create(
-            name=next_name,
-            standard_name=info.standard_name,
-            brand=info.brand,
-            price=info.price,
-            format=info.format,
-            emoji=info.emoji,
-            is_custom=is_custom,
-        )
-    except IntegrityError as exc:
-        raise ProductNameConflict() from exc
+    """Persist product from merchant candidate fields (no Gemini call)."""
+    product = Product.objects.create(
+        name=candidate.name,
+        standard_name=candidate.standard_name,
+        brand=candidate.brand,
+        price=candidate.price,
+        format=candidate.format,
+        emoji=candidate.emoji,
+        is_custom=is_custom,
+        user_id=user_id,
+    )
     return product.pk
 
 
 def recheck_product_from_gemini(*, product_id: int) -> Product:
     """Reload merchant-oriented fields from Gemini for existing product. Raises Product.DoesNotExist."""
     product = Product.objects.get(pk=product_id)
-    anchor = product.name
-    info = _fetch_merchant_product_info_or_none(product_name=anchor, product_id=product.pk)
+    info = _fetch_merchant_product_info_or_none(
+        product_name=product.name, product_id=product.pk
+    )
     if info:
-        _apply_merchant_product_info(product, info, anchor=anchor)
+        _apply_merchant_product_info(product, info)
     return product
 
 
@@ -202,7 +175,9 @@ def list_products(
         except (KeyError, TypeError, ValueError) as exc:
             raise InvalidProductListCursorError() from exc
         if cq != q:
-            raise InvalidProductListCursorError("Cursor does not match request parameters.")
+            raise InvalidProductListCursorError(
+                "Cursor does not match request parameters."
+            )
         qs = qs.filter(Q(name__gt=cname) | Q(name=cname, pk__gt=cpk))
 
     rows = list(qs[: lim + 1])
