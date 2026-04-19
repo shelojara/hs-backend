@@ -25,6 +25,9 @@ from groceries.schemas import (
     PurchaseBasketResponse,
     RecheckProductRequest,
     RecheckProductResponse,
+    RunningLowSuggestionSchema,
+    SuggestRunningLowRequest,
+    SuggestRunningLowResponse,
 )
 from groceries.models import Product
 from groceries.services import (
@@ -212,5 +215,21 @@ def list_purchased_baskets(request, payload: ListPurchasedBasketsRequest):
                 ],
             )
             for basket in rows
+        ],
+    )
+
+
+@router.post("/v1.Groceries.SuggestRunningLow", response=SuggestRunningLowResponse)
+def suggest_running_low(request, payload: SuggestRunningLowRequest):
+    user = request.auth
+    items = services.suggest_running_low_products(user_id=user.pk)
+    return SuggestRunningLowResponse(
+        suggestions=[
+            RunningLowSuggestionSchema(
+                product_name=s.product_name,
+                reason=s.reason,
+                urgency=s.urgency,
+            )
+            for s in items
         ],
     )

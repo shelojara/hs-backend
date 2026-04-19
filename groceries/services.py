@@ -9,7 +9,7 @@ from django.db.models import Prefetch, Q
 from django.utils import timezone
 
 from groceries import gemini_service
-from groceries.gemini_service import MerchantProductInfo
+from groceries.gemini_service import MerchantProductInfo, RunningLowSuggestion
 from groceries.models import Basket, Product
 from groceries.schemas import ProductCandidateSchema
 
@@ -289,3 +289,49 @@ def purchase_latest_open_basket(*, user_id: int) -> Basket:
         basket.purchased_at = timezone.now()
         basket.save(update_fields=["purchased_at"])
     return basket
+
+
+def _format_purchased_baskets_for_running_low(baskets: list[Basket]) -> str:
+    """Build plain-text block of basket history for Gemini (newest first)."""
+    lines: list[str] = []
+    for bi, basket in enumerate(baskets, start=1):
+        ts = basket.purchased_at
+        ts_label = ts.isoformat() if ts else ""
+        lines.append(f"## Basket {bi} (purchased_at: {ts_label})")
+        products = list(basket.products.all())
+        if not products:
+            lines.append("(empty)")
+            continue
+        for p in products:
+            fmt = (p.format or "").strip()
+            em = (p.emoji or "").strip()
+            name = (p.name or "").strip()
+            bit = f"- {em + ' ' if em else ''}{name}"
+            if fmt:
+                bit += f" — {fmt}"
+            lines.append(bit)
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def suggest_running_low_products(*, user_id: int) -> list[RunningLowSuggestion]:
+    """Ask Gemini which products may run low soon, from up to 5 newest purchased baskets."""
+    baskets = list_purchased_baskets(user_id=user_id)
+    if not baskets:
+        return []
+    block = _format_purchased_baskets_for_running_low(baskets)
+    try:
+        return gemini_service.suggest_running_low_from_purchase_history(
+            history_markdown=block,
+        )
+    except RuntimeError:
+        logger.warning(
+            "Skipped Gemini running-low suggestions: GEMINI_API_KEY not set (user id=%s).",
+            user_id,
+        )
+    except Exception:
+        logger.exception(
+            "Gemini running-low suggestions failed for user id=%s",
+            user_id,
+        )
+    return []

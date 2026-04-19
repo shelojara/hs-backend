@@ -6,7 +6,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from groceries.gemini_service import MerchantProductInfo
+from groceries.gemini_service import MerchantProductInfo, RunningLowSuggestion
 from groceries.models import Basket, Product
 from groceries.schemas import ProductCandidateSchema
 from groceries.services import (
@@ -23,6 +23,7 @@ from groceries.services import (
     list_purchased_baskets,
     purchase_latest_open_basket,
     recheck_product_from_gemini,
+    suggest_running_low_products,
 )
 
 User = get_user_model()
@@ -657,3 +658,65 @@ def test_list_purchased_baskets_isolated_per_user(_mock_gemini):
     bob = _user(username="bob2")
     Basket.objects.create(owner=alice, purchased_at=timezone.now())
     assert list_purchased_baskets(user_id=bob.pk) == []
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_suggest_running_low_empty_without_purchased_baskets(_mock_gemini):
+    user = _user(username="noruns")
+    assert suggest_running_low_products(user_id=user.pk) == []
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+@patch(
+    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+)
+def test_suggest_running_low_calls_gemini_with_history(mock_suggest, _mock_info):
+    mock_suggest.return_value = [
+        RunningLowSuggestion(
+            product_name="Leche",
+            reason="Última compra hace tiempo.",
+            urgency="medium",
+        ),
+    ]
+    user = _user(username="runlow")
+    milk = _catalog_product("Leche entera", owner=user)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(milk)
+
+    out = suggest_running_low_products(user_id=user.pk)
+
+    assert len(out) == 1
+    assert out[0].product_name == "Leche"
+    mock_suggest.assert_called_once()
+    call_kw = mock_suggest.call_args.kwargs
+    assert "history_markdown" in call_kw
+    assert "Leche entera" in call_kw["history_markdown"]
+    assert "Basket 1" in call_kw["history_markdown"]
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+@patch(
+    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    side_effect=RuntimeError("no key"),
+)
+def test_suggest_running_low_returns_empty_when_gemini_unconfigured(
+    _mock_suggest,
+    _mock_info,
+):
+    user = _user(username="nokey")
+    milk = _catalog_product("Leche", owner=user)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(milk)
+    assert suggest_running_low_products(user_id=user.pk) == []

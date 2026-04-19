@@ -13,6 +13,28 @@ logger = logging.getLogger(__name__)
 
 FIND_PRODUCTS_MAX = 10
 
+RUNNING_LOW_MAX_SUGGESTIONS = 15
+
+RUNNING_LOW_SYSTEM_INSTRUCTION = (
+    "You help a household grocery shopper anywhere in the world. "
+    "You receive purchase history: up to 5 completed shopping baskets, newest first, "
+    "each with purchase timestamp and product lines (emoji, name, optional format/size). "
+    "Infer which items the shopper is likely running low on soon, based on: "
+    "typical consumption rates for those product types, time since last purchase in each basket, "
+    "and whether staples appear less often than expected. "
+    "This is a rough heuristic — be practical and concise. "
+    "Respond with a single JSON array only — no markdown, no code fences, no text before or after. "
+    f"At most {RUNNING_LOW_MAX_SUGGESTIONS} elements. Each element is one JSON object with keys: "
+    '"product_name" (string: short label in the same language as the product lines when possible, '
+    "e.g. the standard product type or line name), "
+    '"reason" (string: one short sentence why it may run out soon), '
+    '"urgency" (string: one of \"high\", \"medium\", \"low\"). '
+    "If there is not enough history to infer anything useful, return []. "
+    "Do not invent products that never appear in the history; only refer to types or lines similar "
+    "to what was bought."
+)
+
+
 MERCHANT_PRODUCT_FIND_SYSTEM_INSTRUCTION = (
     "You help catalog grocery products sold in Chile for a specific retail merchant "
     "(default: Lider / Walmart Chile, website líder.cl). "
@@ -65,6 +87,13 @@ class MerchantProductInfo:
     price: Decimal
     format: str
     emoji: str
+
+
+@dataclass(frozen=True)
+class RunningLowSuggestion:
+    product_name: str
+    reason: str
+    urgency: str
 
 
 def _get_client() -> genai.Client:
@@ -275,3 +304,92 @@ def fetch_merchant_product_candidates(
         ),
     )
     return _parse_merchant_product_list_payload(response.text, max_items=lim)
+
+
+_URGENCY_OK = frozenset({"high", "medium", "low"})
+_LEGACY_URGENCY = {"alta": "high", "media": "medium", "baja": "low"}
+
+
+def _parse_running_low_suggestions(
+    raw: str | None,
+    *,
+    max_items: int,
+) -> list[RunningLowSuggestion]:
+    """Parse model JSON array into structured suggestions; cap at *max_items*."""
+    if not raw or max_items < 1:
+        return []
+    blob = _extract_json_array(raw)
+    if not blob:
+        return []
+    try:
+        data = json.loads(blob)
+    except json.JSONDecodeError:
+        return []
+    if (
+        isinstance(data, dict)
+        and "suggestions" in data
+        and isinstance(data["suggestions"], list)
+    ):
+        data = data["suggestions"]
+    elif isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        return []
+    out: list[RunningLowSuggestion] = []
+    for item in data:
+        if len(out) >= max_items:
+            break
+        if not isinstance(item, dict):
+            continue
+        name = _normalize_field(item.get("product_name"), 255)
+        reason = _normalize_field(item.get("reason"), 512)
+        if not name or not reason:
+            continue
+        u_raw = str(item.get("urgency") or "").strip().lower()
+        if u_raw in _LEGACY_URGENCY:
+            urgency = _LEGACY_URGENCY[u_raw]
+        elif u_raw in _URGENCY_OK:
+            urgency = u_raw
+        else:
+            urgency = "medium"
+        out.append(
+            RunningLowSuggestion(
+                product_name=name,
+                reason=reason,
+                urgency=urgency,
+            ),
+        )
+    return out
+
+
+def suggest_running_low_from_purchase_history(
+    *,
+    history_markdown: str,
+    max_suggestions: int = RUNNING_LOW_MAX_SUGGESTIONS,
+) -> list[RunningLowSuggestion]:
+    """Ask Gemini which products from *history_markdown* may run out soon.
+
+    *history_markdown* should describe up to 5 newest purchased baskets (timestamps + lines).
+    Returns empty list when *history_markdown* is blank.
+    """
+    text = (history_markdown or "").strip()
+    if not text:
+        return []
+    lim = max(1, min(max_suggestions, RUNNING_LOW_MAX_SUGGESTIONS))
+
+    prompt = (
+        "Below is the shopper's recent completed basket history (newest baskets first). "
+        "Suggest which products they may run low on soon.\n\n"
+        f"{text}"
+    )
+
+    client = _get_client()
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=RUNNING_LOW_SYSTEM_INSTRUCTION,
+            temperature=0.35,
+        ),
+    )
+    return _parse_running_low_suggestions(response.text, max_items=lim)
