@@ -11,7 +11,7 @@ from django.utils import timezone
 from groceries import gemini_service
 from groceries.favicon_service import fetch_favicon_url, normalize_website_url
 from groceries.gemini_service import MerchantProductInfo, PreferredMerchantContext
-from groceries.models import Basket, Merchant, Product, Whiteboard
+from groceries.models import Basket, BasketProduct, Merchant, Product, Whiteboard
 from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 
 logger = logging.getLogger(__name__)
@@ -291,7 +291,7 @@ def add_product_to_basket(*, product_id: int, user_id: int) -> Basket:
         basket = get_current_basket(user_id=user_id, select_for_update=True)
         if basket is None:
             basket = Basket.objects.create(owner_id=user_id)
-        basket.products.add(product)
+        basket.products.add(product, through_defaults={"purchase": True})
     return basket
 
 
@@ -303,6 +303,38 @@ def delete_product_from_basket(*, product_id: int, user_id: int) -> None:
         if basket is None:
             raise NoOpenBasketError()
         basket.products.remove(product)
+
+
+def set_product_purchase_in_open_basket(
+    *,
+    product_id: int,
+    user_id: int,
+    purchase: bool,
+) -> Basket:
+    """Set ``purchase`` flag on a line in user's latest open basket."""
+    Product.objects.get(pk=product_id)
+    with transaction.atomic():
+        basket = get_current_basket(user_id=user_id, select_for_update=True)
+        if basket is None:
+            raise NoOpenBasketError()
+        n = BasketProduct.objects.filter(
+            basket_id=basket.pk,
+            product_id=product_id,
+        ).update(purchase=purchase)
+        if n == 0:
+            msg = "Product is not in the current basket."
+            raise ValueError(msg)
+    return basket
+
+
+def basket_product_lines(*, basket_id: int) -> list[tuple[Product, bool]]:
+    """Products in *basket_id* ordered by name, pk; with line ``purchase`` flag."""
+    rows = (
+        BasketProduct.objects.filter(basket_id=basket_id)
+        .select_related("product")
+        .order_by("product__name", "product__pk")
+    )
+    return [(r.product, r.purchase) for r in rows]
 
 
 def get_current_basket_with_products(*, user_id: int) -> Basket | None:
@@ -329,16 +361,37 @@ def list_purchased_baskets(*, user_id: int) -> list[Basket]:
 
 
 def purchase_latest_open_basket(*, user_id: int) -> Basket:
-    """Set purchased_at on user's latest open basket."""
+    """Set purchased_at on user's latest open basket.
+
+    Lines with ``purchase`` False are removed from this basket, attached to a new
+    open basket, and excluded from purchase_count for this checkout.
+    """
     with transaction.atomic():
         basket = get_current_basket(user_id=user_id, select_for_update=True)
         if basket is None:
             raise NoOpenBasketError()
-        product_ids = list(basket.products.values_list("pk", flat=True))
+        deferred_ids = list(
+            BasketProduct.objects.filter(basket_id=basket.pk, purchase=False).values_list(
+                "product_id",
+                flat=True,
+            )
+        )
+        if deferred_ids:
+            carry = Basket.objects.create(owner_id=user_id)
+            BasketProduct.objects.filter(
+                basket_id=basket.pk,
+                product_id__in=deferred_ids,
+            ).update(basket_id=carry.pk)
+        purchase_ids = list(
+            BasketProduct.objects.filter(basket_id=basket.pk, purchase=True).values_list(
+                "product_id",
+                flat=True,
+            )
+        )
         basket.purchased_at = timezone.now()
         basket.save(update_fields=["purchased_at"])
-        if product_ids:
-            Product.objects.filter(pk__in=product_ids).update(
+        if purchase_ids:
+            Product.objects.filter(pk__in=purchase_ids).update(
                 purchase_count=F("purchase_count") + 1
             )
     return basket

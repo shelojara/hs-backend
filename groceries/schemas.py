@@ -119,11 +119,27 @@ class DeleteProductFromBasketResponse(Schema):
     pass
 
 
+class SetProductPurchaseInBasketRequest(Schema):
+    product_id: int
+    purchase: bool
+
+
+class SetProductPurchaseInBasketResponse(Schema):
+    basket_id: int
+
+
+class BasketLineSchema(Schema):
+    """One row in basket; ``purchase`` False means defer to next basket at checkout."""
+
+    purchase: bool
+    product: ProductSchema
+
+
 class BasketSchema(Schema):
     basket_id: int
     created_at: datetime
     purchased_at: datetime | None
-    products: list[ProductSchema]
+    products: list[BasketLineSchema]
 
 
 class GetCurrentBasketRequest(Schema):

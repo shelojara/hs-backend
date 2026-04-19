@@ -8,21 +8,24 @@ from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo, RunningLowSuggestion
 from groceries.gemini_service import PreferredMerchantContext
-from groceries.models import Basket, Merchant, Product
+from groceries.models import Basket, BasketProduct, Merchant, Product
 from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 from groceries.services import (
     InvalidProductListCursorError,
     LIST_PURCHASED_BASKETS_LIMIT,
     NoOpenBasketError,
     add_product_to_basket,
+    basket_product_lines,
     create_product_from_candidate,
     delete_product_from_basket,
     find_product_candidates,
+    get_current_basket,
     get_current_basket_with_products,
     get_whiteboard,
     list_products,
     list_purchased_baskets,
     purchase_latest_open_basket,
+    set_product_purchase_in_open_basket,
     recheck_product_price,
     save_whiteboard,
     running_low_sync_user_ids,
@@ -540,6 +543,19 @@ def test_add_product_to_basket_reuses_latest_open_basket(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
+def test_add_product_to_basket_line_defaults_purchase_true(_mock_gemini):
+    user = _user()
+    pid = _catalog_product("Milk").pk
+    basket = add_product_to_basket(product_id=pid, user_id=user.pk)
+    row = BasketProduct.objects.get(basket_id=basket.pk, product_id=pid)
+    assert row.purchase is True
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
 def test_add_product_to_basket_skips_purchased_baskets(_mock_gemini):
     user = _user()
     p = _catalog_product("X").pk
@@ -752,6 +768,55 @@ def test_second_purchase_increments_again(_mock_gemini):
     purchase_latest_open_basket(user_id=user.pk)
     p.refresh_from_db()
     assert p.purchase_count == 2
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_purchase_moves_deferred_lines_to_new_open_basket(_mock_gemini):
+    user = _user()
+    b = Basket.objects.create(owner=user)
+    buy = Product.objects.create(name="Buy", user=user)
+    defer = Product.objects.create(name="Defer", user=user)
+    b.products.add(buy, defer)
+    set_product_purchase_in_open_basket(
+        product_id=defer.pk,
+        user_id=user.pk,
+        purchase=False,
+    )
+    purchased = purchase_latest_open_basket(user_id=user.pk)
+    buy.refresh_from_db()
+    defer.refresh_from_db()
+    assert buy.purchase_count == 1
+    assert defer.purchase_count == 0
+    purchased.refresh_from_db()
+    assert purchased.purchased_at is not None
+    assert list(purchased.products.values_list("pk", flat=True)) == [buy.pk]
+    nxt = get_current_basket(user_id=user.pk)
+    assert nxt is not None
+    assert nxt.pk != purchased.pk
+    assert list(nxt.products.values_list("pk", flat=True)) == [defer.pk]
+    lines = basket_product_lines(basket_id=nxt.pk)
+    assert lines == [(defer, False)]
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_set_product_purchase_in_open_basket_raises_when_line_missing(_mock_gemini):
+    user = _user()
+    Basket.objects.create(owner=user)
+    orphan = Product.objects.create(name="X", user=user)
+    with pytest.raises(ValueError, match="not in the current basket"):
+        set_product_purchase_in_open_basket(
+            product_id=orphan.pk,
+            user_id=user.pk,
+            purchase=False,
+        )
 
 
 @pytest.mark.django_db
