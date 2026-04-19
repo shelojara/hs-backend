@@ -73,7 +73,7 @@ class UpdateProductResponse(Schema):
 
 
 class ListProductsRequest(Schema):
-    limit: int = 20
+    limit: int = 50
     cursor: str | None = None
     search: str | None = None
 

@@ -42,7 +42,7 @@ class NoOpenBasketError(Exception):
         super().__init__(message)
 
 
-DEFAULT_LIST_LIMIT = 20
+DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 100
 LIST_PURCHASED_BASKETS_LIMIT = 5
 
