@@ -39,6 +39,13 @@ def test_run_daily_running_low_sync_skips_when_flag_disabled(mock_async):
 
 
 @pytest.mark.django_db
+@override_settings(
+    FLAGS={
+        "RUNNING_LOW_SCHEDULED_SYNC": [
+            {"condition": "boolean", "value": True},
+        ],
+    }
+)
 @patch("groceries.scheduled_tasks.async_task")
 def test_run_daily_running_low_sync_enqueues_per_user(mock_async):
     a = User.objects.create_user(username="sched_rl_a", password="pw")
