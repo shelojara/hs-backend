@@ -22,6 +22,14 @@ def _strip_nonempty_query(v: str) -> str:
     return s
 
 
+def _strip_nonempty_website(v: str) -> str:
+    s = v.strip()
+    if not s:
+        msg = "Website must not be empty."
+        raise ValueError(msg)
+    return s
+
+
 class FindProductCandidatesRequest(Schema):
     query: Annotated[str, AfterValidator(_strip_nonempty_query)]
 
@@ -176,3 +184,45 @@ class GetWhiteboardRequest(Schema):
 
 class GetWhiteboardResponse(Schema):
     data: list[WhiteboardLineSchema]
+
+
+class MerchantSchema(Schema):
+    merchant_id: int
+    name: str
+    website: str
+    favicon_url: str
+
+
+class ListMerchantsRequest(Schema):
+    """No fields; POST body may be `{}` for RPC transport."""
+
+
+class ListMerchantsResponse(Schema):
+    merchants: list[MerchantSchema]
+
+
+class CreateMerchantRequest(Schema):
+    name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
+    website: Annotated[str, AfterValidator(_strip_nonempty_website)]
+
+
+class CreateMerchantResponse(Schema):
+    merchant_id: int
+
+
+class UpdateMerchantRequest(Schema):
+    merchant_id: int
+    name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
+    website: Annotated[str, AfterValidator(_strip_nonempty_website)]
+
+
+class UpdateMerchantResponse(Schema):
+    merchant_id: int
+
+
+class DeleteMerchantRequest(Schema):
+    merchant_id: int
+
+
+class DeleteMerchantResponse(Schema):
+    pass
