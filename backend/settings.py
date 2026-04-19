@@ -185,7 +185,11 @@ JWT_ACCESS_TOKEN_LIFETIME_SECONDS = int(
 )
 
 # django-flags — https://cfpb.github.io/django-flags/
-FLAGS: dict[str, list] = {}
+# RUNNING_LOW_SCHEDULED_SYNC: enable groceries daily django-q enqueue for running-low
+# sync. Empty here; toggle boolean in Django admin (FlagState) when deployed.
+FLAGS: dict[str, list] = {
+    "RUNNING_LOW_SCHEDULED_SYNC": [],
+}
 
 # django-q2 task queue — ORM broker (uses the default SQLite database)
 Q_CLUSTER = {
