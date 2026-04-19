@@ -152,17 +152,28 @@ def _clamp_limit(limit: int) -> int:
     return min(limit, MAX_LIST_LIMIT)
 
 
+def get_current_basket(
+    *, user_id: int, select_for_update: bool = False
+) -> Basket | None:
+    """Latest open basket for *user_id* (``purchased_at`` unset), or ``None``."""
+    qs = Basket.objects.filter(owner_id=user_id, purchased_at__isnull=True).order_by(
+        "-created_at"
+    )
+    if select_for_update:
+        qs = qs.select_for_update()
+    return qs.first()
+
+
 def list_products(
     *,
+    user_id: int,
     limit: int = DEFAULT_LIST_LIMIT,
     cursor: str | None = None,
     search: str | None = None,
-    user_id: int | None = None,
 ) -> tuple[list[Product], str | None]:
     """List products with cursor pagination; optional case-insensitive substring search (ILIKE).
 
-    When *user_id* is set, excludes products already in that user's current open basket
-    (latest basket with ``purchased_at`` unset).
+    Excludes products already in *user_id*'s current open basket (same basket as add/remove).
     """
     lim = _clamp_limit(limit)
     q = (search or "").strip()
@@ -171,16 +182,11 @@ def list_products(
     if q:
         qs = qs.filter(name__icontains=q)
 
-    if user_id is not None:
-        basket = (
-            Basket.objects.filter(owner_id=user_id, purchased_at__isnull=True)
-            .order_by("-created_at")
-            .first()
-        )
-        if basket is not None:
-            cart_pks = list(basket.products.values_list("pk", flat=True))
-            if cart_pks:
-                qs = qs.exclude(pk__in=cart_pks)
+    basket = get_current_basket(user_id=user_id)
+    if basket is not None:
+        cart_pks = list(basket.products.values_list("pk", flat=True))
+        if cart_pks:
+            qs = qs.exclude(pk__in=cart_pks)
 
     if cursor:
         payload = _decode_cursor(cursor)
@@ -218,12 +224,7 @@ def add_product_to_basket(*, product_id: int, user_id: int) -> Basket:
     """Use latest open basket for *user_id*, or create one; append product."""
     product = Product.objects.get(pk=product_id)
     with transaction.atomic():
-        basket = (
-            Basket.objects.select_for_update()
-            .filter(owner_id=user_id, purchased_at__isnull=True)
-            .order_by("-created_at")
-            .first()
-        )
+        basket = get_current_basket(user_id=user_id, select_for_update=True)
         if basket is None:
             basket = Basket.objects.create(owner_id=user_id)
         basket.products.add(product)
@@ -234,12 +235,7 @@ def delete_product_from_basket(*, product_id: int, user_id: int) -> None:
     """Remove product from user's latest open basket. No-op if not in basket."""
     product = Product.objects.get(pk=product_id)
     with transaction.atomic():
-        basket = (
-            Basket.objects.select_for_update()
-            .filter(owner_id=user_id, purchased_at__isnull=True)
-            .order_by("-created_at")
-            .first()
-        )
+        basket = get_current_basket(user_id=user_id, select_for_update=True)
         if basket is None:
             raise NoOpenBasketError()
         basket.products.remove(product)
@@ -272,12 +268,7 @@ def basket_total_price(*, basket: Basket) -> Decimal:
 def purchase_latest_open_basket(*, user_id: int) -> Basket:
     """Set purchased_at on user's latest open basket."""
     with transaction.atomic():
-        basket = (
-            Basket.objects.select_for_update()
-            .filter(owner_id=user_id, purchased_at__isnull=True)
-            .order_by("-created_at")
-            .first()
-        )
+        basket = get_current_basket(user_id=user_id, select_for_update=True)
         if basket is None:
             raise NoOpenBasketError()
         basket.purchased_at = timezone.now()
