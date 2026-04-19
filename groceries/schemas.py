@@ -126,3 +126,17 @@ class ListPurchasedBasketsRequest(Schema):
 
 class ListPurchasedBasketsResponse(Schema):
     baskets: list[BasketSchema]
+
+
+class SuggestRunningLowRequest(Schema):
+    """No fields; POST body may be `{}` for RPC transport."""
+
+
+class RunningLowSuggestionSchema(Schema):
+    product_name: str
+    reason: str
+    urgency: str
+
+
+class SuggestRunningLowResponse(Schema):
+    suggestions: list[RunningLowSuggestionSchema]

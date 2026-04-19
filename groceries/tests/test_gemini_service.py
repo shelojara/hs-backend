@@ -4,8 +4,10 @@ from unittest.mock import MagicMock, patch
 from groceries import gemini_service
 from groceries.gemini_service import (
     MerchantProductInfo,
+    RunningLowSuggestion,
     _parse_merchant_product_list_payload,
     _parse_merchant_product_payload,
+    _parse_running_low_suggestions,
 )
 
 
@@ -119,3 +121,43 @@ def test_fetch_merchant_product_candidates_returns_list(mock_get_client):
     mock_client.models.generate_content.assert_called_once()
     cfg = mock_client.models.generate_content.call_args.kwargs["config"]
     assert "array" in (cfg.system_instruction or "").lower()
+
+
+def test_parse_running_low_suggestions_array():
+    raw = (
+        '[{"product_name": "Leche", "reason": "Consumo frecuente.", "urgency": "alta"}, '
+        '{"product_name": "Pan", "reason": "Ya pasaron días.", "urgency": "invalid"}]'
+    )
+    out = _parse_running_low_suggestions(raw, max_items=10)
+    assert out == [
+        RunningLowSuggestion(
+            product_name="Leche",
+            reason="Consumo frecuente.",
+            urgency="alta",
+        ),
+        RunningLowSuggestion(
+            product_name="Pan",
+            reason="Ya pasaron días.",
+            urgency="media",
+        ),
+    ]
+
+
+@patch("groceries.gemini_service._get_client")
+def test_suggest_running_low_from_purchase_history(mock_get_client):
+    mock_response = MagicMock()
+    mock_response.text = (
+        '[{"product_name": "Arroz", "reason": "Base de comidas.", "urgency": "baja"}]'
+    )
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    out = gemini_service.suggest_running_low_from_purchase_history(
+        history_markdown="## Basket 1\n- Arroz 1 kg",
+    )
+    assert len(out) == 1
+    assert out[0].product_name == "Arroz"
+    mock_client.models.generate_content.assert_called_once()
+    cfg = mock_client.models.generate_content.call_args.kwargs["config"]
+    assert cfg.tools is None
