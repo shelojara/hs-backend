@@ -271,11 +271,6 @@ def basket_total_price(*, basket: Basket) -> Decimal:
     return total
 
 
-def list_associated_products(*, user_id: int) -> list[Product]:
-    """Catalog products with ``user`` = *user_id*, ordered by name."""
-    return list(Product.objects.filter(user_id=user_id).order_by("name", "pk"))
-
-
 def purchase_latest_open_basket(*, user_id: int) -> Basket:
     """Set purchased_at on user's latest open basket."""
     with transaction.atomic():

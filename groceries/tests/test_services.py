@@ -17,7 +17,6 @@ from groceries.services import (
     find_products,
     get_latest_basket_with_products,
     basket_total_price,
-    list_associated_products,
     list_products,
     purchase_latest_open_basket,
     recheck_product_from_gemini,
@@ -579,35 +578,3 @@ def test_basket_operations_isolated_per_user(_mock_gemini):
     assert ba.owner_id == bob.pk
     assert Basket.objects.filter(owner=alice, purchased_at__isnull=True).count() == 1
     assert Basket.objects.filter(owner=bob, purchased_at__isnull=True).count() == 1
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_list_associated_products_orders_by_name(_mock_gemini):
-    user = _user()
-    z = _catalog_product("Zed")
-    a = _catalog_product("Apple")
-    Product.objects.filter(pk__in=[z.pk, a.pk]).update(user_id=user.pk)
-    out = list_associated_products(user_id=user.pk)
-    assert [p.pk for p in out] == [a.pk, z.pk]
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_list_associated_products_filters_by_user(_mock_gemini):
-    alice = _user(username="alice")
-    bob = _user(username="bob")
-    pa = _catalog_product("A")
-    pb = _catalog_product("B")
-    pa.user_id = alice.pk
-    pa.save(update_fields=["user_id"])
-    pb.user_id = bob.pk
-    pb.save(update_fields=["user_id"])
-    assert [x.pk for x in list_associated_products(user_id=alice.pk)] == [pa.pk]
-    assert [x.pk for x in list_associated_products(user_id=bob.pk)] == [pb.pk]
