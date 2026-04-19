@@ -25,8 +25,8 @@ from groceries.schemas import (
     PurchaseBasketResponse,
     RecheckProductRequest,
     RecheckProductResponse,
-    RecheckProductPriceByIdentityRequest,
-    RecheckProductPriceByIdentityResponse,
+    RecheckProductPriceRequest,
+    RecheckProductPriceResponse,
     RunningLowSuggestionSchema,
     SuggestRunningLowRequest,
     SuggestRunningLowResponse,
@@ -121,15 +121,10 @@ def recheck_product(request, payload: RecheckProductRequest):
     return RecheckProductResponse()
 
 
-@router.post(
-    "/v1.Groceries.RecheckProductPriceByIdentity",
-    response=RecheckProductPriceByIdentityResponse,
-)
-def recheck_product_price_by_identity(
-    request, payload: RecheckProductPriceByIdentityRequest
-):
+@router.post("/v1.Groceries.RecheckProductPrice", response=RecheckProductPriceResponse)
+def recheck_product_price(request, payload: RecheckProductPriceRequest):
     try:
-        product = services.recheck_product_price_by_identity(
+        product = services.recheck_product_price(
             product_id=payload.product_id,
             user_id=request.auth.pk,
         )
@@ -137,7 +132,7 @@ def recheck_product_price_by_identity(
         raise HttpError(400, str(exc)) from exc
     except Product.DoesNotExist as exc:
         raise HttpError(404, "Product not found.") from exc
-    return RecheckProductPriceByIdentityResponse(product_id=product.pk)
+    return RecheckProductPriceResponse(product_id=product.pk)
 
 
 @router.post("/v1.Groceries.AddProductToBasket", response=AddProductToBasketResponse)

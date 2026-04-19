@@ -23,7 +23,7 @@ from groceries.services import (
     list_purchased_baskets,
     purchase_latest_open_basket,
     recheck_product_from_gemini,
-    recheck_product_price_by_identity,
+    recheck_product_price,
     suggest_running_low_products,
 )
 
@@ -371,7 +371,7 @@ def test_recheck_product_from_gemini_raises_when_not_owner(_mock_gemini):
         emoji="🥛",
     ),
 )
-def test_recheck_product_price_by_identity_updates_product(_mock_identity):
+def test_recheck_product_price_updates_price_only(_mock_identity):
     owner = _catalog_owner_user()
     p = Product.objects.create(
         name="Old label",
@@ -381,9 +381,12 @@ def test_recheck_product_price_by_identity_updates_product(_mock_identity):
         price=Decimal("100"),
         user=owner,
     )
-    out = recheck_product_price_by_identity(product_id=p.pk, user_id=owner.pk)
+    out = recheck_product_price(product_id=p.pk, user_id=owner.pk)
     assert out.pk == p.pk
-    assert out.name == "Colún Leche 1 L"
+    assert out.name == "Old label"
+    assert out.standard_name == "Leche entera"
+    assert out.brand == "Colún"
+    assert out.format == "1 L"
     assert out.price == Decimal("2700.00")
 
 
@@ -392,7 +395,7 @@ def test_recheck_product_price_by_identity_updates_product(_mock_identity):
     "groceries.services.gemini_service.fetch_merchant_product_info_by_identity",
     return_value=None,
 )
-def test_recheck_product_price_by_identity_noop_when_gemini_returns_none(_mock_identity):
+def test_recheck_product_price_noop_when_gemini_returns_none(_mock_identity):
     owner = _catalog_owner_user()
     p = Product.objects.create(
         name="Keep",
@@ -403,7 +406,7 @@ def test_recheck_product_price_by_identity_noop_when_gemini_returns_none(_mock_i
         user=owner,
     )
     before = (p.name, p.price)
-    out = recheck_product_price_by_identity(product_id=p.pk, user_id=owner.pk)
+    out = recheck_product_price(product_id=p.pk, user_id=owner.pk)
     assert (out.name, out.price) == before
 
 
@@ -412,10 +415,10 @@ def test_recheck_product_price_by_identity_noop_when_gemini_returns_none(_mock_i
     "groceries.services.gemini_service.fetch_merchant_product_info_by_identity",
     return_value=None,
 )
-def test_recheck_product_price_by_identity_raises_when_missing_product(_mock_identity):
+def test_recheck_product_price_raises_when_missing_product(_mock_identity):
     owner = _catalog_owner_user()
     with pytest.raises(Product.DoesNotExist):
-        recheck_product_price_by_identity(product_id=99999, user_id=owner.pk)
+        recheck_product_price(product_id=99999, user_id=owner.pk)
 
 
 @pytest.mark.django_db
@@ -423,7 +426,7 @@ def test_recheck_product_price_by_identity_raises_when_missing_product(_mock_ide
     "groceries.services.gemini_service.fetch_merchant_product_info_by_identity",
     return_value=None,
 )
-def test_recheck_product_price_by_identity_raises_when_not_owner(_mock_identity):
+def test_recheck_product_price_raises_when_not_owner(_mock_identity):
     alice = _user("alice_id")
     bob = _user("bob_id")
     p = Product.objects.create(
@@ -434,11 +437,11 @@ def test_recheck_product_price_by_identity_raises_when_not_owner(_mock_identity)
         user=alice,
     )
     with pytest.raises(Product.DoesNotExist):
-        recheck_product_price_by_identity(product_id=p.pk, user_id=bob.pk)
+        recheck_product_price(product_id=p.pk, user_id=bob.pk)
 
 
 @pytest.mark.django_db
-def test_recheck_product_price_by_identity_raises_when_standard_name_blank():
+def test_recheck_product_price_raises_when_standard_name_blank():
     owner = _catalog_owner_user()
     p = Product.objects.create(
         name="No std",
@@ -448,7 +451,7 @@ def test_recheck_product_price_by_identity_raises_when_standard_name_blank():
         user=owner,
     )
     with pytest.raises(ValueError, match="standard_name"):
-        recheck_product_price_by_identity(product_id=p.pk, user_id=owner.pk)
+        recheck_product_price(product_id=p.pk, user_id=owner.pk)
 
 
 @pytest.mark.django_db

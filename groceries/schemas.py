@@ -81,11 +81,11 @@ class RecheckProductResponse(Schema):
     pass
 
 
-class RecheckProductPriceByIdentityRequest(Schema):
+class RecheckProductPriceRequest(Schema):
     product_id: int
 
 
-class RecheckProductPriceByIdentityResponse(Schema):
+class RecheckProductPriceResponse(Schema):
     product_id: int
 
 

@@ -79,6 +79,11 @@ def _fetch_merchant_product_info_by_identity_or_none(
     return None
 
 
+def _apply_merchant_price_only(product: Product, info: MerchantProductInfo) -> None:
+    product.price = info.price
+    product.save(update_fields=["price"])
+
+
 def _apply_merchant_product_info(
     product: Product,
     info: MerchantProductInfo,
@@ -156,8 +161,10 @@ def recheck_product_from_gemini(*, product_id: int, user_id: int) -> Product:
     return product
 
 
-def recheck_product_price_by_identity(*, product_id: int, user_id: int) -> Product:
-    """Reload merchant-oriented fields from Gemini using *product*'s standard_name, brand, format.
+def recheck_product_price(*, product_id: int, user_id: int) -> Product:
+    """Refresh *price* from Gemini using *product*'s standard_name, brand, format (identity prompt).
+
+    Does not change name, brand, format, emoji, or standard_name.
 
     Raises Product.DoesNotExist when no row matches *product_id* and *user_id*.
     Raises ValueError when stored *standard_name* is blank (identity lookup needs it).
@@ -165,7 +172,7 @@ def recheck_product_price_by_identity(*, product_id: int, user_id: int) -> Produ
     product = Product.objects.get(pk=product_id, user_id=user_id)
     sn = (product.standard_name or "").strip()
     if not sn:
-        msg = "Product has no standard_name; cannot recheck by identity."
+        msg = "Product has no standard_name; cannot recheck price."
         raise ValueError(msg)
     br = (product.brand or "").strip()
     fmt = (product.format or "").strip()
@@ -176,7 +183,7 @@ def recheck_product_price_by_identity(*, product_id: int, user_id: int) -> Produ
         product_id=product.pk,
     )
     if info:
-        _apply_merchant_product_info(product, info)
+        _apply_merchant_price_only(product, info)
     return product
 
 
