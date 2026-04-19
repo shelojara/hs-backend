@@ -23,6 +23,7 @@ from groceries.services import (
     list_purchased_baskets,
     purchase_latest_open_basket,
     recheck_product_from_gemini,
+    recheck_product_price,
     suggest_running_low_products,
 )
 
@@ -356,6 +357,101 @@ def test_recheck_product_from_gemini_raises_when_not_owner(_mock_gemini):
     p = _catalog_product("OwnedByAlice", owner=alice)
     with pytest.raises(Product.DoesNotExist):
         recheck_product_from_gemini(product_id=p.pk, user_id=bob.pk)
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info_by_identity",
+    return_value=MerchantProductInfo(
+        display_name="Colún Leche 1 L",
+        standard_name="Leche entera",
+        brand="Colún",
+        price=Decimal("2700"),
+        format="1 L",
+        emoji="🥛",
+    ),
+)
+def test_recheck_product_price_updates_price_only(_mock_identity):
+    owner = _catalog_owner_user()
+    p = Product.objects.create(
+        name="Old label",
+        standard_name="Leche entera",
+        brand="Colún",
+        format="1 L",
+        price=Decimal("100"),
+        user=owner,
+    )
+    out = recheck_product_price(product_id=p.pk, user_id=owner.pk)
+    assert out.pk == p.pk
+    assert out.name == "Old label"
+    assert out.standard_name == "Leche entera"
+    assert out.brand == "Colún"
+    assert out.format == "1 L"
+    assert out.price == Decimal("2700.00")
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info_by_identity",
+    return_value=None,
+)
+def test_recheck_product_price_noop_when_gemini_returns_none(_mock_identity):
+    owner = _catalog_owner_user()
+    p = Product.objects.create(
+        name="Keep",
+        standard_name="Arroz",
+        brand="",
+        format="500 g",
+        price=Decimal("500"),
+        user=owner,
+    )
+    before = (p.name, p.price)
+    out = recheck_product_price(product_id=p.pk, user_id=owner.pk)
+    assert (out.name, out.price) == before
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info_by_identity",
+    return_value=None,
+)
+def test_recheck_product_price_raises_when_missing_product(_mock_identity):
+    owner = _catalog_owner_user()
+    with pytest.raises(Product.DoesNotExist):
+        recheck_product_price(product_id=99999, user_id=owner.pk)
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info_by_identity",
+    return_value=None,
+)
+def test_recheck_product_price_raises_when_not_owner(_mock_identity):
+    alice = _user("alice_id")
+    bob = _user("bob_id")
+    p = Product.objects.create(
+        name="X",
+        standard_name="Arroz",
+        brand="B",
+        format="1 kg",
+        user=alice,
+    )
+    with pytest.raises(Product.DoesNotExist):
+        recheck_product_price(product_id=p.pk, user_id=bob.pk)
+
+
+@pytest.mark.django_db
+def test_recheck_product_price_raises_when_standard_name_blank():
+    owner = _catalog_owner_user()
+    p = Product.objects.create(
+        name="No std",
+        standard_name="",
+        brand="",
+        format="",
+        user=owner,
+    )
+    with pytest.raises(ValueError, match="standard_name"):
+        recheck_product_price(product_id=p.pk, user_id=owner.pk)
 
 
 @pytest.mark.django_db

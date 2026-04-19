@@ -66,6 +66,54 @@ def test_fetch_merchant_product_info_empty_name_returns_none(mock_get_client):
     mock_get_client.assert_not_called()
 
 
+@patch("groceries.gemini_service._get_client")
+def test_fetch_merchant_product_info_by_identity_empty_standard_name_returns_none(
+    mock_get_client,
+):
+    assert (
+        gemini_service.fetch_merchant_product_info_by_identity(
+            standard_name="   ",
+            brand="Colún",
+            format="1 L",
+        )
+        is None
+    )
+    mock_get_client.assert_not_called()
+
+
+@patch("groceries.gemini_service._get_client")
+def test_fetch_merchant_product_info_by_identity_parses_json(mock_get_client):
+    mock_response = MagicMock()
+    mock_response.text = (
+        '{"display_name": "Colún Leche Entera 1 L", "standard_name": "Leche entera", '
+        '"brand": "Colún", "price": 2590, '
+        '"format": "1 L", '
+        '"emoji": "🥛"}'
+    )
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    out = gemini_service.fetch_merchant_product_info_by_identity(
+        standard_name="Leche entera",
+        brand="Colún",
+        format="1 L",
+    )
+
+    assert out == MerchantProductInfo(
+        display_name="Colún Leche Entera 1 L",
+        standard_name="Leche entera",
+        brand="Colún",
+        price=Decimal("2590.00"),
+        format="1 L",
+        emoji="🥛",
+    )
+    mock_client.models.generate_content.assert_called_once()
+    call_kw = mock_client.models.generate_content.call_args.kwargs
+    assert "Leche entera" in call_kw["contents"]
+    assert "Colún" in call_kw["contents"]
+
+
 def test_parse_plain_text_without_json_returns_none():
     assert _parse_merchant_product_payload("  Solo texto.  ") is None
 

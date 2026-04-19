@@ -53,6 +53,37 @@ def _fetch_merchant_product_info_or_none(
     return None
 
 
+def _fetch_merchant_product_info_by_identity_or_none(
+    *,
+    standard_name: str,
+    brand: str,
+    format: str,
+    product_id: int,
+) -> MerchantProductInfo | None:
+    try:
+        return gemini_service.fetch_merchant_product_info_by_identity(
+            standard_name=standard_name,
+            brand=brand,
+            format=format,
+        )
+    except RuntimeError:
+        logger.warning(
+            "Skipped Gemini merchant product info by identity: GEMINI_API_KEY not set (product id=%s).",
+            product_id,
+        )
+    except Exception:
+        logger.exception(
+            "Gemini merchant product info by identity failed for product id=%s",
+            product_id,
+        )
+    return None
+
+
+def _apply_merchant_price_only(product: Product, info: MerchantProductInfo) -> None:
+    product.price = info.price
+    product.save(update_fields=["price"])
+
+
 def _apply_merchant_product_info(
     product: Product,
     info: MerchantProductInfo,
@@ -127,6 +158,32 @@ def recheck_product_from_gemini(*, product_id: int, user_id: int) -> Product:
     )
     if info:
         _apply_merchant_product_info(product, info)
+    return product
+
+
+def recheck_product_price(*, product_id: int, user_id: int) -> Product:
+    """Refresh *price* from Gemini using *product*'s standard_name, brand, format (identity prompt).
+
+    Does not change name, brand, format, emoji, or standard_name.
+
+    Raises Product.DoesNotExist when no row matches *product_id* and *user_id*.
+    Raises ValueError when stored *standard_name* is blank (identity lookup needs it).
+    """
+    product = Product.objects.get(pk=product_id, user_id=user_id)
+    sn = (product.standard_name or "").strip()
+    if not sn:
+        msg = "Product has no standard_name; cannot recheck price."
+        raise ValueError(msg)
+    br = (product.brand or "").strip()
+    fmt = (product.format or "").strip()
+    info = _fetch_merchant_product_info_by_identity_or_none(
+        standard_name=sn,
+        brand=br,
+        format=fmt,
+        product_id=product.pk,
+    )
+    if info:
+        _apply_merchant_price_only(product, info)
     return product
 
 

@@ -81,6 +81,14 @@ class RecheckProductResponse(Schema):
     pass
 
 
+class RecheckProductPriceRequest(Schema):
+    product_id: int
+
+
+class RecheckProductPriceResponse(Schema):
+    product_id: int
+
+
 class AddProductToBasketRequest(Schema):
     product_id: int
 
