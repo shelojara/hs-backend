@@ -55,6 +55,7 @@ CSRF_TRUSTED_ORIGINS = _csrf_trusted_origins()
 
 INSTALLED_APPS = [
     "corsheaders",
+    "waffle",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -75,6 +76,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "waffle.middleware.WaffleMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -182,6 +184,9 @@ JWT_SIGNING_KEY = JWT_SECRET_KEY
 JWT_ACCESS_TOKEN_LIFETIME_SECONDS = int(
     os.getenv("JWT_ACCESS_TOKEN_LIFETIME_SECONDS", str(7 * 24 * 3600))
 )
+
+# django-waffle — feature flags, switches, samples (admin + `flag_is_active` / templates)
+WAFFLE_SECURE = not DEBUG
 
 # django-q2 task queue — ORM broker (uses the default SQLite database)
 Q_CLUSTER = {
