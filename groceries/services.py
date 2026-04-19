@@ -275,7 +275,11 @@ def basket_total_price(*, basket: Basket) -> Decimal:
 
 
 def associate_products_with_user(*, user_id: int, product_ids: list[int]) -> None:
-    """Replace user's associated catalog products. Unknown ids omitted. Empty list clears all."""
+    """Replace caller's associated products. Each product links to at most one user.
+
+    Unknown *product_ids* omitted. Empty list clears caller's associations.
+    Products in the new set are assigned to this user (reassigning from others if needed).
+    """
     if product_ids:
         existing_ids = list(
             Product.objects.filter(pk__in=product_ids).values_list("pk", flat=True)
@@ -283,14 +287,19 @@ def associate_products_with_user(*, user_id: int, product_ids: list[int]) -> Non
     else:
         existing_ids = []
     with transaction.atomic():
-        user = User.objects.select_for_update().get(pk=user_id)
-        user.associated_products.set(existing_ids)
+        User.objects.select_for_update().get(pk=user_id)
+        Product.objects.filter(associated_user_id=user_id).exclude(
+            pk__in=existing_ids
+        ).update(associated_user=None)
+        if existing_ids:
+            Product.objects.filter(pk__in=existing_ids).update(associated_user_id=user_id)
 
 
 def list_associated_products(*, user_id: int) -> list[Product]:
-    """Catalog products associated with *user*, ordered by name."""
-    user = User.objects.get(pk=user_id)
-    return list(user.associated_products.order_by("name", "pk"))
+    """Catalog products with ``associated_user`` = *user*, ordered by name."""
+    return list(
+        Product.objects.filter(associated_user_id=user_id).order_by("name", "pk")
+    )
 
 
 def purchase_latest_open_basket(*, user_id: int) -> Basket:

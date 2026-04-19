@@ -18,10 +18,12 @@ class Product(models.Model):
     format = models.CharField(max_length=255, blank=True, default="")
     emoji = models.CharField(max_length=64, blank=True, default="")
     is_custom = models.BooleanField(default=False)
-    associated_users = models.ManyToManyField(
+    associated_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        related_name="associated_products",
+        on_delete=models.SET_NULL,
+        null=True,
         blank=True,
+        related_name="associated_products",
     )
 
     class Meta:

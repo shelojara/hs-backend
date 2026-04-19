@@ -593,16 +593,19 @@ def test_associate_products_with_user_replaces_and_omits_unknown(_mock_gemini):
     b = _catalog_product("B")
     c = _catalog_product("C")
     associate_products_with_user(user_id=user.pk, product_ids=[a.pk, 99999])
-    assert list(user.associated_products.order_by("name").values_list("pk", flat=True)) == [
-        a.pk,
-    ]
+    assert list(
+        Product.objects.filter(associated_user_id=user.pk)
+        .order_by("name")
+        .values_list("pk", flat=True)
+    ) == [a.pk]
     associate_products_with_user(user_id=user.pk, product_ids=[c.pk, b.pk])
-    assert list(user.associated_products.order_by("name").values_list("pk", flat=True)) == [
-        b.pk,
-        c.pk,
-    ]
+    assert list(
+        Product.objects.filter(associated_user_id=user.pk)
+        .order_by("name")
+        .values_list("pk", flat=True)
+    ) == [b.pk, c.pk]
     associate_products_with_user(user_id=user.pk, product_ids=[])
-    assert user.associated_products.count() == 0
+    assert Product.objects.filter(associated_user_id=user.pk).count() == 0
 
 
 @pytest.mark.django_db
@@ -614,7 +617,7 @@ def test_list_associated_products_orders_by_name(_mock_gemini):
     user = _user()
     z = _catalog_product("Zed")
     a = _catalog_product("Apple")
-    user.associated_products.add(z, a)
+    Product.objects.filter(pk__in=[z.pk, a.pk]).update(associated_user_id=user.pk)
     out = list_associated_products(user_id=user.pk)
     assert [p.pk for p in out] == [a.pk, z.pk]
 
@@ -641,3 +644,6 @@ def test_associated_products_isolated_per_user(_mock_gemini):
     associate_products_with_user(user_id=alice.pk, product_ids=[p.pk])
     assert list_associated_products(user_id=bob.pk) == []
     assert [x.pk for x in list_associated_products(user_id=alice.pk)] == [p.pk]
+    associate_products_with_user(user_id=bob.pk, product_ids=[p.pk])
+    assert list_associated_products(user_id=alice.pk) == []
+    assert [x.pk for x in list_associated_products(user_id=bob.pk)] == [p.pk]
