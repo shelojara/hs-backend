@@ -363,6 +363,18 @@ wheels = [
 ]
 
 [[package]]
+name = "django-flags"
+version = "5.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/72/e7/da3a2e006a670c4c275fa0abd15ab4715576bb933d9e97ae4f9477cd8a88/django_flags-5.2.0.tar.gz", hash = "sha256:a3aee5e0d11e24e35f5ae4a423d52cad721f639181c1b1251e0148d8530a3f81", size = 246806, upload-time = "2026-02-10T16:51:57.505Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/e6/94dcb6cea2ede9adcd406f48ff04ce80bdb5a919306f1aded8d84e27f807/django_flags-5.2.0-py3-none-any.whl", hash = "sha256:aa22543410f68a4082c576f3be469ea67a51c933f8a43eb8b10f6236f158e17e", size = 42744, upload-time = "2026-02-10T16:51:56.386Z" },
+]
+
+[[package]]
 name = "django-ninja"
 version = "1.6.2"
 source = { registry = "https://pypi.org/simple" }
@@ -482,6 +494,7 @@ dependencies = [
     { name = "croniter" },
     { name = "django" },
     { name = "django-cors-headers" },
+    { name = "django-flags" },
     { name = "django-ninja" },
     { name = "django-q2" },
     { name = "google-genai" },
@@ -503,6 +516,7 @@ requires-dist = [
     { name = "croniter", specifier = ">=2.0.1,<3.0.0" },
     { name = "django", specifier = ">=6.0.4" },
     { name = "django-cors-headers", specifier = ">=4.9.0" },
+    { name = "django-flags", specifier = ">=5.2.0" },
     { name = "django-ninja", specifier = ">=1.6.2" },
     { name = "django-q2", specifier = ">=1.9.0" },
     { name = "google-genai", specifier = ">=1.72.0" },

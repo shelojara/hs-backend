@@ -55,6 +55,7 @@ CSRF_TRUSTED_ORIGINS = _csrf_trusted_origins()
 
 INSTALLED_APPS = [
     "corsheaders",
+    "flags",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -182,6 +183,9 @@ JWT_SIGNING_KEY = JWT_SECRET_KEY
 JWT_ACCESS_TOKEN_LIFETIME_SECONDS = int(
     os.getenv("JWT_ACCESS_TOKEN_LIFETIME_SECONDS", str(7 * 24 * 3600))
 )
+
+# django-flags — https://cfpb.github.io/django-flags/
+FLAGS: dict[str, list] = {}
 
 # django-q2 task queue — ORM broker (uses the default SQLite database)
 Q_CLUSTER = {
