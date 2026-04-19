@@ -58,6 +58,7 @@ class CreateProductFromCandidateRequest(Schema):
     price: Decimal = Decimal("0")
     format: str = ""
     emoji: str = ""
+    is_custom: bool = False
 
 
 class CreateProductFromCandidateResponse(Schema):
@@ -79,6 +80,7 @@ class ProductSchema(Schema):
     price: Decimal
     format: str
     emoji: str
+    is_custom: bool
 
 
 class ListProductsResponse(Schema):

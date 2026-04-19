@@ -18,6 +18,7 @@ class Product(models.Model):
     )
     format = models.CharField(max_length=255, blank=True, default="")
     emoji = models.CharField(max_length=64, blank=True, default="")
+    is_custom = models.BooleanField(default=False)
 
     class Meta:
         ordering = ("name",)

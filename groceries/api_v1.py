@@ -83,6 +83,7 @@ def create_product_from_candidate(request, payload: CreateProductFromCandidateRe
         product_id = services.create_product_from_merchant_info(
             query_name=payload.original_name,
             info=info,
+            is_custom=payload.is_custom,
         )
     except ProductNameConflict as exc:
         raise HttpError(409, str(exc)) from exc
@@ -112,6 +113,7 @@ def list_products(request, payload: ListProductsRequest):
                 price=p.price,
                 format=p.format,
                 emoji=p.emoji,
+                is_custom=p.is_custom,
             )
             for p in items
         ],
@@ -190,6 +192,7 @@ def get_latest_basket(request, payload: GetLatestBasketRequest):
                     price=p.price,
                     format=p.format,
                     emoji=p.emoji,
+                    is_custom=p.is_custom,
                 )
                 for p in basket.products.all()
             ],
