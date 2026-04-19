@@ -34,9 +34,9 @@ router = Router(auth=protected_api_auth, tags=["Groceries"])
 
 
 @router.post("/v1.Groceries.FindProducts", response=FindProductsResponse)
-def find_products(request, payload: FindProductsRequest):
+def find_product_candidates(request, payload: FindProductsRequest):
     try:
-        items = services.find_products(query=payload.query)
+        items = services.find_product_candidates(query=payload.query)
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     return FindProductsResponse(

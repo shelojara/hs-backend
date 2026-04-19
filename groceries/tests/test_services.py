@@ -14,7 +14,7 @@ from groceries.services import (
     add_product_to_basket,
     create_product_from_candidate,
     delete_product_from_basket,
-    find_products,
+    find_product_candidates,
     get_latest_basket_with_products,
     basket_total_price,
     list_products,
@@ -58,9 +58,9 @@ def _catalog_product(name: str, *, owner=None) -> Product:
         ),
     ],
 )
-def test_find_products_returns_gemini_rows_no_db(_mock_candidates):
+def test_find_product_candidates_returns_gemini_rows_no_db(_mock_candidates):
     assert Product.objects.count() == 0
-    rows = find_products(query="  leche  ")
+    rows = find_product_candidates(query="  leche  ")
     assert len(rows) == 1
     assert rows[0].display_name == "Colún Leche Entera 1 L"
     assert Product.objects.count() == 0
@@ -71,14 +71,14 @@ def test_find_products_returns_gemini_rows_no_db(_mock_candidates):
     "groceries.services.gemini_service.fetch_merchant_product_candidates",
     side_effect=RuntimeError("no key"),
 )
-def test_find_products_returns_empty_when_gemini_unconfigured(_mock_candidates):
-    assert find_products(query="milk") == []
+def test_find_product_candidates_returns_empty_when_gemini_unconfigured(_mock_candidates):
+    assert find_product_candidates(query="milk") == []
 
 
 @pytest.mark.django_db
-def test_find_products_rejects_blank_query():
+def test_find_product_candidates_rejects_blank_query():
     with pytest.raises(ValueError, match="empty"):
-        find_products(query="   ")
+        find_product_candidates(query="   ")
 
 
 @pytest.mark.django_db
