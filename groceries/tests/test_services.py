@@ -25,7 +25,7 @@ from groceries.services import (
     purchase_latest_open_basket,
     recheck_product_price,
     save_whiteboard,
-    sync_running_low_flags_for_all_users,
+    running_low_sync_user_ids,
     sync_running_low_flags_for_user,
     update_product,
 )
@@ -939,17 +939,14 @@ def test_sync_running_low_clears_when_gemini_unconfigured(
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-@patch("groceries.services.sync_running_low_flags_for_user")
-def test_sync_running_low_for_all_users_calls_per_user(mock_one, _mock_info):
+def test_running_low_sync_user_ids_distinct_owners(_mock_info):
     a = _user(username="rl_a")
     b = _user(username="rl_b")
     _catalog_product("p", owner=a)
+    _catalog_product("p2", owner=a)
     _catalog_product("q", owner=b)
-    n = sync_running_low_flags_for_all_users()
-    assert n == 2
-    assert mock_one.call_count == 2
-    uids = {c.kwargs["user_id"] for c in mock_one.call_args_list}
-    assert uids == {a.pk, b.pk}
+    uids = running_low_sync_user_ids()
+    assert sorted(uids) == sorted([a.pk, b.pk])
 
 
 @pytest.mark.django_db

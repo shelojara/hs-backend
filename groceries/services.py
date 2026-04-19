@@ -404,14 +404,13 @@ def sync_running_low_flags_for_user(*, user_id: int) -> None:
     Product.objects.filter(user_id=user_id, pk__in=pids).update(running_low=True)
 
 
-def sync_running_low_flags_for_all_users() -> int:
-    """Run :func:`sync_running_low_flags_for_user` for every user that has at least one product."""
-    user_ids = Product.objects.values_list("user_id", flat=True).distinct()
-    n = 0
-    for uid in user_ids:
-        sync_running_low_flags_for_user(user_id=uid)
-        n += 1
-    return n
+def running_low_sync_user_ids() -> list[int]:
+    """Distinct user ids that own at least one product (for daily running-low queue)."""
+    return list(
+        Product.objects.order_by()
+        .values_list("user_id", flat=True)
+        .distinct(),
+    )
 
 
 def save_whiteboard(*, user_id: int, lines: list[WhiteboardLineSchema]) -> None:
