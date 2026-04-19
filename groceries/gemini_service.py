@@ -38,7 +38,10 @@ RUNNING_LOW_SYSTEM_INSTRUCTION = (
 
 
 _MERCHANT_PRODUCT_JSON_KEYS_FIND = (
-    "same keys and rules as for a single-product response: "
+    "same keys and rules as for a single-product response, plus one extra key: "
+    '"merchant" (string: retail chain or store name whose Chile site or listing you used, e.g. "Lider", "Jumbo"; '
+    "Spanish Chile when appropriate; empty if unknown), "
+    "and otherwise: "
     '"display_name" (string: best retail-style product title for lists: proper capitalization, '
     "brand + product line + key format as on shelf or the merchant site; Spanish Chile; empty if unknown), "
     '"standard_name" (string: generic product type for grouping across brands and formats: Spanish Chile; '
@@ -151,6 +154,7 @@ class MerchantProductInfo:
     price: Decimal
     format: str
     emoji: str
+    merchant: str = ""
 
 
 @dataclass(frozen=True)
@@ -246,6 +250,7 @@ def _merchant_product_info_from_mapping(data: dict[str, Any]) -> MerchantProduct
         price=_parse_price_value(data.get("price")),
         format=_normalize_field(data.get("format"), 255),
         emoji=_normalize_field(data.get("emoji"), 64),
+        merchant=_normalize_field(data.get("merchant"), 255),
     )
 
 

@@ -66,6 +66,7 @@ def _catalog_product(name: str, *, owner=None) -> Product:
             price=Decimal("2590"),
             format="1 L",
             emoji="🥛",
+            merchant="Lider",
         ),
     ],
 )
@@ -75,6 +76,7 @@ def test_find_product_candidates_returns_gemini_rows_no_db(_mock_candidates):
     rows = find_product_candidates(query="  leche  ", user_id=u.pk)
     assert len(rows) == 1
     assert rows[0].display_name == "Colún Leche Entera 1 L"
+    assert rows[0].merchant == "Lider"
     assert Product.objects.count() == 0
 
 
@@ -152,6 +154,7 @@ def test_create_product_from_candidate_persists_without_gemini(_mock_gemini):
             price=Decimal("2590"),
             format="1 L",
             emoji="🥛",
+            merchant="Lider",
         ),
         user_id=u.pk,
     )
@@ -391,6 +394,7 @@ def test_list_products_rejects_cursor_from_different_user_context(_mock_gemini):
         price=Decimal("2700"),
         format="1 L",
         emoji="🥛",
+        merchant="",
     ),
 )
 def test_recheck_product_price_updates_price_only(_mock_identity):

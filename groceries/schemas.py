@@ -43,6 +43,7 @@ class ProductCandidateSchema(Schema):
     price: Decimal
     format: str
     emoji: str
+    merchant: str = ""
 
 
 class FindProductCandidatesResponse(Schema):
