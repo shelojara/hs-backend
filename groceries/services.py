@@ -177,12 +177,14 @@ def list_products(
 ) -> tuple[list[Product], str | None]:
     """List products with cursor pagination; optional case-insensitive substring search (ILIKE).
 
+    Ordered by purchase count (highest first), then name, then primary key.
+
     Excludes products already in *user_id*'s current open basket (same basket as add/remove).
     """
     lim = _clamp_limit(limit)
     q = (search or "").strip()
 
-    qs = Product.objects.all().order_by("name", "pk")
+    qs = Product.objects.all().order_by("-purchase_count", "name", "pk")
     if q:
         qs = qs.filter(name__icontains=q)
 
@@ -196,6 +198,7 @@ def list_products(
         payload = _decode_cursor(cursor)
         try:
             cq = payload["q"]
+            c_count = int(payload["c"])
             cname = payload["n"]
             cpk = int(payload["i"])
             cu = payload.get("u")
@@ -209,7 +212,11 @@ def list_products(
             raise InvalidProductListCursorError(
                 "Cursor does not match request parameters."
             )
-        qs = qs.filter(Q(name__gt=cname) | Q(name=cname, pk__gt=cpk))
+        qs = qs.filter(
+            Q(purchase_count__lt=c_count)
+            | Q(purchase_count=c_count, name__gt=cname)
+            | Q(purchase_count=c_count, name=cname, pk__gt=cpk)
+        )
 
     rows = list(qs[: lim + 1])
     has_more = len(rows) > lim
@@ -219,7 +226,13 @@ def list_products(
     if has_more and page:
         last = page[-1]
         next_cursor = _encode_cursor(
-            {"q": q, "n": last.name, "i": last.pk, "u": user_id}
+            {
+                "q": q,
+                "c": last.purchase_count,
+                "n": last.name,
+                "i": last.pk,
+                "u": user_id,
+            }
         )
     return page, next_cursor
 
