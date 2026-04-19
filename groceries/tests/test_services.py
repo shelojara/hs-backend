@@ -157,13 +157,14 @@ def test_create_product_from_candidate_assigns_user(_mock_gemini):
     return_value=None,
 )
 def test_list_products_orders_by_name_and_paginates(_mock_gemini):
+    owner = _catalog_owner_user()
     _catalog_product("Apple")
     _catalog_product("Banana")
     _catalog_product("Carrot")
-    page1, cur = list_products(limit=2)
+    page1, cur = list_products(user_id=owner.pk, limit=2)
     assert [p.name for p in page1] == ["Apple", "Banana"]
     assert cur is not None
-    page2, cur2 = list_products(limit=2, cursor=cur)
+    page2, cur2 = list_products(user_id=owner.pk, limit=2, cursor=cur)
     assert [p.name for p in page2] == ["Carrot"]
     assert cur2 is None
 
@@ -174,10 +175,11 @@ def test_list_products_orders_by_name_and_paginates(_mock_gemini):
     return_value=None,
 )
 def test_list_products_search_icontains_ordered_by_name(_mock_gemini):
+    owner = _catalog_owner_user()
     _catalog_product("Oat milk")
     _catalog_product("Whole oat flakes")
     _catalog_product("Rice milk")
-    items, _ = list_products(search="oat", limit=10)
+    items, _ = list_products(user_id=owner.pk, search="oat", limit=10)
     assert [i.name for i in items] == ["Oat milk", "Whole oat flakes"]
 
 
@@ -187,13 +189,14 @@ def test_list_products_search_icontains_ordered_by_name(_mock_gemini):
     return_value=None,
 )
 def test_list_products_search_paginates_with_cursor(_mock_gemini):
+    owner = _catalog_owner_user()
     _catalog_product("Oat milk")
     _catalog_product("Oat bar")
     _catalog_product("Whole oat flakes")
-    first, nxt = list_products(search="oat", limit=1)
+    first, nxt = list_products(user_id=owner.pk, search="oat", limit=1)
     assert len(first) == 1
     assert nxt is not None
-    second, nxt2 = list_products(search="oat", limit=1, cursor=nxt)
+    second, nxt2 = list_products(user_id=owner.pk, search="oat", limit=1, cursor=nxt)
     assert len(second) == 1
     assert second[0].name != first[0].name
     assert nxt2 is not None
@@ -205,18 +208,50 @@ def test_list_products_search_paginates_with_cursor(_mock_gemini):
     return_value=None,
 )
 def test_list_products_rejects_mismatched_cursor(_mock_gemini):
+    owner = _catalog_owner_user()
     _catalog_product("X")
     _catalog_product("Y")
-    _, cur = list_products(limit=1)
+    _, cur = list_products(user_id=owner.pk, limit=1)
     assert cur is not None
     with pytest.raises(InvalidProductListCursorError):
-        list_products(search="x", cursor=cur)
+        list_products(user_id=owner.pk, search="x", cursor=cur)
 
 
 @pytest.mark.django_db
 def test_list_products_rejects_invalid_cursor():
+    owner = _catalog_owner_user()
     with pytest.raises(InvalidProductListCursorError):
-        list_products(cursor="not-a-token")
+        list_products(user_id=owner.pk, cursor="not-a-token")
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_list_products_excludes_products_in_open_basket(_mock_gemini):
+    u = _user()
+    p_in = _catalog_product("In cart")
+    p_out = _catalog_product("Not in cart")
+    add_product_to_basket(product_id=p_in.pk, user_id=u.pk)
+    items, _ = list_products(user_id=u.pk, limit=10)
+    assert [i.pk for i in items] == [p_out.pk]
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_list_products_rejects_cursor_from_different_user_context(_mock_gemini):
+    alice = _user(username="alice")
+    bob = _user(username="bob")
+    _catalog_product("A")
+    _catalog_product("B")
+    _, cur = list_products(user_id=alice.pk, limit=1)
+    assert cur is not None
+    with pytest.raises(InvalidProductListCursorError):
+        list_products(user_id=bob.pk, limit=1, cursor=cur)
 
 
 @pytest.mark.django_db
