@@ -39,13 +39,32 @@ class Basket(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     purchased_at = models.DateTimeField(null=True, blank=True)
-    products = models.ManyToManyField(Product, related_name="baskets", blank=True)
+    products = models.ManyToManyField(
+        Product,
+        related_name="baskets",
+        blank=True,
+        through="BasketProduct",
+    )
 
     class Meta:
         ordering = ("-created_at",)
 
     def __str__(self) -> str:
         return f"Basket({self.pk}) at {self.created_at}"
+
+
+class BasketProduct(models.Model):
+    """Per-line flag: include in checkout (``purchase``) or defer to next open basket."""
+
+    basket = models.ForeignKey(Basket, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    purchase = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ("basket", "product")
+
+    def __str__(self) -> str:
+        return f"BasketProduct(basket={self.basket_id}, product={self.product_id}, purchase={self.purchase})"
 
 
 class Whiteboard(models.Model):

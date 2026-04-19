@@ -6,6 +6,7 @@ from groceries import services
 from groceries.schemas import (
     AddProductToBasketRequest,
     AddProductToBasketResponse,
+    BasketLineSchema,
     BasketSchema,
     CreateMerchantRequest,
     CreateMerchantResponse,
@@ -32,6 +33,8 @@ from groceries.schemas import (
     ProductSchema,
     PurchaseBasketRequest,
     PurchaseBasketResponse,
+    SetProductPurchaseInBasketRequest,
+    SetProductPurchaseInBasketResponse,
     RecheckProductPriceRequest,
     RecheckProductPriceResponse,
     SaveWhiteboardRequest,
@@ -48,6 +51,21 @@ from groceries.services import (
 )
 
 router = Router(auth=protected_api_auth, tags=["Groceries"])
+
+
+def _product_schema(p: Product) -> ProductSchema:
+    return ProductSchema(
+        product_id=p.pk,
+        name=p.name,
+        standard_name=p.standard_name,
+        brand=p.brand,
+        price=p.price,
+        format=p.format,
+        emoji=p.emoji,
+        is_custom=p.is_custom,
+        purchase_count=p.purchase_count,
+        running_low=p.running_low,
+    )
 
 
 @router.post(
@@ -184,6 +202,30 @@ def delete_product_from_basket(request, payload: DeleteProductFromBasketRequest)
     return DeleteProductFromBasketResponse()
 
 
+@router.post(
+    "/v1.Groceries.SetProductPurchaseInBasket",
+    response=SetProductPurchaseInBasketResponse,
+)
+def set_product_purchase_in_basket(
+    request,
+    payload: SetProductPurchaseInBasketRequest,
+):
+    user = request.auth
+    try:
+        basket = services.set_product_purchase_in_open_basket(
+            product_id=payload.product_id,
+            user_id=user.pk,
+            purchase=payload.purchase,
+        )
+    except Product.DoesNotExist as exc:
+        raise HttpError(404, "Product not found.") from exc
+    except NoOpenBasketError as exc:
+        raise HttpError(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return SetProductPurchaseInBasketResponse(basket_id=basket.pk)
+
+
 @router.post("/v1.Groceries.PurchaseBasket", response=PurchaseBasketResponse)
 def purchase_basket(request, payload: PurchaseBasketRequest):
     user = request.auth
@@ -206,19 +248,13 @@ def get_current_basket(request, payload: GetCurrentBasketRequest):
             created_at=basket.created_at,
             purchased_at=basket.purchased_at,
             products=[
-                ProductSchema(
-                    product_id=p.pk,
-                    name=p.name,
-                    standard_name=p.standard_name,
-                    brand=p.brand,
-                    price=p.price,
-                    format=p.format,
-                    emoji=p.emoji,
-                    is_custom=p.is_custom,
-                    purchase_count=p.purchase_count,
-                    running_low=p.running_low,
+                BasketLineSchema(
+                    purchase=line_purchase,
+                    product=_product_schema(p),
                 )
-                for p in basket.products.all()
+                for p, line_purchase in services.basket_product_lines(
+                    basket_id=basket.pk,
+                )
             ],
         ),
     )
@@ -237,19 +273,13 @@ def list_purchased_baskets(request, payload: ListPurchasedBasketsRequest):
                 created_at=basket.created_at,
                 purchased_at=basket.purchased_at,
                 products=[
-                    ProductSchema(
-                        product_id=p.pk,
-                        name=p.name,
-                        standard_name=p.standard_name,
-                        brand=p.brand,
-                        price=p.price,
-                        format=p.format,
-                        emoji=p.emoji,
-                        is_custom=p.is_custom,
-                        purchase_count=p.purchase_count,
-                        running_low=p.running_low,
+                    BasketLineSchema(
+                        purchase=line_purchase,
+                        product=_product_schema(p),
                     )
-                    for p in basket.products.all()
+                    for p, line_purchase in services.basket_product_lines(
+                        basket_id=basket.pk,
+                    )
                 ],
             )
             for basket in rows

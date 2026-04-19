@@ -19,7 +19,6 @@ class ProductAdmin(admin.ModelAdmin):
 @admin.register(Basket)
 class BasketAdmin(admin.ModelAdmin):
     list_display = ("id", "owner", "created_at", "purchased_at")
-    filter_horizontal = ("products",)
 
 
 @admin.register(Merchant)
