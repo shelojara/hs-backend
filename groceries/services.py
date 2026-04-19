@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from groceries import gemini_service
 from groceries.gemini_service import MerchantProductInfo, RunningLowSuggestion
-from groceries.models import Basket, Product, UserWhiteboard
+from groceries.models import Basket, Product, Whiteboard
 from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 
 logger = logging.getLogger(__name__)
@@ -383,7 +383,7 @@ def suggest_running_low_products(*, user_id: int) -> list[RunningLowSuggestion]:
 def save_whiteboard(*, user_id: int, lines: list[WhiteboardLineSchema]) -> None:
     """Upsert single whiteboard JSON for user."""
     payload = [line.model_dump() for line in lines]
-    UserWhiteboard.objects.update_or_create(
+    Whiteboard.objects.update_or_create(
         user_id=user_id,
         defaults={"data": payload},
     )
@@ -392,7 +392,7 @@ def save_whiteboard(*, user_id: int, lines: list[WhiteboardLineSchema]) -> None:
 def get_whiteboard(*, user_id: int) -> list[WhiteboardLineSchema]:
     """Return persisted lines, or empty list if never saved."""
     try:
-        row = UserWhiteboard.objects.get(user_id=user_id)
-    except UserWhiteboard.DoesNotExist:
+        row = Whiteboard.objects.get(user_id=user_id)
+    except Whiteboard.DoesNotExist:
         return []
     return [WhiteboardLineSchema.model_validate(item) for item in row.data]

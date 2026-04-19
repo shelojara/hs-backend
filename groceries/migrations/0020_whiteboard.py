@@ -14,7 +14,7 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name="UserWhiteboard",
+            name="Whiteboard",
             fields=[
                 (
                     "id",
@@ -37,7 +37,7 @@ class Migration(migrations.Migration):
                 ),
             ],
             options={
-                "verbose_name": "user whiteboard",
+                "verbose_name": "whiteboard",
             },
         ),
     ]
