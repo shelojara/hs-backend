@@ -683,7 +683,7 @@ def test_suggest_running_low_calls_gemini_with_history(mock_suggest, _mock_info)
         RunningLowSuggestion(
             product_name="Leche",
             reason="Última compra hace tiempo.",
-            urgency="media",
+            urgency="medium",
         ),
     ]
     user = _user(username="runlow")

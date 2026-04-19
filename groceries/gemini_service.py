@@ -16,7 +16,7 @@ FIND_PRODUCTS_MAX = 10
 RUNNING_LOW_MAX_SUGGESTIONS = 15
 
 RUNNING_LOW_SYSTEM_INSTRUCTION = (
-    "You help a household grocery shopper in Chile. "
+    "You help a household grocery shopper anywhere in the world. "
     "You receive purchase history: up to 5 completed shopping baskets, newest first, "
     "each with purchase timestamp and product lines (emoji, name, optional format/size). "
     "Infer which items the shopper is likely running low on soon, based on: "
@@ -25,9 +25,10 @@ RUNNING_LOW_SYSTEM_INSTRUCTION = (
     "This is a rough heuristic — be practical and concise. "
     "Respond with a single JSON array only — no markdown, no code fences, no text before or after. "
     f"At most {RUNNING_LOW_MAX_SUGGESTIONS} elements. Each element is one JSON object with keys: "
-    '"product_name" (string: short label in Spanish Chile, e.g. the standard product type or line name), '
+    '"product_name" (string: short label in the same language as the product lines when possible, '
+    "e.g. the standard product type or line name), "
     '"reason" (string: one short sentence why it may run out soon), '
-    '"urgency" (string: one of "alta", "media", "baja"). '
+    '"urgency" (string: one of \"high\", \"medium\", \"low\"). '
     "If there is not enough history to infer anything useful, return []. "
     "Do not invent products that never appear in the history; only refer to types or lines similar "
     "to what was bought."
@@ -305,7 +306,8 @@ def fetch_merchant_product_candidates(
     return _parse_merchant_product_list_payload(response.text, max_items=lim)
 
 
-_URGENCY_OK = frozenset({"alta", "media", "baja"})
+_URGENCY_OK = frozenset({"high", "medium", "low"})
+_LEGACY_URGENCY = {"alta": "high", "media": "medium", "baja": "low"}
 
 
 def _parse_running_low_suggestions(
@@ -344,7 +346,12 @@ def _parse_running_low_suggestions(
         if not name or not reason:
             continue
         u_raw = str(item.get("urgency") or "").strip().lower()
-        urgency = u_raw if u_raw in _URGENCY_OK else "media"
+        if u_raw in _LEGACY_URGENCY:
+            urgency = _LEGACY_URGENCY[u_raw]
+        elif u_raw in _URGENCY_OK:
+            urgency = u_raw
+        else:
+            urgency = "medium"
         out.append(
             RunningLowSuggestion(
                 product_name=name,

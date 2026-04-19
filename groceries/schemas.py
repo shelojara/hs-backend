@@ -135,7 +135,7 @@ class SuggestRunningLowRequest(Schema):
 class RunningLowSuggestionSchema(Schema):
     product_name: str
     reason: str
-    urgency: str
+    urgency: str  # high | medium | low
 
 
 class SuggestRunningLowResponse(Schema):

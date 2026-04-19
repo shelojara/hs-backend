@@ -125,7 +125,7 @@ def test_fetch_merchant_product_candidates_returns_list(mock_get_client):
 
 def test_parse_running_low_suggestions_array():
     raw = (
-        '[{"product_name": "Leche", "reason": "Consumo frecuente.", "urgency": "alta"}, '
+        '[{"product_name": "Leche", "reason": "Consumo frecuente.", "urgency": "high"}, '
         '{"product_name": "Pan", "reason": "Ya pasaron días.", "urgency": "invalid"}]'
     )
     out = _parse_running_low_suggestions(raw, max_items=10)
@@ -133,21 +133,30 @@ def test_parse_running_low_suggestions_array():
         RunningLowSuggestion(
             product_name="Leche",
             reason="Consumo frecuente.",
-            urgency="alta",
+            urgency="high",
         ),
         RunningLowSuggestion(
             product_name="Pan",
             reason="Ya pasaron días.",
-            urgency="media",
+            urgency="medium",
         ),
     ]
+
+
+def test_parse_running_low_suggestions_maps_legacy_spanish_urgency():
+    raw = (
+        '[{"product_name": "X", "reason": "Y.", "urgency": "alta"}, '
+        '{"product_name": "Z", "reason": "W.", "urgency": "baja"}]'
+    )
+    out = _parse_running_low_suggestions(raw, max_items=10)
+    assert [x.urgency for x in out] == ["high", "low"]
 
 
 @patch("groceries.gemini_service._get_client")
 def test_suggest_running_low_from_purchase_history(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = (
-        '[{"product_name": "Arroz", "reason": "Base de comidas.", "urgency": "baja"}]'
+        '[{"product_name": "Arroz", "reason": "Base de comidas.", "urgency": "low"}]'
     )
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = mock_response
