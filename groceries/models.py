@@ -18,6 +18,11 @@ class Product(models.Model):
     format = models.CharField(max_length=255, blank=True, default="")
     emoji = models.CharField(max_length=64, blank=True, default="")
     is_custom = models.BooleanField(default=False)
+    associated_users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name="associated_products",
+        blank=True,
+    )
 
     class Meta:
         ordering = ("name",)

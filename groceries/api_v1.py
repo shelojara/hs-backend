@@ -7,6 +7,8 @@ from groceries.gemini_service import MerchantProductInfo
 from groceries.schemas import (
     AddProductToBasketRequest,
     AddProductToBasketResponse,
+    AssociateProductsWithUserRequest,
+    AssociateProductsWithUserResponse,
     BasketSchema,
     DeleteProductFromBasketRequest,
     DeleteProductFromBasketResponse,
@@ -16,6 +18,8 @@ from groceries.schemas import (
     FindProductsResponse,
     GetLatestBasketRequest,
     GetLatestBasketResponse,
+    ListAssociatedProductsRequest,
+    ListAssociatedProductsResponse,
     ListProductsRequest,
     ListProductsResponse,
     ProductCandidateSchema,
@@ -155,6 +159,43 @@ def purchase_basket(request, payload: PurchaseBasketRequest):
     except NoOpenBasketError as exc:
         raise HttpError(404, str(exc)) from exc
     return PurchaseBasketResponse(basket_id=basket.pk)
+
+
+@router.post(
+    "/v1.Groceries.AssociateProductsWithUser",
+    response=AssociateProductsWithUserResponse,
+)
+def associate_products_with_user(request, payload: AssociateProductsWithUserRequest):
+    user = request.auth
+    services.associate_products_with_user(
+        user_id=user.pk,
+        product_ids=payload.product_ids,
+    )
+    return AssociateProductsWithUserResponse()
+
+
+@router.post(
+    "/v1.Groceries.ListAssociatedProducts",
+    response=ListAssociatedProductsResponse,
+)
+def list_associated_products(request, payload: ListAssociatedProductsRequest):
+    user = request.auth
+    items = services.list_associated_products(user_id=user.pk)
+    return ListAssociatedProductsResponse(
+        products=[
+            ProductSchema(
+                product_id=p.pk,
+                name=p.name,
+                standard_name=p.standard_name,
+                brand=p.brand,
+                price=p.price,
+                format=p.format,
+                emoji=p.emoji,
+                is_custom=p.is_custom,
+            )
+            for p in items
+        ],
+    )
 
 
 @router.post("/v1.Groceries.GetLatestBasket", response=GetLatestBasketResponse)

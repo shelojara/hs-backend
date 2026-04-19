@@ -4,6 +4,7 @@ import logging
 from decimal import Decimal
 from typing import Any
 
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch, Q
 from django.utils import timezone
@@ -11,6 +12,8 @@ from django.utils import timezone
 from groceries import gemini_service
 from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Basket, Product
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 
@@ -269,6 +272,25 @@ def basket_total_price(*, basket: Basket) -> Decimal:
     for p in basket.products.all():
         total += p.price
     return total
+
+
+def associate_products_with_user(*, user_id: int, product_ids: list[int]) -> None:
+    """Replace user's associated catalog products. Unknown ids omitted. Empty list clears all."""
+    if product_ids:
+        existing_ids = list(
+            Product.objects.filter(pk__in=product_ids).values_list("pk", flat=True)
+        )
+    else:
+        existing_ids = []
+    with transaction.atomic():
+        user = User.objects.select_for_update().get(pk=user_id)
+        user.associated_products.set(existing_ids)
+
+
+def list_associated_products(*, user_id: int) -> list[Product]:
+    """Catalog products associated with *user*, ordered by name."""
+    user = User.objects.get(pk=user_id)
+    return list(user.associated_products.order_by("name", "pk"))
 
 
 def purchase_latest_open_basket(*, user_id: int) -> Basket:
