@@ -157,8 +157,13 @@ def list_products(
     limit: int = DEFAULT_LIST_LIMIT,
     cursor: str | None = None,
     search: str | None = None,
+    user_id: int | None = None,
 ) -> tuple[list[Product], str | None]:
-    """List products with cursor pagination; optional case-insensitive substring search (ILIKE)."""
+    """List products with cursor pagination; optional case-insensitive substring search (ILIKE).
+
+    When *user_id* is set, excludes products already in that user's current open basket
+    (latest basket with ``purchased_at`` unset).
+    """
     lim = _clamp_limit(limit)
     q = (search or "").strip()
 
@@ -166,15 +171,31 @@ def list_products(
     if q:
         qs = qs.filter(name__icontains=q)
 
+    if user_id is not None:
+        basket = (
+            Basket.objects.filter(owner_id=user_id, purchased_at__isnull=True)
+            .order_by("-created_at")
+            .first()
+        )
+        if basket is not None:
+            cart_pks = list(basket.products.values_list("pk", flat=True))
+            if cart_pks:
+                qs = qs.exclude(pk__in=cart_pks)
+
     if cursor:
         payload = _decode_cursor(cursor)
         try:
             cq = payload["q"]
             cname = payload["n"]
             cpk = int(payload["i"])
+            cu = payload.get("u")
         except (KeyError, TypeError, ValueError) as exc:
             raise InvalidProductListCursorError() from exc
         if cq != q:
+            raise InvalidProductListCursorError(
+                "Cursor does not match request parameters."
+            )
+        if cu != user_id:
             raise InvalidProductListCursorError(
                 "Cursor does not match request parameters."
             )
@@ -187,7 +208,9 @@ def list_products(
     next_cursor = None
     if has_more and page:
         last = page[-1]
-        next_cursor = _encode_cursor({"q": q, "n": last.name, "i": last.pk})
+        next_cursor = _encode_cursor(
+            {"q": q, "n": last.name, "i": last.pk, "u": user_id}
+        )
     return page, next_cursor
 
 

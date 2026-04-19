@@ -222,6 +222,36 @@ def test_list_products_rejects_invalid_cursor():
 @pytest.mark.django_db
 @patch(
     "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_list_products_excludes_products_in_open_basket(_mock_gemini):
+    u = _user()
+    p_in = _catalog_product("In cart")
+    p_out = _catalog_product("Not in cart")
+    add_product_to_basket(product_id=p_in.pk, user_id=u.pk)
+    items, _ = list_products(user_id=u.pk, limit=10)
+    assert [i.pk for i in items] == [p_out.pk]
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_list_products_rejects_cursor_from_different_user_context(_mock_gemini):
+    alice = _user(username="alice")
+    bob = _user(username="bob")
+    _catalog_product("A")
+    _catalog_product("B")
+    _, cur = list_products(user_id=alice.pk, limit=1)
+    assert cur is not None
+    with pytest.raises(InvalidProductListCursorError):
+        list_products(user_id=bob.pk, limit=1, cursor=cur)
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=MerchantProductInfo(
         display_name="New Title",
         standard_name="Arroz",

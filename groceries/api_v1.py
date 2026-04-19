@@ -77,6 +77,7 @@ def list_products(request, payload: ListProductsRequest):
             limit=payload.limit,
             cursor=payload.cursor,
             search=payload.search,
+            user_id=request.auth.pk,
         )
     except InvalidProductListCursorError as exc:
         raise HttpError(400, str(exc)) from exc
