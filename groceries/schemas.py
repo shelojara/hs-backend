@@ -22,18 +22,6 @@ def _strip_nonempty_query(v: str) -> str:
     return s
 
 
-def _strip_nonempty_standard_name(v: str) -> str:
-    s = v.strip()
-    if not s:
-        msg = "standard_name must not be empty."
-        raise ValueError(msg)
-    return s
-
-
-def _strip_identity_field(v: str) -> str:
-    return (v or "").strip()
-
-
 class FindProductCandidatesRequest(Schema):
     query: Annotated[str, AfterValidator(_strip_nonempty_query)]
 
@@ -94,9 +82,7 @@ class RecheckProductResponse(Schema):
 
 
 class RecheckProductPriceByIdentityRequest(Schema):
-    standard_name: Annotated[str, AfterValidator(_strip_nonempty_standard_name)]
-    brand: Annotated[str, AfterValidator(_strip_identity_field)] = ""
-    format: Annotated[str, AfterValidator(_strip_identity_field)] = ""
+    product_id: int
 
 
 class RecheckProductPriceByIdentityResponse(Schema):

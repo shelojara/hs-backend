@@ -156,37 +156,19 @@ def recheck_product_from_gemini(*, product_id: int, user_id: int) -> Product:
     return product
 
 
-def recheck_product_price_by_identity(
-    *,
-    standard_name: str,
-    brand: str,
-    format: str,
-    user_id: int,
-) -> Product:
-    """Refresh merchant fields from Gemini using catalog identity (standard_name, brand, format).
+def recheck_product_price_by_identity(*, product_id: int, user_id: int) -> Product:
+    """Reload merchant-oriented fields from Gemini using *product*'s standard_name, brand, format.
 
-    Matches the user's product whose trimmed fields equal the request (empty brand/format allowed).
-    Raises Product.DoesNotExist when no row matches.
-    Raises ValueError when *standard_name* is blank after strip.
+    Raises Product.DoesNotExist when no row matches *product_id* and *user_id*.
+    Raises ValueError when stored *standard_name* is blank (identity lookup needs it).
     """
-    sn = (standard_name or "").strip()
+    product = Product.objects.get(pk=product_id, user_id=user_id)
+    sn = (product.standard_name or "").strip()
     if not sn:
-        msg = "standard_name must not be empty."
+        msg = "Product has no standard_name; cannot recheck by identity."
         raise ValueError(msg)
-    br = (brand or "").strip()
-    fmt = (format or "").strip()
-    product = (
-        Product.objects.filter(
-            user_id=user_id,
-            standard_name=sn,
-            brand=br,
-            format=fmt,
-        )
-        .order_by("pk")
-        .first()
-    )
-    if product is None:
-        raise Product.DoesNotExist
+    br = (product.brand or "").strip()
+    fmt = (product.format or "").strip()
     info = _fetch_merchant_product_info_by_identity_or_none(
         standard_name=sn,
         brand=br,

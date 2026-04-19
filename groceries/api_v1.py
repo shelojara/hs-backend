@@ -130,9 +130,7 @@ def recheck_product_price_by_identity(
 ):
     try:
         product = services.recheck_product_price_by_identity(
-            standard_name=payload.standard_name,
-            brand=payload.brand,
-            format=payload.format,
+            product_id=payload.product_id,
             user_id=request.auth.pk,
         )
     except ValueError as exc:
