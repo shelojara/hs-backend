@@ -24,6 +24,7 @@ from groceries.services import (
     purchase_latest_open_basket,
     recheck_product_price,
     suggest_running_low_products,
+    update_product,
 )
 
 User = get_user_model()
@@ -153,6 +154,54 @@ def test_create_product_from_candidate_assigns_user(_mock_gemini):
     )
     row = Product.objects.get(pk=pid)
     assert row.user_id == u.pk
+
+
+@pytest.mark.django_db
+def test_update_product_persists_fields_without_gemini():
+    u = _user()
+    p = Product.objects.create(
+        name="Old display",
+        standard_name="Old std",
+        brand="Old brand",
+        price=Decimal("1.00"),
+        format="500 ml",
+        emoji="🥛",
+        user=u,
+    )
+    out = update_product(
+        product_id=p.pk,
+        user_id=u.pk,
+        standard_name="Leche entera",
+        brand="Colún",
+        format="1 L",
+        price=Decimal("2590"),
+        emoji="🐄",
+    )
+    assert out.pk == p.pk
+    p.refresh_from_db()
+    assert p.name == "Old display"
+    assert p.standard_name == "Leche entera"
+    assert p.brand == "Colún"
+    assert p.format == "1 L"
+    assert p.price == Decimal("2590.00")
+    assert p.emoji == "🐄"
+
+
+@pytest.mark.django_db
+def test_update_product_raises_when_wrong_user():
+    u1 = _user(username="a")
+    u2 = _user(username="b")
+    p = Product.objects.create(name="X", user=u1)
+    with pytest.raises(Product.DoesNotExist):
+        update_product(
+            product_id=p.pk,
+            user_id=u2.pk,
+            standard_name="",
+            brand="",
+            format="",
+            price=Decimal("0"),
+            emoji="",
+        )
 
 
 @pytest.mark.django_db
