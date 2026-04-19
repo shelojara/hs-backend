@@ -104,11 +104,11 @@ class BasketSchema(Schema):
     products: list[ProductSchema]
 
 
-class GetLatestBasketRequest(Schema):
+class GetCurrentBasketRequest(Schema):
     """No fields; POST body may be `{}` for RPC transport."""
 
 
-class GetLatestBasketResponse(Schema):
+class GetCurrentBasketResponse(Schema):
     basket: BasketSchema | None
 
 

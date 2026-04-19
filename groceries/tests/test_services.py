@@ -15,7 +15,7 @@ from groceries.services import (
     create_product_from_candidate,
     delete_product_from_basket,
     find_product_candidates,
-    get_latest_basket_with_products,
+    get_current_basket_with_products,
     basket_total_price,
     list_products,
     purchase_latest_open_basket,
@@ -467,9 +467,9 @@ def test_delete_product_from_basket_raises_when_product_missing(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_get_latest_basket_with_products_none_when_empty(_mock_gemini):
+def test_get_current_basket_with_products_none_when_empty(_mock_gemini):
     user = _user()
-    assert get_latest_basket_with_products(user_id=user.pk) is None
+    assert get_current_basket_with_products(user_id=user.pk) is None
 
 
 @pytest.mark.django_db
@@ -477,7 +477,7 @@ def test_get_latest_basket_with_products_none_when_empty(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_get_latest_basket_with_products_returns_newest_and_ordered_products(
+def test_get_current_basket_with_products_returns_newest_and_ordered_products(
     _mock_gemini,
 ):
     user = _user()
@@ -487,7 +487,7 @@ def test_get_latest_basket_with_products_returns_newest_and_ordered_products(
     newer = Basket.objects.create(owner=user)
     older.products.add(pid_b)
     newer.products.add(pid_a)
-    out = get_latest_basket_with_products(user_id=user.pk)
+    out = get_current_basket_with_products(user_id=user.pk)
     assert out is not None
     assert out.pk == newer.pk
     assert [p.pk for p in out.products.all()] == [pid_a]
@@ -498,12 +498,12 @@ def test_get_latest_basket_with_products_returns_newest_and_ordered_products(
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_get_latest_basket_with_products_includes_purchased(_mock_gemini):
+def test_get_current_basket_with_products_includes_purchased(_mock_gemini):
     user = _user()
     pid = _catalog_product("Z").pk
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
     b.products.add(pid)
-    out = get_latest_basket_with_products(user_id=user.pk)
+    out = get_current_basket_with_products(user_id=user.pk)
     assert out is not None
     assert out.pk == b.pk
     assert list(out.products.values_list("pk", flat=True)) == [pid]
@@ -520,7 +520,7 @@ def test_basket_total_price_sums_product_prices(_mock_gemini):
     pb = Product.objects.create(name="B", price=Decimal("2.25"), user=user)
     b = Basket.objects.create(owner=user)
     b.products.add(pa, pb)
-    b = get_latest_basket_with_products(user_id=user.pk)
+    b = get_current_basket_with_products(user_id=user.pk)
     assert b is not None
     assert basket_total_price(basket=b) == Decimal("3.75")
 
@@ -533,7 +533,7 @@ def test_basket_total_price_sums_product_prices(_mock_gemini):
 def test_basket_total_price_empty_basket_zero(_mock_gemini):
     user = _user()
     Basket.objects.create(owner=user)
-    b = get_latest_basket_with_products(user_id=user.pk)
+    b = get_current_basket_with_products(user_id=user.pk)
     assert b is not None
     assert basket_total_price(basket=b) == Decimal("0")
 
@@ -592,7 +592,7 @@ def test_basket_operations_isolated_per_user(_mock_gemini):
     bob = _user(username="bob")
     p = _catalog_product("Shared catalog item").pk
     add_product_to_basket(product_id=p, user_id=alice.pk)
-    assert get_latest_basket_with_products(user_id=bob.pk) is None
+    assert get_current_basket_with_products(user_id=bob.pk) is None
     ba = add_product_to_basket(product_id=p, user_id=bob.pk)
     assert ba.owner_id == bob.pk
     assert Basket.objects.filter(owner=alice, purchased_at__isnull=True).count() == 1
