@@ -275,6 +275,42 @@ def fetch_merchant_product_info(*, product_name: str) -> MerchantProductInfo | N
     return _parse_merchant_product_payload(response.text)
 
 
+def fetch_merchant_product_info_by_identity(
+    *,
+    standard_name: str,
+    brand: str,
+    format: str,
+) -> MerchantProductInfo | None:
+    """Same JSON shape as :func:`fetch_merchant_product_info`, keyed by catalog identity fields."""
+    sn = (standard_name or "").strip()
+    if not sn:
+        return None
+    br = (brand or "").strip()
+    fmt = (format or "").strip()
+
+    prompt = (
+        "Product identity (grouping fields — find this SKU or closest shelf match):\n"
+        f"- standard_name: {sn!r}\n"
+        f"- brand: {br!r}\n"
+        f"- format: {fmt!r}\n\n"
+        "Search the merchant's Chile site for this product (match type, brand, and pack size when possible) "
+        "and fill the JSON with the current listing."
+    )
+
+    client = _get_client()
+    grounding = types.Tool(google_search=types.GoogleSearch())
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=MERCHANT_PRODUCT_SYSTEM_INSTRUCTION,
+            temperature=0.25,
+            tools=[grounding],
+        ),
+    )
+    return _parse_merchant_product_payload(response.text)
+
+
 def fetch_merchant_product_candidates(
     *,
     query: str,

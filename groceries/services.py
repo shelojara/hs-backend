@@ -53,6 +53,32 @@ def _fetch_merchant_product_info_or_none(
     return None
 
 
+def _fetch_merchant_product_info_by_identity_or_none(
+    *,
+    standard_name: str,
+    brand: str,
+    format: str,
+    product_id: int,
+) -> MerchantProductInfo | None:
+    try:
+        return gemini_service.fetch_merchant_product_info_by_identity(
+            standard_name=standard_name,
+            brand=brand,
+            format=format,
+        )
+    except RuntimeError:
+        logger.warning(
+            "Skipped Gemini merchant product info by identity: GEMINI_API_KEY not set (product id=%s).",
+            product_id,
+        )
+    except Exception:
+        logger.exception(
+            "Gemini merchant product info by identity failed for product id=%s",
+            product_id,
+        )
+    return None
+
+
 def _apply_merchant_product_info(
     product: Product,
     info: MerchantProductInfo,
@@ -124,6 +150,48 @@ def recheck_product_from_gemini(*, product_id: int, user_id: int) -> Product:
     product = Product.objects.get(pk=product_id, user_id=user_id)
     info = _fetch_merchant_product_info_or_none(
         product_name=product.name, product_id=product.pk
+    )
+    if info:
+        _apply_merchant_product_info(product, info)
+    return product
+
+
+def recheck_product_price_by_identity(
+    *,
+    standard_name: str,
+    brand: str,
+    format: str,
+    user_id: int,
+) -> Product:
+    """Refresh merchant fields from Gemini using catalog identity (standard_name, brand, format).
+
+    Matches the user's product whose trimmed fields equal the request (empty brand/format allowed).
+    Raises Product.DoesNotExist when no row matches.
+    Raises ValueError when *standard_name* is blank after strip.
+    """
+    sn = (standard_name or "").strip()
+    if not sn:
+        msg = "standard_name must not be empty."
+        raise ValueError(msg)
+    br = (brand or "").strip()
+    fmt = (format or "").strip()
+    product = (
+        Product.objects.filter(
+            user_id=user_id,
+            standard_name=sn,
+            brand=br,
+            format=fmt,
+        )
+        .order_by("pk")
+        .first()
+    )
+    if product is None:
+        raise Product.DoesNotExist
+    info = _fetch_merchant_product_info_by_identity_or_none(
+        standard_name=sn,
+        brand=br,
+        format=fmt,
+        product_id=product.pk,
     )
     if info:
         _apply_merchant_product_info(product, info)
