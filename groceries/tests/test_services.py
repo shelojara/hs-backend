@@ -12,7 +12,6 @@ from groceries.services import (
     NoOpenBasketError,
     ProductNameConflict,
     add_product_to_basket,
-    create_product,
     create_product_from_merchant_info,
     delete_product_from_basket,
     find_products,
@@ -30,73 +29,9 @@ def _user(username: str = "u1", **kwargs):
     return User.objects.create_user(username=username, password="pw", **kwargs)
 
 
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_create_product_persists_and_returns_id(_mock_gemini):
-    pid = create_product(name="  Oat milk  ")
-    row = Product.objects.get(pk=pid)
-    assert row.pk == pid
-    assert row.name == "Oat milk"
-    assert row.original_name == "Oat milk"
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=MerchantProductInfo(
-        display_name="Oatly Leche de Avena 1 L",
-        standard_name="Leche de avena",
-        brand="Oatly",
-        price=Decimal("3990"),
-        format="1 L",
-        emoji="🥛",
-    ),
-)
-def test_create_product_stores_gemini_merchant_fields(_mock_gemini):
-    pid = create_product(name="Avena")
-    row = Product.objects.get(pk=pid)
-    assert row.name == "Oatly Leche de Avena 1 L"
-    assert row.original_name == "Avena"
-    assert row.standard_name == "Leche de avena"
-    assert row.brand == "Oatly"
-    assert row.price == Decimal("3990.00")
-    assert row.format == "1 L"
-    assert row.emoji == "🥛"
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_create_product_leaves_price_zero_when_gemini_returns_none(_mock_gemini):
-    pid = create_product(name="X")
-    assert Product.objects.get(pk=pid).price == Decimal("0")
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_create_product_rejects_blank_name(_mock_gemini):
-    with pytest.raises(ValueError, match="empty"):
-        create_product(name="   ")
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_create_product_rejects_duplicate_name_case_insensitive(_mock_gemini):
-    create_product(name="Oat milk")
-    with pytest.raises(ProductNameConflict):
-        create_product(name="  oat MILK  ")
-    assert Product.objects.count() == 1
+def _catalog_product(name: str) -> Product:
+    """Insert catalog row (no Gemini). Stand-in for removed create_product()."""
+    return Product.objects.create(name=name.strip())
 
 
 @pytest.mark.django_db
@@ -154,7 +89,6 @@ def test_create_product_from_merchant_info_persists_without_gemini(_mock_gemini)
         ),
     )
     row = Product.objects.get(pk=pid)
-    assert row.original_name == "leche"
     assert row.name == "Colún Leche Entera 1 L"
     assert row.standard_name == "Leche entera"
     assert row.brand == "Colún"
@@ -202,7 +136,6 @@ def test_create_product_from_merchant_info_uses_query_when_display_empty(_mock_g
     )
     row = Product.objects.get(pk=pid)
     assert row.name == "X"
-    assert row.original_name == "X"
 
 
 @pytest.mark.django_db
@@ -242,9 +175,9 @@ def test_create_product_from_merchant_info_rejects_duplicate_name(_mock_gemini):
     return_value=None,
 )
 def test_list_products_orders_by_name_and_paginates(_mock_gemini):
-    create_product(name="Apple")
-    create_product(name="Banana")
-    create_product(name="Carrot")
+    _catalog_product("Apple")
+    _catalog_product("Banana")
+    _catalog_product("Carrot")
     page1, cur = list_products(limit=2)
     assert [p.name for p in page1] == ["Apple", "Banana"]
     assert cur is not None
@@ -259,9 +192,9 @@ def test_list_products_orders_by_name_and_paginates(_mock_gemini):
     return_value=None,
 )
 def test_list_products_search_icontains_ordered_by_name(_mock_gemini):
-    create_product(name="Oat milk")
-    create_product(name="Whole oat flakes")
-    create_product(name="Rice milk")
+    _catalog_product("Oat milk")
+    _catalog_product("Whole oat flakes")
+    _catalog_product("Rice milk")
     items, _ = list_products(search="oat", limit=10)
     assert [i.name for i in items] == ["Oat milk", "Whole oat flakes"]
 
@@ -272,9 +205,9 @@ def test_list_products_search_icontains_ordered_by_name(_mock_gemini):
     return_value=None,
 )
 def test_list_products_search_paginates_with_cursor(_mock_gemini):
-    create_product(name="Oat milk")
-    create_product(name="Oat bar")
-    create_product(name="Whole oat flakes")
+    _catalog_product("Oat milk")
+    _catalog_product("Oat bar")
+    _catalog_product("Whole oat flakes")
     first, nxt = list_products(search="oat", limit=1)
     assert len(first) == 1
     assert nxt is not None
@@ -290,8 +223,8 @@ def test_list_products_search_paginates_with_cursor(_mock_gemini):
     return_value=None,
 )
 def test_list_products_rejects_mismatched_cursor(_mock_gemini):
-    create_product(name="X")
-    create_product(name="Y")
+    _catalog_product("X")
+    _catalog_product("Y")
     _, cur = list_products(limit=1)
     assert cur is not None
     with pytest.raises(InvalidProductListCursorError):
@@ -317,11 +250,10 @@ def test_list_products_rejects_invalid_cursor():
     ),
 )
 def test_recheck_product_from_gemini_updates_fields(_mock_gemini):
-    pid = create_product(name="Old")
+    pid = _catalog_product("Old").pk
     out = recheck_product_from_gemini(product_id=pid)
     assert out.pk == pid
     assert out.name == "New Title"
-    assert out.original_name == "Old"
     assert out.standard_name == "Arroz"
     assert out.brand == "B"
     assert out.price == Decimal("1000.00")
@@ -335,7 +267,7 @@ def test_recheck_product_from_gemini_updates_fields(_mock_gemini):
     return_value=None,
 )
 def test_recheck_product_from_gemini_noop_when_gemini_returns_none(_mock_gemini):
-    pid = create_product(name="X")
+    pid = _catalog_product("X").pk
     row = Product.objects.get(pk=pid)
     before = (row.name, row.brand, row.price)
     out = recheck_product_from_gemini(product_id=pid)
@@ -348,7 +280,7 @@ def test_recheck_product_from_gemini_noop_when_gemini_returns_none(_mock_gemini)
     side_effect=RuntimeError("no key"),
 )
 def test_recheck_product_from_gemini_noop_when_gemini_key_missing(_mock_gemini):
-    pid = create_product(name="Y")
+    pid = _catalog_product("Y").pk
     row = Product.objects.get(pk=pid)
     before = (row.name, row.brand)
     out = recheck_product_from_gemini(product_id=pid)
@@ -368,8 +300,8 @@ def test_recheck_product_from_gemini_noop_when_gemini_key_missing(_mock_gemini):
     ),
 )
 def test_recheck_product_from_gemini_raises_when_display_name_conflicts(_mock_gemini):
-    Product.objects.create(name="Taken", original_name="Taken")
-    other = Product.objects.create(name="Other", original_name="Other")
+    Product.objects.create(name="Taken")
+    other = Product.objects.create(name="Other")
     with pytest.raises(ProductNameConflict):
         recheck_product_from_gemini(product_id=other.pk)
 
@@ -391,7 +323,7 @@ def test_recheck_product_from_gemini_raises_when_missing(_mock_gemini):
 )
 def test_add_product_to_basket_creates_basket_when_none_open(_mock_gemini):
     user = _user()
-    pid = create_product(name="Milk")
+    pid = _catalog_product("Milk").pk
     basket = add_product_to_basket(product_id=pid, user_id=user.pk)
     assert basket.pk is not None
     assert basket.purchased_at is None
@@ -405,8 +337,8 @@ def test_add_product_to_basket_creates_basket_when_none_open(_mock_gemini):
 )
 def test_add_product_to_basket_reuses_latest_open_basket(_mock_gemini):
     user = _user()
-    pid_a = create_product(name="A")
-    pid_b = create_product(name="B")
+    pid_a = _catalog_product("A").pk
+    pid_b = _catalog_product("B").pk
     older = Basket.objects.create(owner=user)
     newer = Basket.objects.create(owner=user)
     out = add_product_to_basket(product_id=pid_a, user_id=user.pk)
@@ -425,7 +357,7 @@ def test_add_product_to_basket_reuses_latest_open_basket(_mock_gemini):
 )
 def test_add_product_to_basket_skips_purchased_baskets(_mock_gemini):
     user = _user()
-    p = create_product(name="X")
+    p = _catalog_product("X").pk
     open_b = Basket.objects.create(owner=user)
     Basket.objects.create(owner=user, purchased_at=timezone.now())
     out = add_product_to_basket(product_id=p, user_id=user.pk)
@@ -450,7 +382,7 @@ def test_add_product_to_basket_raises_when_product_missing(_mock_gemini):
 )
 def test_delete_product_from_basket_removes_line(_mock_gemini):
     user = _user()
-    pid = create_product(name="Milk")
+    pid = _catalog_product("Milk").pk
     add_product_to_basket(product_id=pid, user_id=user.pk)
     delete_product_from_basket(product_id=pid, user_id=user.pk)
     b = Basket.objects.get(owner=user, purchased_at__isnull=True)
@@ -464,7 +396,7 @@ def test_delete_product_from_basket_removes_line(_mock_gemini):
 )
 def test_delete_product_from_basket_targets_latest_open_basket(_mock_gemini):
     user = _user()
-    pid = create_product(name="X")
+    pid = _catalog_product("X").pk
     older = Basket.objects.create(owner=user)
     newer = Basket.objects.create(owner=user)
     older.products.add(pid)
@@ -482,7 +414,7 @@ def test_delete_product_from_basket_targets_latest_open_basket(_mock_gemini):
 )
 def test_delete_product_from_basket_noop_when_product_not_in_basket(_mock_gemini):
     user = _user()
-    pid = create_product(name="Y")
+    pid = _catalog_product("Y").pk
     Basket.objects.create(owner=user)
     delete_product_from_basket(product_id=pid, user_id=user.pk)
     assert Basket.objects.get(owner=user, purchased_at__isnull=True).products.count() == 0
@@ -495,7 +427,7 @@ def test_delete_product_from_basket_noop_when_product_not_in_basket(_mock_gemini
 )
 def test_delete_product_from_basket_raises_when_no_open_basket(_mock_gemini):
     user = _user()
-    pid = create_product(name="Z")
+    pid = _catalog_product("Z").pk
     Basket.objects.create(owner=user, purchased_at=timezone.now())
     with pytest.raises(NoOpenBasketError):
         delete_product_from_basket(product_id=pid, user_id=user.pk)
@@ -530,8 +462,8 @@ def test_get_latest_basket_with_products_none_when_empty(_mock_gemini):
 )
 def test_get_latest_basket_with_products_returns_newest_and_ordered_products(_mock_gemini):
     user = _user()
-    pid_a = create_product(name="Apple")
-    pid_b = create_product(name="Banana")
+    pid_a = _catalog_product("Apple").pk
+    pid_b = _catalog_product("Banana").pk
     older = Basket.objects.create(owner=user)
     newer = Basket.objects.create(owner=user)
     older.products.add(pid_b)
@@ -549,7 +481,7 @@ def test_get_latest_basket_with_products_returns_newest_and_ordered_products(_mo
 )
 def test_get_latest_basket_with_products_includes_purchased(_mock_gemini):
     user = _user()
-    pid = create_product(name="Z")
+    pid = _catalog_product("Z").pk
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
     b.products.add(pid)
     out = get_latest_basket_with_products(user_id=user.pk)
@@ -639,7 +571,7 @@ def test_purchase_latest_open_basket_raises_when_none_open(_mock_gemini):
 def test_basket_operations_isolated_per_user(_mock_gemini):
     alice = _user(username="alice")
     bob = _user(username="bob")
-    p = create_product(name="Shared catalog item")
+    p = _catalog_product("Shared catalog item").pk
     add_product_to_basket(product_id=p, user_id=alice.pk)
     assert get_latest_basket_with_products(user_id=bob.pk) is None
     ba = add_product_to_basket(product_id=p, user_id=bob.pk)

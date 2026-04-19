@@ -10,8 +10,6 @@ from groceries.schemas import (
     BasketSchema,
     DeleteProductFromBasketRequest,
     DeleteProductFromBasketResponse,
-    CreateProductRequest,
-    CreateProductResponse,
     CreateProductFromCandidateRequest,
     CreateProductFromCandidateResponse,
     FindProductsRequest,
@@ -37,15 +35,6 @@ from groceries.services import (
 router = Router(auth=protected_api_auth, tags=["Groceries"])
 
 
-@router.post("/v1.Groceries.CreateProduct", response=CreateProductResponse)
-def create_product(request, payload: CreateProductRequest):
-    try:
-        product_id = services.create_product(name=payload.name)
-    except ProductNameConflict as exc:
-        raise HttpError(409, str(exc)) from exc
-    return CreateProductResponse(product_id=product_id)
-
-
 @router.post("/v1.Groceries.FindProducts", response=FindProductsResponse)
 def find_products(request, payload: FindProductsRequest):
     try:
@@ -56,7 +45,6 @@ def find_products(request, payload: FindProductsRequest):
     return FindProductsResponse(
         products=[
             ProductCandidateSchema(
-                original_name=anchor,
                 name=(p.display_name or anchor).strip() or anchor,
                 standard_name=p.standard_name,
                 brand=p.brand,
@@ -81,7 +69,7 @@ def create_product_from_candidate(request, payload: CreateProductFromCandidateRe
     )
     try:
         product_id = services.create_product_from_merchant_info(
-            query_name=payload.original_name,
+            query_name=payload.name,
             info=info,
             is_custom=payload.is_custom,
         )
@@ -107,7 +95,6 @@ def list_products(request, payload: ListProductsRequest):
             ProductSchema(
                 product_id=p.pk,
                 name=p.name,
-                original_name=p.original_name,
                 standard_name=p.standard_name,
                 brand=p.brand,
                 price=p.price,
@@ -186,7 +173,6 @@ def get_latest_basket(request, payload: GetLatestBasketRequest):
                 ProductSchema(
                     product_id=p.pk,
                     name=p.name,
-                    original_name=p.original_name,
                     standard_name=p.standard_name,
                     brand=p.brand,
                     price=p.price,

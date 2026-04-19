@@ -22,14 +22,6 @@ def _strip_nonempty_query(v: str) -> str:
     return s
 
 
-class CreateProductRequest(Schema):
-    name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
-
-
-class CreateProductResponse(Schema):
-    product_id: int
-
-
 class FindProductsRequest(Schema):
     query: Annotated[str, AfterValidator(_strip_nonempty_query)]
 
@@ -37,7 +29,6 @@ class FindProductsRequest(Schema):
 class ProductCandidateSchema(Schema):
     """Merchant-oriented fields from Gemini (or client echo); not yet persisted."""
 
-    original_name: str
     name: str
     standard_name: str
     brand: str
@@ -51,7 +42,6 @@ class FindProductsResponse(Schema):
 
 
 class CreateProductFromCandidateRequest(Schema):
-    original_name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
     name: Annotated[str, AfterValidator(_strip_nonempty_product_name)]
     standard_name: str = ""
     brand: str = ""
@@ -74,7 +64,6 @@ class ListProductsRequest(Schema):
 class ProductSchema(Schema):
     product_id: int
     name: str
-    original_name: str
     standard_name: str
     brand: str
     price: Decimal
