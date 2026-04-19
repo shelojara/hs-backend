@@ -143,6 +143,7 @@ def test_find_products_rejects_blank_query():
 )
 def test_create_product_from_merchant_info_persists_without_gemini(_mock_gemini):
     pid = create_product_from_merchant_info(
+        name="Colún Leche Entera 1 L",
         info=MerchantProductInfo(
             display_name="Colún Leche Entera 1 L",
             standard_name="Leche entera",
@@ -165,8 +166,29 @@ def test_create_product_from_merchant_info_persists_without_gemini(_mock_gemini)
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
+def test_create_product_from_merchant_info_uses_name_not_display_name(_mock_gemini):
+    pid = create_product_from_merchant_info(
+        name="  Shelf label  ",
+        info=MerchantProductInfo(
+            display_name="Different",
+            standard_name="",
+            brand="",
+            price=Decimal("0"),
+            format="",
+            emoji="",
+        ),
+    )
+    assert Product.objects.get(pk=pid).name == "Shelf label"
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
 def test_create_product_from_merchant_info_sets_is_custom(_mock_gemini):
     pid = create_product_from_merchant_info(
+        name="Custom item",
         info=MerchantProductInfo(
             display_name="Custom item",
             standard_name="",
@@ -185,9 +207,10 @@ def test_create_product_from_merchant_info_sets_is_custom(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_info",
     return_value=None,
 )
-def test_create_product_from_merchant_info_rejects_empty_display_name(_mock_gemini):
+def test_create_product_from_merchant_info_rejects_empty_name(_mock_gemini):
     with pytest.raises(ValueError, match="empty"):
         create_product_from_merchant_info(
+            name="   ",
             info=MerchantProductInfo(
                 display_name="",
                 standard_name="",
@@ -206,6 +229,7 @@ def test_create_product_from_merchant_info_rejects_empty_display_name(_mock_gemi
 )
 def test_create_product_from_merchant_info_rejects_duplicate_name(_mock_gemini):
     create_product_from_merchant_info(
+        name="Same",
         info=MerchantProductInfo(
             display_name="Same",
             standard_name="",
@@ -217,6 +241,7 @@ def test_create_product_from_merchant_info_rejects_duplicate_name(_mock_gemini):
     )
     with pytest.raises(ProductNameConflict):
         create_product_from_merchant_info(
+            name="same",
             info=MerchantProductInfo(
                 display_name="same",
                 standard_name="",

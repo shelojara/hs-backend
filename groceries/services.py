@@ -116,11 +116,12 @@ def find_products(*, query: str) -> list[MerchantProductInfo]:
 
 def create_product_from_merchant_info(
     *,
+    name: str,
     info: MerchantProductInfo,
     is_custom: bool = False,
 ) -> int:
     """Persist product using *info* from a prior find (no Gemini call). Raises ProductNameConflict."""
-    next_name = (info.display_name or "").strip()
+    next_name = name.strip()
     if not next_name:
         msg = "Product name must not be empty."
         raise ValueError(msg)

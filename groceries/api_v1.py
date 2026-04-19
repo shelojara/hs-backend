@@ -81,6 +81,7 @@ def create_product_from_candidate(request, payload: CreateProductFromCandidateRe
     )
     try:
         product_id = services.create_product_from_merchant_info(
+            name=payload.name,
             info=info,
             is_custom=payload.is_custom,
         )
