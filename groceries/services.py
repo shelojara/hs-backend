@@ -131,7 +131,6 @@ def create_product_from_merchant_info(
     try:
         product = Product.objects.create(
             name=next_name,
-            original_name=anchor,
             standard_name=info.standard_name,
             brand=info.brand,
             price=info.price,
@@ -144,37 +143,10 @@ def create_product_from_merchant_info(
     return product.pk
 
 
-def create_product(*, name: str) -> int:
-    normalized = name.strip()
-    if not normalized:
-        msg = "Product name must not be empty."
-        raise ValueError(msg)
-    if Product.objects.filter(name__iexact=normalized).exists():
-        raise ProductNameConflict()
-    try:
-        product = Product.objects.create(name=normalized, original_name=normalized)
-    except IntegrityError as exc:
-        raise ProductNameConflict() from exc
-
-    info = _fetch_merchant_product_info_or_none(
-        product_name=normalized,
-        product_id=product.pk,
-    )
-    if info:
-        _apply_merchant_product_info(product, info, anchor=normalized)
-
-    return product.pk
-
-
-def _anchor_name_for_gemini(product: Product) -> str:
-    s = (product.original_name or "").strip()
-    return s or product.name
-
-
 def recheck_product_from_gemini(*, product_id: int) -> Product:
     """Reload merchant-oriented fields from Gemini for existing product. Raises Product.DoesNotExist."""
     product = Product.objects.get(pk=product_id)
-    anchor = _anchor_name_for_gemini(product)
+    anchor = product.name
     info = _fetch_merchant_product_info_or_none(product_name=anchor, product_id=product.pk)
     if info:
         _apply_merchant_product_info(product, info, anchor=anchor)

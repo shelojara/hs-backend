@@ -8,7 +8,6 @@ from django.db.models.functions import Lower
 
 class Product(models.Model):
     name = models.CharField(max_length=255)
-    original_name = models.CharField(max_length=255, blank=True, default="")
     standard_name = models.CharField(max_length=255, blank=True, default="")
     brand = models.CharField(max_length=255, blank=True, default="")
     price = models.DecimalField(
