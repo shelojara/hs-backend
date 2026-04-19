@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from groceries.models import Basket, Merchant, Product
+from groceries.models import Basket, BasketProduct, Merchant, Product
 
 
 @admin.register(Product)
@@ -19,6 +19,13 @@ class ProductAdmin(admin.ModelAdmin):
 @admin.register(Basket)
 class BasketAdmin(admin.ModelAdmin):
     list_display = ("id", "owner", "created_at", "purchased_at")
+
+
+@admin.register(BasketProduct)
+class BasketProductAdmin(admin.ModelAdmin):
+    list_display = ("id", "basket", "product", "purchase")
+    list_filter = ("purchase",)
+    search_fields = ("product__name",)
 
 
 @admin.register(Merchant)
