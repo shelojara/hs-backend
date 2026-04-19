@@ -32,6 +32,7 @@ class NoOpenBasketError(Exception):
 
 DEFAULT_LIST_LIMIT = 20
 MAX_LIST_LIMIT = 100
+LIST_PURCHASED_BASKETS_LIMIT = 5
 
 
 def _fetch_merchant_product_info_or_none(
@@ -253,6 +254,17 @@ def get_current_basket_with_products(*, user_id: int) -> Basket | None:
         )
         .order_by("-created_at")
         .first()
+    )
+
+
+def list_purchased_baskets(*, user_id: int) -> list[Basket]:
+    """Up to :data:`LIST_PURCHASED_BASKETS_LIMIT` baskets with ``purchased_at`` set, newest first."""
+    return list(
+        Basket.objects.filter(owner_id=user_id, purchased_at__isnull=False)
+        .prefetch_related(
+            Prefetch("products", queryset=Product.objects.order_by("name", "pk")),
+        )
+        .order_by("-purchased_at", "-pk")[:LIST_PURCHASED_BASKETS_LIMIT]
     )
 
 

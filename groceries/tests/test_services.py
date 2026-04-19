@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -10,6 +11,7 @@ from groceries.models import Basket, Product
 from groceries.schemas import ProductCandidateSchema
 from groceries.services import (
     InvalidProductListCursorError,
+    LIST_PURCHASED_BASKETS_LIMIT,
     NoOpenBasketError,
     add_product_to_basket,
     create_product_from_candidate,
@@ -18,6 +20,7 @@ from groceries.services import (
     get_current_basket_with_products,
     basket_total_price,
     list_products,
+    list_purchased_baskets,
     purchase_latest_open_basket,
     recheck_product_from_gemini,
 )
@@ -597,3 +600,60 @@ def test_basket_operations_isolated_per_user(_mock_gemini):
     assert ba.owner_id == bob.pk
     assert Basket.objects.filter(owner=alice, purchased_at__isnull=True).count() == 1
     assert Basket.objects.filter(owner=bob, purchased_at__isnull=True).count() == 1
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_list_purchased_baskets_empty(_mock_gemini):
+    user = _user()
+    assert list_purchased_baskets(user_id=user.pk) == []
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_list_purchased_baskets_excludes_open(_mock_gemini):
+    user = _user()
+    Basket.objects.create(owner=user)
+    b2 = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    rows = list_purchased_baskets(user_id=user.pk)
+    assert len(rows) == 1
+    assert rows[0].pk == b2.pk
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_list_purchased_baskets_caps_at_five_newest_by_purchased_at(_mock_gemini):
+    user = _user()
+    base = timezone.now()
+    created = []
+    for i in range(LIST_PURCHASED_BASKETS_LIMIT + 1):
+        b = Basket.objects.create(
+            owner=user,
+            purchased_at=base - timedelta(seconds=i),
+        )
+        created.append(b)
+    rows = list_purchased_baskets(user_id=user.pk)
+    assert len(rows) == LIST_PURCHASED_BASKETS_LIMIT
+    # Newest purchase first: skip oldest (largest timedelta offset)
+    assert [r.pk for r in rows] == [c.pk for c in created[:-1]]
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info",
+    return_value=None,
+)
+def test_list_purchased_baskets_isolated_per_user(_mock_gemini):
+    alice = _user(username="alice2")
+    bob = _user(username="bob2")
+    Basket.objects.create(owner=alice, purchased_at=timezone.now())
+    assert list_purchased_baskets(user_id=bob.pk) == []

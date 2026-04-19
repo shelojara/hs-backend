@@ -118,3 +118,11 @@ class PurchaseBasketRequest(Schema):
 
 class PurchaseBasketResponse(Schema):
     basket_id: int
+
+
+class ListPurchasedBasketsRequest(Schema):
+    """No fields; POST body may be `{}` for RPC transport."""
+
+
+class ListPurchasedBasketsResponse(Schema):
+    baskets: list[BasketSchema]
