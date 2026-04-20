@@ -4,6 +4,8 @@ import logging
 from decimal import Decimal
 from typing import Any
 
+from dateutil.relativedelta import relativedelta
+
 from django.db import transaction
 from django.db.models import F, Max, Prefetch, Q
 from django.utils import timezone
@@ -364,6 +366,25 @@ def list_purchased_baskets(*, user_id: int) -> list[Basket]:
     )
 
 
+def list_purchased_baskets_for_running_low(*, user_id: int) -> list[Basket]:
+    """Purchased baskets in last two calendar months (by ``purchased_at``), newest first.
+
+    Used for Gemini running-low sync; no row cap (window bounds size).
+    """
+    since = timezone.now() - relativedelta(months=2)
+    return list(
+        Basket.objects.filter(
+            owner_id=user_id,
+            purchased_at__isnull=False,
+            purchased_at__gte=since,
+        )
+        .prefetch_related(
+            Prefetch("products", queryset=Product.objects.order_by("name", "pk")),
+        )
+        .order_by("-purchased_at", "-pk")
+    )
+
+
 def purchase_latest_open_basket(*, user_id: int) -> Basket:
     """Set purchased_at on user's latest open basket.
 
@@ -444,13 +465,13 @@ def _format_purchased_baskets_for_running_low(baskets: list[Basket]) -> str:
 
 
 def sync_running_low_flags_for_user(*, user_id: int) -> None:
-    """Set ``Product.running_low`` from Gemini, using up to 5 newest purchased baskets.
+    """Set ``Product.running_low`` from Gemini, using purchases from last two months.
 
     Clears ``running_low`` for all of the user's products first, then sets it for ids
     returned in model suggestions (matched to this user's product rows).
     """
     Product.objects.filter(user_id=user_id).update(running_low=False)
-    baskets = list_purchased_baskets(user_id=user_id)
+    baskets = list_purchased_baskets_for_running_low(user_id=user_id)
     if not baskets:
         return
     block = _format_purchased_baskets_for_running_low(baskets)
