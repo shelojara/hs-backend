@@ -710,6 +710,16 @@ def test_purchase_latest_open_basket_increments_each_product_once():
 
 
 @pytest.mark.django_db
+def test_purchase_latest_open_basket_clears_running_low():
+    user = _user()
+    b = Basket.objects.create(owner=user)
+    p = Product.objects.create(name="Milk", user=user, running_low=True)
+    b.products.add(p)
+    purchase_latest_open_basket(user_id=user.pk)
+    assert not Product.objects.get(pk=p.pk).running_low
+
+
+@pytest.mark.django_db
 def test_second_purchase_increments_again():
     user = _user()
     p = Product.objects.create(name="Eggs", user=user)
@@ -729,6 +739,7 @@ def test_purchase_moves_deferred_lines_to_new_open_basket():
     b = Basket.objects.create(owner=user)
     buy = Product.objects.create(name="Buy", user=user)
     defer = Product.objects.create(name="Defer", user=user)
+    Product.objects.filter(pk__in=[buy.pk, defer.pk]).update(running_low=True)
     b.products.add(buy, defer)
     set_product_purchase_in_open_basket(
         product_id=defer.pk,
@@ -740,6 +751,8 @@ def test_purchase_moves_deferred_lines_to_new_open_basket():
     defer.refresh_from_db()
     assert buy.purchase_count == 1
     assert defer.purchase_count == 0
+    assert not buy.running_low
+    assert defer.running_low
     purchased.refresh_from_db()
     assert purchased.purchased_at is not None
     assert list(purchased.products.values_list("pk", flat=True)) == [buy.pk]
@@ -793,6 +806,14 @@ def test_purchase_single_product_creates_purchased_basket_and_increments():
     assert out.purchased_at is not None
     assert list(out.products.values_list("pk", flat=True)) == [p.pk]
     assert p.purchase_count == 1
+
+
+@pytest.mark.django_db
+def test_purchase_single_product_clears_running_low():
+    user = _user()
+    p = Product.objects.create(name="Solo", user=user, running_low=True)
+    purchase_single_product(product_id=p.pk, user_id=user.pk)
+    assert not Product.objects.get(pk=p.pk).running_low
 
 
 @pytest.mark.django_db
