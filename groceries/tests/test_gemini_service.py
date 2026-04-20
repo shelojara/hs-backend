@@ -15,63 +15,6 @@ from groceries.gemini_service import (
 
 
 @patch("groceries.gemini_service._get_client")
-def test_fetch_merchant_product_info_returns_structured_fields(mock_get_client):
-    mock_response = MagicMock()
-    mock_response.text = (
-        '{"display_name": "Colún Leche Entera 1 L", "standard_name": "Leche entera", '
-        '"brand": "Colún", "price": 2590, '
-        '"format": "1 L", '
-        '"emoji": "🥛"}'
-    )
-    mock_client = MagicMock()
-    mock_client.models.generate_content.return_value = mock_response
-    mock_get_client.return_value = mock_client
-
-    out = gemini_service.fetch_merchant_product_info(product_name="  Leche  ")
-
-    assert out == MerchantProductInfo(
-        display_name="Colún Leche Entera 1 L",
-        standard_name="Leche entera",
-        brand="Colún",
-        price=Decimal("2590.00"),
-        format="1 L",
-        emoji="🥛",
-        merchant="",
-    )
-    mock_client.models.generate_content.assert_called_once()
-    cfg = mock_client.models.generate_content.call_args.kwargs["config"]
-    assert cfg.tools
-
-
-@patch("groceries.gemini_service._get_client")
-def test_fetch_merchant_product_info_strips_json_fence(mock_get_client):
-    mock_response = MagicMock()
-    mock_response.text = """```json
-{"display_name": "", "standard_name": "Arroz grano largo", "brand": "", "price": 0, "format": "500 g", "emoji": ""}
-```"""
-    mock_client = MagicMock()
-    mock_client.models.generate_content.return_value = mock_response
-    mock_get_client.return_value = mock_client
-
-    out = gemini_service.fetch_merchant_product_info(product_name="Arroz")
-    assert out == MerchantProductInfo(
-        display_name="",
-        standard_name="Arroz grano largo",
-        brand="",
-        price=Decimal("0"),
-        format="500 g",
-        emoji="",
-        merchant="",
-    )
-
-
-@patch("groceries.gemini_service._get_client")
-def test_fetch_merchant_product_info_empty_name_returns_none(mock_get_client):
-    assert gemini_service.fetch_merchant_product_info(product_name="   ") is None
-    mock_get_client.assert_not_called()
-
-
-@patch("groceries.gemini_service._get_client")
 def test_fetch_merchant_product_info_by_identity_empty_standard_name_returns_none(
     mock_get_client,
 ):
@@ -118,6 +61,32 @@ def test_fetch_merchant_product_info_by_identity_parses_json(mock_get_client):
     call_kw = mock_client.models.generate_content.call_args.kwargs
     assert "Leche entera" in call_kw["contents"]
     assert "Colún" in call_kw["contents"]
+
+
+@patch("groceries.gemini_service._get_client")
+def test_fetch_merchant_product_info_by_identity_strips_json_fence(mock_get_client):
+    mock_response = MagicMock()
+    mock_response.text = """```json
+{"display_name": "", "standard_name": "Arroz grano largo", "brand": "", "price": 0, "format": "500 g", "emoji": ""}
+```"""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    out = gemini_service.fetch_merchant_product_info_by_identity(
+        standard_name="Arroz grano largo",
+        brand="",
+        format="500 g",
+    )
+    assert out == MerchantProductInfo(
+        display_name="",
+        standard_name="Arroz grano largo",
+        brand="",
+        price=Decimal("0"),
+        format="500 g",
+        emoji="",
+        merchant="",
+    )
 
 
 def test_parse_plain_text_without_json_returns_none():

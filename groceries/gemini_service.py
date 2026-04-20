@@ -324,37 +324,6 @@ def _parse_merchant_product_list_payload(
     return out
 
 
-def fetch_merchant_product_info(
-    *,
-    product_name: str,
-    preferred_merchants: Sequence[PreferredMerchantContext] | None = None,
-) -> MerchantProductInfo | None:
-    """Ask Gemini (with Google Search) for Chile merchant-structured product info."""
-    name = (product_name or "").strip()
-    if not name:
-        return None
-
-    prompt = (
-        f"Product name (as entered by user): {name!r}\n\n"
-        "Search and fill the JSON for this or the closest match on the merchant's Chile site."
-    )
-
-    client = _get_client()
-    grounding = types.Tool(google_search=types.GoogleSearch())
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=merchant_product_single_system_instruction(
-                preferred=preferred_merchants,
-            ),
-            temperature=0.25,
-            tools=[grounding],
-        ),
-    )
-    return _parse_merchant_product_payload(response.text)
-
-
 def fetch_merchant_product_info_by_identity(
     *,
     standard_name: str,
@@ -362,7 +331,7 @@ def fetch_merchant_product_info_by_identity(
     format: str,
     preferred_merchants: Sequence[PreferredMerchantContext] | None = None,
 ) -> MerchantProductInfo | None:
-    """Same JSON shape as :func:`fetch_merchant_product_info`, keyed by catalog identity fields."""
+    """Ask Gemini (with Google Search) for Chile merchant-structured product info by catalog identity."""
     sn = (standard_name or "").strip()
     if not sn:
         return None

@@ -142,11 +142,7 @@ def test_find_product_candidates_passes_merchants_in_preference_order(mock_fetch
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_create_product_from_candidate_persists_without_gemini(_mock_gemini):
+def test_create_product_from_candidate_persists_without_gemini():
     u = _user()
     pid = create_product_from_candidate(
         candidate=ProductCandidateSchema(
@@ -169,11 +165,7 @@ def test_create_product_from_candidate_persists_without_gemini(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_create_product_from_candidate_sets_is_custom(_mock_gemini):
+def test_create_product_from_candidate_sets_is_custom():
     u = _user()
     pid = create_product_from_candidate(
         candidate=ProductCandidateSchema(
@@ -191,11 +183,7 @@ def test_create_product_from_candidate_sets_is_custom(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_create_product_from_candidate_assigns_user(_mock_gemini):
+def test_create_product_from_candidate_assigns_user():
     u = _user()
     pid = create_product_from_candidate(
         candidate=ProductCandidateSchema(
@@ -261,11 +249,7 @@ def test_update_product_raises_when_wrong_user():
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_list_products_orders_by_purchase_count_then_name_and_paginates(_mock_gemini):
+def test_list_products_orders_by_purchase_count_then_name_and_paginates():
     owner = _catalog_owner_user()
     _catalog_product("Apple")
     _catalog_product("Banana")
@@ -279,11 +263,7 @@ def test_list_products_orders_by_purchase_count_then_name_and_paginates(_mock_ge
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_list_products_orders_by_purchase_count_desc(_mock_gemini):
+def test_list_products_orders_by_purchase_count_desc():
     owner = _catalog_owner_user()
     hi = _catalog_product("Often bought", owner=owner)
     Product.objects.filter(pk=hi.pk).update(purchase_count=5)
@@ -296,11 +276,7 @@ def test_list_products_orders_by_purchase_count_desc(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_list_products_search_icontains_ordered_by_purchase_count_then_name(_mock_gemini):
+def test_list_products_search_icontains_ordered_by_purchase_count_then_name():
     owner = _catalog_owner_user()
     flakes = _catalog_product("Whole oat flakes", owner=owner)
     milk = _catalog_product("Oat milk", owner=owner)
@@ -312,11 +288,7 @@ def test_list_products_search_icontains_ordered_by_purchase_count_then_name(_moc
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_list_products_search_paginates_with_cursor(_mock_gemini):
+def test_list_products_search_paginates_with_cursor():
     owner = _catalog_owner_user()
     milk = _catalog_product("Oat milk", owner=owner)
     bar = _catalog_product("Oat bar", owner=owner)
@@ -335,11 +307,7 @@ def test_list_products_search_paginates_with_cursor(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_list_products_rejects_mismatched_cursor(_mock_gemini):
+def test_list_products_rejects_mismatched_cursor():
     owner = _catalog_owner_user()
     _catalog_product("X")
     _catalog_product("Y")
@@ -357,11 +325,7 @@ def test_list_products_rejects_invalid_cursor():
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_list_products_excludes_products_in_open_basket(_mock_gemini):
+def test_list_products_excludes_products_in_open_basket():
     u = _user()
     p_in = _catalog_product("In cart")
     p_out = _catalog_product("Not in cart")
@@ -371,11 +335,7 @@ def test_list_products_excludes_products_in_open_basket(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_list_products_rejects_cursor_from_different_user_context(_mock_gemini):
+def test_list_products_rejects_cursor_from_different_user_context():
     alice = _user(username="alice")
     bob = _user(username="bob")
     _catalog_product("A")
@@ -511,11 +471,7 @@ def test_recheck_product_price_raises_when_standard_name_blank():
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_add_product_to_basket_creates_basket_when_none_open(_mock_gemini):
+def test_add_product_to_basket_creates_basket_when_none_open():
     user = _user()
     pid = _catalog_product("Milk").pk
     basket = add_product_to_basket(product_id=pid, user_id=user.pk)
@@ -525,11 +481,7 @@ def test_add_product_to_basket_creates_basket_when_none_open(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_add_product_to_basket_reuses_latest_open_basket(_mock_gemini):
+def test_add_product_to_basket_reuses_latest_open_basket():
     user = _user()
     pid_a = _catalog_product("A").pk
     pid_b = _catalog_product("B").pk
@@ -545,11 +497,7 @@ def test_add_product_to_basket_reuses_latest_open_basket(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_add_product_to_basket_line_defaults_purchase_true(_mock_gemini):
+def test_add_product_to_basket_line_defaults_purchase_true():
     user = _user()
     pid = _catalog_product("Milk").pk
     basket = add_product_to_basket(product_id=pid, user_id=user.pk)
@@ -558,11 +506,7 @@ def test_add_product_to_basket_line_defaults_purchase_true(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_add_product_to_basket_skips_purchased_baskets(_mock_gemini):
+def test_add_product_to_basket_skips_purchased_baskets():
     user = _user()
     p = _catalog_product("X").pk
     open_b = Basket.objects.create(owner=user)
@@ -572,22 +516,14 @@ def test_add_product_to_basket_skips_purchased_baskets(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_add_product_to_basket_raises_when_product_missing(_mock_gemini):
+def test_add_product_to_basket_raises_when_product_missing():
     user = _user()
     with pytest.raises(Product.DoesNotExist):
         add_product_to_basket(product_id=99999, user_id=user.pk)
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_delete_product_from_basket_removes_line(_mock_gemini):
+def test_delete_product_from_basket_removes_line():
     user = _user()
     pid = _catalog_product("Milk").pk
     add_product_to_basket(product_id=pid, user_id=user.pk)
@@ -597,11 +533,7 @@ def test_delete_product_from_basket_removes_line(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_delete_product_from_basket_targets_latest_open_basket(_mock_gemini):
+def test_delete_product_from_basket_targets_latest_open_basket():
     user = _user()
     pid = _catalog_product("X").pk
     older = Basket.objects.create(owner=user)
@@ -615,11 +547,7 @@ def test_delete_product_from_basket_targets_latest_open_basket(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_delete_product_from_basket_noop_when_product_not_in_basket(_mock_gemini):
+def test_delete_product_from_basket_noop_when_product_not_in_basket():
     user = _user()
     pid = _catalog_product("Y").pk
     Basket.objects.create(owner=user)
@@ -630,11 +558,7 @@ def test_delete_product_from_basket_noop_when_product_not_in_basket(_mock_gemini
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_delete_product_from_basket_raises_when_no_open_basket(_mock_gemini):
+def test_delete_product_from_basket_raises_when_no_open_basket():
     user = _user()
     pid = _catalog_product("Z").pk
     Basket.objects.create(owner=user, purchased_at=timezone.now())
@@ -643,11 +567,7 @@ def test_delete_product_from_basket_raises_when_no_open_basket(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_delete_product_from_basket_raises_when_product_missing(_mock_gemini):
+def test_delete_product_from_basket_raises_when_product_missing():
     user = _user()
     Basket.objects.create(owner=user)
     with pytest.raises(Product.DoesNotExist):
@@ -655,23 +575,13 @@ def test_delete_product_from_basket_raises_when_product_missing(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_get_current_basket_with_products_none_when_empty(_mock_gemini):
+def test_get_current_basket_with_products_none_when_empty():
     user = _user()
     assert get_current_basket_with_products(user_id=user.pk) is None
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_get_current_basket_with_products_returns_newest_and_ordered_products(
-    _mock_gemini,
-):
+def test_get_current_basket_with_products_returns_newest_and_ordered_products():
     user = _user()
     pid_a = _catalog_product("Apple").pk
     pid_b = _catalog_product("Banana").pk
@@ -686,11 +596,7 @@ def test_get_current_basket_with_products_returns_newest_and_ordered_products(
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_get_current_basket_with_products_excludes_purchased_only(_mock_gemini):
+def test_get_current_basket_with_products_excludes_purchased_only():
     user = _user()
     pid = _catalog_product("Z").pk
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
@@ -699,13 +605,7 @@ def test_get_current_basket_with_products_excludes_purchased_only(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_get_current_basket_with_products_prefers_open_when_newer_is_purchased(
-    _mock_gemini,
-):
+def test_get_current_basket_with_products_prefers_open_when_newer_is_purchased():
     user = _user()
     pid_open = _catalog_product("Open").pk
     pid_bought = _catalog_product("Bought").pk
@@ -720,11 +620,7 @@ def test_get_current_basket_with_products_prefers_open_when_newer_is_purchased(
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_purchase_latest_open_basket_sets_purchased_at(_mock_gemini):
+def test_purchase_latest_open_basket_sets_purchased_at():
     user = _user()
     older = Basket.objects.create(owner=user)
     newer = Basket.objects.create(owner=user)
@@ -741,11 +637,7 @@ def test_purchase_latest_open_basket_sets_purchased_at(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_purchase_latest_open_basket_increments_each_product_once(_mock_gemini):
+def test_purchase_latest_open_basket_increments_each_product_once():
     user = _user()
     b = Basket.objects.create(owner=user)
     a = Product.objects.create(name="A", user=user)
@@ -759,11 +651,7 @@ def test_purchase_latest_open_basket_increments_each_product_once(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_second_purchase_increments_again(_mock_gemini):
+def test_second_purchase_increments_again():
     user = _user()
     p = Product.objects.create(name="Eggs", user=user)
     b1 = Basket.objects.create(owner=user)
@@ -777,11 +665,7 @@ def test_second_purchase_increments_again(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_purchase_moves_deferred_lines_to_new_open_basket(_mock_gemini):
+def test_purchase_moves_deferred_lines_to_new_open_basket():
     user = _user()
     b = Basket.objects.create(owner=user)
     buy = Product.objects.create(name="Buy", user=user)
@@ -809,11 +693,7 @@ def test_purchase_moves_deferred_lines_to_new_open_basket(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_set_product_purchase_in_open_basket_raises_when_line_missing(_mock_gemini):
+def test_set_product_purchase_in_open_basket_raises_when_line_missing():
     user = _user()
     Basket.objects.create(owner=user)
     orphan = Product.objects.create(name="X", user=user)
@@ -826,11 +706,7 @@ def test_set_product_purchase_in_open_basket_raises_when_line_missing(_mock_gemi
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_purchase_latest_open_basket_skips_already_purchased(_mock_gemini):
+def test_purchase_latest_open_basket_skips_already_purchased():
     user = _user()
     open_b = Basket.objects.create(owner=user)
     Basket.objects.create(owner=user, purchased_at=timezone.now())
@@ -841,11 +717,7 @@ def test_purchase_latest_open_basket_skips_already_purchased(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_purchase_latest_open_basket_raises_when_none_open(_mock_gemini):
+def test_purchase_latest_open_basket_raises_when_none_open():
     user = _user()
     Basket.objects.create(owner=user, purchased_at=timezone.now())
     with pytest.raises(NoOpenBasketError):
@@ -853,11 +725,7 @@ def test_purchase_latest_open_basket_raises_when_none_open(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_basket_operations_isolated_per_user(_mock_gemini):
+def test_basket_operations_isolated_per_user():
     alice = _user(username="alice")
     bob = _user(username="bob")
     p = _catalog_product("Shared catalog item").pk
@@ -870,21 +738,13 @@ def test_basket_operations_isolated_per_user(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_list_purchased_baskets_empty(_mock_gemini):
+def test_list_purchased_baskets_empty():
     user = _user()
     assert list_purchased_baskets(user_id=user.pk) == []
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_list_purchased_baskets_excludes_open(_mock_gemini):
+def test_list_purchased_baskets_excludes_open():
     user = _user()
     Basket.objects.create(owner=user)
     b2 = Basket.objects.create(owner=user, purchased_at=timezone.now())
@@ -894,11 +754,7 @@ def test_list_purchased_baskets_excludes_open(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_list_purchased_baskets_caps_at_five_newest_by_purchased_at(_mock_gemini):
+def test_list_purchased_baskets_caps_at_five_newest_by_purchased_at():
     user = _user()
     base = timezone.now()
     created = []
@@ -915,11 +771,7 @@ def test_list_purchased_baskets_caps_at_five_newest_by_purchased_at(_mock_gemini
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_list_purchased_baskets_isolated_per_user(_mock_gemini):
+def test_list_purchased_baskets_isolated_per_user():
     alice = _user(username="alice2")
     bob = _user(username="bob2")
     Basket.objects.create(owner=alice, purchased_at=timezone.now())
@@ -927,11 +779,7 @@ def test_list_purchased_baskets_isolated_per_user(_mock_gemini):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_sync_running_low_clears_when_no_purchased_baskets(_mock_gemini):
+def test_sync_running_low_clears_when_no_purchased_baskets():
     user = _user(username="noruns")
     p = _catalog_product("X", owner=user)
     Product.objects.filter(pk=p.pk).update(running_low=True)
@@ -941,13 +789,9 @@ def test_sync_running_low_clears_when_no_purchased_baskets(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-@patch(
     "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
 )
-def test_sync_running_low_calls_gemini_and_sets_flags(mock_suggest, _mock_info):
+def test_sync_running_low_calls_gemini_and_sets_flags(mock_suggest):
     mock_suggest.return_value = [
         RunningLowSuggestion(
             product_name="Leche",
@@ -985,17 +829,10 @@ def test_sync_running_low_calls_gemini_and_sets_flags(mock_suggest, _mock_info):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-@patch(
     "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
     side_effect=RuntimeError("no key"),
 )
-def test_sync_running_low_clears_when_gemini_unconfigured(
-    _mock_suggest,
-    _mock_info,
-):
+def test_sync_running_low_clears_when_gemini_unconfigured(_mock_suggest):
     user = _user(username="nokey")
     milk = _catalog_product("Leche", owner=user)
     Product.objects.filter(pk=milk.pk).update(running_low=True)
@@ -1006,11 +843,7 @@ def test_sync_running_low_clears_when_gemini_unconfigured(
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info",
-    return_value=None,
-)
-def test_running_low_sync_user_ids_distinct_owners(_mock_info):
+def test_running_low_sync_user_ids_distinct_owners():
     a = _user(username="rl_a")
     b = _user(username="rl_b")
     _catalog_product("p", owner=a)
