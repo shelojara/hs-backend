@@ -100,8 +100,7 @@ def test_parse_invalid_json_returns_none():
 def test_parse_merchant_product_list_payload_array():
     raw = (
         '[{"display_name": "A", "standard_name": "Sa", "brand": "", "price": 100, '
-        '"format": "", "emoji": "", "merchant": "Jumbo", '
-        '"url": "https://www.jumbo.cl/product/a"}, '
+        '"format": "", "emoji": "", "merchant": "Jumbo"}, '
         '{"display_name": "B", "standard_name": "Sb", "brand": "X", "price": 0, '
         '"format": "1 L", "emoji": "🥛"}]'
     )
@@ -109,10 +108,8 @@ def test_parse_merchant_product_list_payload_array():
     assert len(out) == 2
     assert out[0].display_name == "A"
     assert out[0].merchant == "Jumbo"
-    assert out[0].url == "https://www.jumbo.cl/product/a"
     assert out[1].format == "1 L"
     assert out[1].merchant == ""
-    assert out[1].url == ""
     assert out[1].price is None
 
 
@@ -148,8 +145,7 @@ def test_fetch_merchant_product_candidates_returns_list(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = (
         '[{"display_name": "One", "standard_name": "T", "brand": "", "price": 1, '
-        '"format": "", "emoji": "", "merchant": "Lider", '
-        '"url": "https://www.lider.cl/p/one"}]'
+        '"format": "", "emoji": "", "merchant": "Lider"}]'
     )
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = mock_response
@@ -159,7 +155,6 @@ def test_fetch_merchant_product_candidates_returns_list(mock_get_client):
     assert len(out) == 1
     assert out[0].display_name == "One"
     assert out[0].merchant == "Lider"
-    assert out[0].url == "https://www.lider.cl/p/one"
     mock_client.models.generate_content.assert_called_once()
     cfg = mock_client.models.generate_content.call_args.kwargs["config"]
     assert "array" in (cfg.system_instruction or "").lower()

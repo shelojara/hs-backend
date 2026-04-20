@@ -41,8 +41,6 @@ _MERCHANT_PRODUCT_JSON_KEYS_FIND = (
     "Each object must have these keys: "
     '"merchant" (string: retail chain or store name whose Chile site or listing you used, e.g. "Lider", "Jumbo"; '
     "Spanish Chile when appropriate; empty if unknown), "
-    '"url" (string: HTTPS URL of the specific product page or listing you used on that merchant site; '
-    'empty string "" if unknown), '
     '"display_name" (string: best retail-style product title for lists: proper capitalization, '
     "brand + product line + key format as on shelf or the merchant site; Spanish Chile; empty if unknown), "
     '"standard_name" (string: generic product type for grouping across brands and formats: Spanish Chile; '
@@ -156,7 +154,6 @@ class MerchantProductInfo:
     format: str
     emoji: str
     merchant: str = ""
-    url: str = ""
 
 
 @dataclass(frozen=True)
@@ -265,7 +262,6 @@ def _merchant_product_info_from_mapping(data: dict[str, Any]) -> MerchantProduct
         format=_normalize_field(data.get("format"), 255),
         emoji=_normalize_field(data.get("emoji"), 64),
         merchant=_normalize_field(data.get("merchant"), 255),
-        url=_normalize_field(data.get("url"), 2048),
     )
 
 
