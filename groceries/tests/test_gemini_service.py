@@ -82,7 +82,7 @@ def test_fetch_merchant_product_info_by_identity_strips_json_fence(mock_get_clie
         display_name="",
         standard_name="Arroz grano largo",
         brand="",
-        price=Decimal("0"),
+        price=None,
         format="500 g",
         emoji="",
         merchant="",
@@ -113,6 +113,7 @@ def test_parse_merchant_product_list_payload_array():
     assert out[1].format == "1 L"
     assert out[1].merchant == ""
     assert out[1].url == ""
+    assert out[1].price is None
 
 
 def test_parse_merchant_product_list_payload_caps_max_items():
@@ -123,6 +124,16 @@ def test_parse_merchant_product_list_payload_caps_max_items():
     raw += "]"
     out = _parse_merchant_product_list_payload(raw, max_items=10)
     assert len(out) == 10
+
+
+def test_parse_merchant_product_list_payload_zero_price_becomes_none():
+    raw = (
+        '{"display_name": "Z", "standard_name": "", "brand": "", "price": 0, '
+        '"format": "", "emoji": ""}'
+    )
+    out = _parse_merchant_product_list_payload(raw, max_items=10)
+    assert len(out) == 1
+    assert out[0].price is None
 
 
 def test_parse_merchant_product_list_payload_wraps_single_object():

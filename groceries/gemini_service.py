@@ -49,12 +49,12 @@ _MERCHANT_PRODUCT_JSON_KEYS_FIND = (
     'omit marca, precio, and envase/tamaño; short noun phrase e.g. "Leche entera", "Arroz grano largo"; '
     "empty if unknown), "
     '"brand" (string: marca comercial or empty), '
-    '"price" (number: typical shelf price in Chilean pesos CLP as a plain number — integer pesos, '
-    "no thousands separators, no currency symbol; e.g. 3990 for a shelf label like $3.990; use 0 if unknown), "
+    '"price" (number or null: typical shelf price in Chilean pesos CLP as a plain number — integer pesos, '
+    "no thousands separators, no currency symbol; e.g. 3990 for a shelf label like $3.990; use null if unknown), "
     '"format" (string: presentation: size, units, e.g. "1 L", "6 x 330 ml", "500 g"; empty if unknown), '
     '"emoji" (string: one Unicode emoji best matching product type or category, e.g. 🥛 for milk, 🍚 for rice; '
     'empty string "" if unsure). '
-    'Use empty string "" for unknown string fields. Use 0 for unknown price. '
+    'Use empty string "" for unknown string fields. Use JSON null for unknown price (legacy 0 is treated as unknown). '
     "Do not repeat the same merchant SKU or identical display_name twice. Prefer distinct products."
 )
 
@@ -65,12 +65,12 @@ _MERCHANT_PRODUCT_JSON_KEYS_SINGLE = (
     'omit marca, precio, and envase/tamaño; short noun phrase e.g. "Leche entera", "Arroz grano largo"; '
     "empty if unknown), "
     '"brand" (string: marca comercial or empty), '
-    '"price" (number: typical shelf price in Chilean pesos CLP as a plain number — integer pesos, '
-    "no thousands separators, no currency symbol; e.g. 3990 for a shelf label like $3.990; use 0 if unknown), "
+    '"price" (number or null: typical shelf price in Chilean pesos CLP as a plain number — integer pesos, '
+    "no thousands separators, no currency symbol; e.g. 3990 for a shelf label like $3.990; use null if unknown), "
     '"format" (string: presentation: size, units, e.g. "1 L", "6 x 330 ml", "500 g"; empty if unknown), '
     '"emoji" (string: one Unicode emoji best matching product type or category, e.g. 🥛 for milk, 🍚 for rice; '
     'empty string "" if unsure). '
-    'Use empty string "" for unknown string fields. Use 0 for unknown price.'
+    'Use empty string "" for unknown string fields. Use JSON null for unknown price (legacy 0 is treated as unknown).'
 )
 
 
@@ -152,7 +152,7 @@ class MerchantProductInfo:
     display_name: str
     standard_name: str
     brand: str
-    price: Decimal
+    price: Decimal | None
     format: str
     emoji: str
     merchant: str = ""
@@ -193,6 +193,18 @@ def _normalize_field(s: str | None, max_len: int) -> str:
 
 def _quantize_clp(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _parse_optional_merchant_price(raw: Any) -> Decimal | None:
+    """Parse JSON price; ``None``, empty, invalid, unknown sentinel 0 → ``None``."""
+    if raw is None:
+        return None
+    if isinstance(raw, str) and not raw.strip():
+        return None
+    parsed = _parse_price_value(raw)
+    if parsed == Decimal("0"):
+        return None
+    return parsed
 
 
 def _parse_price_value(raw: Any) -> Decimal:
@@ -249,7 +261,7 @@ def _merchant_product_info_from_mapping(data: dict[str, Any]) -> MerchantProduct
         display_name=_normalize_field(data.get("display_name"), 255),
         standard_name=_normalize_field(data.get("standard_name"), 255),
         brand=_normalize_field(data.get("brand"), 255),
-        price=_parse_price_value(data.get("price")),
+        price=_parse_optional_merchant_price(data.get("price")),
         format=_normalize_field(data.get("format"), 255),
         emoji=_normalize_field(data.get("emoji"), 64),
         merchant=_normalize_field(data.get("merchant"), 255),

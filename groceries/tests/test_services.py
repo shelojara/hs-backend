@@ -183,6 +183,23 @@ def test_create_product_from_candidate_sets_is_custom():
 
 
 @pytest.mark.django_db
+def test_create_product_from_candidate_null_price_stores_zero_clp():
+    u = _user()
+    pid = create_product_from_candidate(
+        candidate=ProductCandidateSchema(
+            name="No price yet",
+            standard_name="",
+            brand="",
+            price=None,
+            format="",
+            emoji="",
+        ),
+        user_id=u.pk,
+    )
+    assert Product.objects.get(pk=pid).price == Decimal("0.00")
+
+
+@pytest.mark.django_db
 def test_create_product_from_candidate_assigns_user():
     u = _user()
     pid = create_product_from_candidate(
@@ -412,6 +429,34 @@ def test_recheck_product_price_passes_preferred_merchants(mock_identity):
     return_value=None,
 )
 def test_recheck_product_price_noop_when_gemini_returns_none(_mock_identity):
+    owner = _catalog_owner_user()
+    p = Product.objects.create(
+        name="Keep",
+        standard_name="Arroz",
+        brand="",
+        format="500 g",
+        price=Decimal("500"),
+        user=owner,
+    )
+    before = (p.name, p.price)
+    out = recheck_product_price(product_id=p.pk, user_id=owner.pk)
+    assert (out.name, out.price) == before
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_info_by_identity",
+    return_value=MerchantProductInfo(
+        display_name="X",
+        standard_name="Arroz",
+        brand="",
+        price=None,
+        format="500 g",
+        emoji="",
+        merchant="",
+    ),
+)
+def test_recheck_product_price_noop_when_merchant_price_null(_mock_identity):
     owner = _catalog_owner_user()
     p = Product.objects.create(
         name="Keep",
