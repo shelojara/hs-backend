@@ -1,6 +1,7 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -24,6 +25,7 @@ from groceries.services import (
     get_whiteboard,
     list_products,
     list_purchased_baskets,
+    list_purchased_baskets_for_running_low,
     purchase_latest_open_basket,
     purchase_single_product,
     set_product_purchase_in_open_basket,
@@ -874,6 +876,66 @@ def test_list_purchased_baskets_isolated_per_user():
     bob = _user(username="bob2")
     Basket.objects.create(owner=alice, purchased_at=timezone.now())
     assert list_purchased_baskets(user_id=bob.pk) == []
+
+
+@pytest.mark.django_db
+def test_list_purchased_baskets_for_running_low_empty():
+    user = _user(username="rl_window_empty")
+    assert list_purchased_baskets_for_running_low(user_id=user.pk) == []
+
+
+@pytest.mark.django_db
+@patch("groceries.services.timezone.now")
+def test_list_purchased_baskets_for_running_low_two_month_window(mock_now):
+    """Only baskets with purchased_at >= now - 2 months (inclusive boundary)."""
+    utc = ZoneInfo("UTC")
+    mock_now.return_value = datetime(2026, 3, 15, 12, 0, 0, tzinfo=utc)
+    # Two months before mock_now is 2026-01-15 12:00 UTC
+    user = _user(username="rl_window")
+    too_old = Basket.objects.create(
+        owner=user,
+        purchased_at=datetime(2026, 1, 14, 23, 59, 59, tzinfo=utc),
+    )
+    on_edge = Basket.objects.create(
+        owner=user,
+        purchased_at=datetime(2026, 1, 15, 12, 0, 0, tzinfo=utc),
+    )
+    recent = Basket.objects.create(
+        owner=user,
+        purchased_at=datetime(2026, 3, 1, 8, 0, 0, tzinfo=utc),
+    )
+    rows = list_purchased_baskets_for_running_low(user_id=user.pk)
+    assert {b.pk for b in rows} == {on_edge.pk, recent.pk}
+    assert too_old.pk not in {b.pk for b in rows}
+    assert [b.pk for b in rows] == [recent.pk, on_edge.pk]
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+)
+def test_sync_running_low_uses_two_month_purchase_window_only(mock_suggest):
+    utc = ZoneInfo("UTC")
+    mock_suggest.return_value = []
+    user = _user(username="rl_sync_window")
+    old_milk = _catalog_product("Old milk", owner=user)
+    new_jam = _catalog_product("Jam", owner=user)
+    with patch("groceries.services.timezone.now") as mock_now:
+        mock_now.return_value = datetime(2026, 3, 15, 12, 0, 0, tzinfo=utc)
+        b_old = Basket.objects.create(
+            owner=user,
+            purchased_at=datetime(2025, 12, 1, 10, 0, 0, tzinfo=utc),
+        )
+        b_old.products.add(old_milk)
+        b_new = Basket.objects.create(
+            owner=user,
+            purchased_at=datetime(2026, 3, 10, 10, 0, 0, tzinfo=utc),
+        )
+        b_new.products.add(new_jam)
+        sync_running_low_flags_for_user(user_id=user.pk)
+    md = mock_suggest.call_args.kwargs["history_markdown"]
+    assert "Jam" in md
+    assert "Old milk" not in md
 
 
 @pytest.mark.django_db
