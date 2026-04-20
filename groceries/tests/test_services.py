@@ -67,6 +67,7 @@ def _catalog_product(name: str, *, owner=None) -> Product:
             format="1 L",
             emoji="🥛",
             merchant="Lider",
+            url="https://www.lider.cl/p/leche",
         ),
     ],
 )
@@ -77,6 +78,7 @@ def test_find_product_candidates_returns_gemini_rows_no_db(_mock_candidates):
     assert len(rows) == 1
     assert rows[0].display_name == "Colún Leche Entera 1 L"
     assert rows[0].merchant == "Lider"
+    assert rows[0].url == "https://www.lider.cl/p/leche"
     assert Product.objects.count() == 0
 
 

@@ -89,6 +89,7 @@ def find_product_candidates(request, payload: FindProductCandidatesRequest):
                 format=p.format,
                 emoji=p.emoji,
                 merchant=p.merchant,
+                url=p.url,
             )
             for p in items
         ],
