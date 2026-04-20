@@ -402,10 +402,14 @@ def purchase_latest_open_basket(*, user_id: int) -> Basket:
 def purchase_single_product(*, product_id: int, user_id: int) -> Basket:
     """Create new basket with one product, mark purchased immediately.
 
-    Does not read or modify user's other open baskets (instant checkout path).
+    If that product is already in user's current open basket, removes it there first.
+    Other lines in that basket unchanged (instant checkout path).
     """
     product = Product.objects.get(pk=product_id, user_id=user_id)
     with transaction.atomic():
+        open_basket = get_current_basket(user_id=user_id, select_for_update=True)
+        if open_basket is not None and open_basket.products.filter(pk=product_id).exists():
+            open_basket.products.remove(product)
         basket = Basket.objects.create(owner_id=user_id)
         basket.products.add(product, through_defaults={"purchase": True})
         basket.purchased_at = timezone.now()
