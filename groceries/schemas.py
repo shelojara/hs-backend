@@ -44,7 +44,7 @@ class ProductCandidateSchema(Schema):
     format: str
     emoji: str
     merchant: str = ""
-    product_url: str = ""
+    url: str = ""
 
 
 class FindProductCandidatesResponse(Schema):
