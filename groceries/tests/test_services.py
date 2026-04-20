@@ -306,6 +306,17 @@ def test_list_products_search_icontains_ordered_by_purchase_count_then_name():
 
 
 @pytest.mark.django_db
+def test_list_products_search_matches_brand():
+    owner = _catalog_owner_user()
+    branded = _catalog_product("Leche entera", owner=owner)
+    Product.objects.filter(pk=branded.pk).update(brand="Colún")
+    _catalog_product("Arroz", owner=owner)
+    items, _ = list_products(user_id=owner.pk, search="colún", limit=10)
+    assert len(items) == 1
+    assert items[0].pk == branded.pk
+
+
+@pytest.mark.django_db
 def test_list_products_search_paginates_with_cursor():
     owner = _catalog_owner_user()
     milk = _catalog_product("Oat milk", owner=owner)

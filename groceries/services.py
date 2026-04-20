@@ -226,6 +226,8 @@ def list_products(
 ) -> tuple[list[Product], str | None]:
     """List products with cursor pagination; optional case-insensitive substring search (ILIKE).
 
+    Search matches *name* or *brand* when non-empty.
+
     Ordered by purchase count (highest first), then name, then primary key.
 
     Excludes products already in *user_id*'s current open basket (same basket as add/remove).
@@ -235,7 +237,7 @@ def list_products(
 
     qs = Product.objects.all().order_by("-purchase_count", "name", "pk")
     if q:
-        qs = qs.filter(name__icontains=q)
+        qs = qs.filter(Q(name__icontains=q) | Q(brand__icontains=q))
 
     basket = get_current_basket(user_id=user_id)
     if basket is not None:
