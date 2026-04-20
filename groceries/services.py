@@ -397,6 +397,21 @@ def purchase_latest_open_basket(*, user_id: int) -> Basket:
     return basket
 
 
+def purchase_single_product(*, product_id: int, user_id: int) -> Basket:
+    """Create new basket with one product, mark purchased immediately.
+
+    Does not read or modify user's other open baskets (instant checkout path).
+    """
+    product = Product.objects.get(pk=product_id, user_id=user_id)
+    with transaction.atomic():
+        basket = Basket.objects.create(owner_id=user_id)
+        basket.products.add(product, through_defaults={"purchase": True})
+        basket.purchased_at = timezone.now()
+        basket.save(update_fields=["purchased_at"])
+        Product.objects.filter(pk=product.pk).update(purchase_count=F("purchase_count") + 1)
+    return basket
+
+
 def _format_purchased_baskets_for_running_low(baskets: list[Basket]) -> str:
     """Build plain-text block of basket history for Gemini (newest first)."""
     lines: list[str] = []

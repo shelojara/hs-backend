@@ -25,6 +25,7 @@ from groceries.services import (
     list_products,
     list_purchased_baskets,
     purchase_latest_open_basket,
+    purchase_single_product,
     set_product_purchase_in_open_basket,
     recheck_product_price,
     save_whiteboard,
@@ -722,6 +723,34 @@ def test_purchase_latest_open_basket_raises_when_none_open():
     Basket.objects.create(owner=user, purchased_at=timezone.now())
     with pytest.raises(NoOpenBasketError):
         purchase_latest_open_basket(user_id=user.pk)
+
+
+@pytest.mark.django_db
+def test_purchase_single_product_creates_purchased_basket_and_increments():
+    user = _user()
+    p = Product.objects.create(name="Solo", user=user)
+    out = purchase_single_product(product_id=p.pk, user_id=user.pk)
+    out.refresh_from_db()
+    p.refresh_from_db()
+    assert out.purchased_at is not None
+    assert list(out.products.values_list("pk", flat=True)) == [p.pk]
+    assert p.purchase_count == 1
+
+
+@pytest.mark.django_db
+def test_purchase_single_product_does_not_touch_existing_open_basket():
+    user = _user()
+    existing = Basket.objects.create(owner=user)
+    other = Product.objects.create(name="In cart", user=user)
+    existing.products.add(other)
+    solo = Product.objects.create(name="Instant", user=user)
+    purchase_single_product(product_id=solo.pk, user_id=user.pk)
+    existing.refresh_from_db()
+    assert existing.purchased_at is None
+    assert list(existing.products.values_list("pk", flat=True)) == [other.pk]
+    cur = get_current_basket(user_id=user.pk)
+    assert cur is not None
+    assert cur.pk == existing.pk
 
 
 @pytest.mark.django_db

@@ -33,6 +33,8 @@ from groceries.schemas import (
     ProductSchema,
     PurchaseBasketRequest,
     PurchaseBasketResponse,
+    PurchaseSingleProductRequest,
+    PurchaseSingleProductResponse,
     SetProductPurchaseInBasketRequest,
     SetProductPurchaseInBasketResponse,
     RecheckProductPriceRequest,
@@ -236,6 +238,22 @@ def purchase_basket(request, payload: PurchaseBasketRequest):
     except NoOpenBasketError as exc:
         raise HttpError(404, str(exc)) from exc
     return PurchaseBasketResponse(basket_id=basket.pk)
+
+
+@router.post(
+    "/v1.Groceries.PurchaseSingleProduct",
+    response=PurchaseSingleProductResponse,
+)
+def purchase_single_product(request, payload: PurchaseSingleProductRequest):
+    user = request.auth
+    try:
+        basket = services.purchase_single_product(
+            product_id=payload.product_id,
+            user_id=user.pk,
+        )
+    except Product.DoesNotExist as exc:
+        raise HttpError(404, "Product not found.") from exc
+    return PurchaseSingleProductResponse(basket_id=basket.pk)
 
 
 @router.post("/v1.Groceries.GetCurrentBasket", response=GetCurrentBasketResponse)
