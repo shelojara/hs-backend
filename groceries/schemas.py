@@ -160,6 +160,14 @@ class PurchaseBasketResponse(Schema):
     basket_id: int
 
 
+class PurchaseSingleProductRequest(Schema):
+    product_id: int
+
+
+class PurchaseSingleProductResponse(Schema):
+    basket_id: int
+
+
 class ListPurchasedBasketsRequest(Schema):
     """No fields; POST body may be `{}` for RPC transport."""
 
