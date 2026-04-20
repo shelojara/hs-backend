@@ -1,6 +1,57 @@
 from django.contrib import admin
+from django.contrib import messages
+from django.db import transaction
+from django.db.models import Count
 
 from groceries.models import Basket, BasketProduct, Merchant, Product
+
+
+@admin.action(description="Merge selected baskets into one (same owner only)")
+def merge_baskets(modeladmin, request, queryset) -> None:
+    """Merge into the basket with the lowest pk; combines duplicate products (purchase=true if any)."""
+    count = queryset.count()
+    if count < 2:
+        modeladmin.message_user(
+            request,
+            "Select at least two baskets to merge.",
+            level=messages.ERROR,
+        )
+        return
+
+    baskets = list(queryset.select_related("owner"))
+    owners = {b.owner_id for b in baskets}
+    if len(owners) > 1:
+        modeladmin.message_user(
+            request,
+            "All selected baskets must belong to the same user.",
+            level=messages.ERROR,
+        )
+        return
+
+    target = min(baskets, key=lambda b: b.pk)
+    others = [b for b in baskets if b.pk != target.pk]
+
+    with transaction.atomic():
+        for basket in others:
+            for bp in basket.basketproduct_set.all():
+                obj, created = BasketProduct.objects.get_or_create(
+                    basket=target,
+                    product=bp.product,
+                    defaults={"purchase": bp.purchase},
+                )
+                if not created:
+                    merged = obj.purchase or bp.purchase
+                    if merged != obj.purchase:
+                        obj.purchase = merged
+                        obj.save(update_fields=["purchase"])
+                # Else: line already on target, flags merged above when not created
+            basket.delete()
+
+    modeladmin.message_user(
+        request,
+        f"Merged {count} baskets into basket #{target.pk}.",
+        level=messages.SUCCESS,
+    )
 
 
 @admin.register(Product)
@@ -18,7 +69,16 @@ class ProductAdmin(admin.ModelAdmin):
 
 @admin.register(Basket)
 class BasketAdmin(admin.ModelAdmin):
-    list_display = ("id", "owner", "created_at", "purchased_at")
+    list_display = ("id", "owner", "basket_products_count", "created_at", "purchased_at")
+    actions = (merge_baskets,)
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.annotate(_basketproduct_count=Count("basketproduct", distinct=True))
+
+    @admin.display(description="Products", ordering="_basketproduct_count")
+    def basket_products_count(self, obj: Basket) -> int:
+        return getattr(obj, "_basketproduct_count", 0)
 
 
 @admin.register(BasketProduct)
