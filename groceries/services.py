@@ -417,7 +417,8 @@ def purchase_latest_open_basket(*, user_id: int) -> Basket:
         basket.save(update_fields=["purchased_at"])
         if purchase_ids:
             Product.objects.filter(pk__in=purchase_ids).update(
-                purchase_count=F("purchase_count") + 1
+                purchase_count=F("purchase_count") + 1,
+                running_low=False,
             )
     return basket
 
@@ -437,7 +438,10 @@ def purchase_single_product(*, product_id: int, user_id: int) -> Basket:
         basket.products.add(product, through_defaults={"purchase": True})
         basket.purchased_at = timezone.now()
         basket.save(update_fields=["purchased_at"])
-        Product.objects.filter(pk=product.pk).update(purchase_count=F("purchase_count") + 1)
+        Product.objects.filter(pk=product.pk).update(
+            purchase_count=F("purchase_count") + 1,
+            running_low=False,
+        )
     return basket
 
 
