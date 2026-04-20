@@ -76,6 +76,8 @@ def _fetch_merchant_product_info_by_identity_or_none(
 
 
 def _apply_merchant_price_only(product: Product, info: MerchantProductInfo) -> None:
+    if info.price is None:
+        return
     product.price = info.price
     product.save(update_fields=["price"])
 
@@ -118,7 +120,7 @@ def create_product_from_candidate(
         name=candidate.name,
         standard_name=candidate.standard_name,
         brand=candidate.brand,
-        price=candidate.price,
+        price=candidate.price if candidate.price is not None else Decimal("0"),
         format=candidate.format,
         emoji=candidate.emoji,
         is_custom=is_custom,
