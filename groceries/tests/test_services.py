@@ -799,6 +799,19 @@ def test_purchase_single_product_does_not_touch_existing_open_basket():
 
 
 @pytest.mark.django_db
+def test_purchase_single_product_removes_product_from_current_basket():
+    user = _user()
+    open_b = Basket.objects.create(owner=user)
+    solo = Product.objects.create(name="Instant", user=user)
+    open_b.products.add(solo)
+    out = purchase_single_product(product_id=solo.pk, user_id=user.pk)
+    open_b.refresh_from_db()
+    assert list(open_b.products.values_list("pk", flat=True)) == []
+    assert list(out.products.values_list("pk", flat=True)) == [solo.pk]
+    assert out.purchased_at is not None
+
+
+@pytest.mark.django_db
 def test_basket_operations_isolated_per_user():
     alice = _user(username="alice")
     bob = _user(username="bob")
