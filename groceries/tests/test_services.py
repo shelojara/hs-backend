@@ -409,15 +409,17 @@ def test_list_products_orders_by_purchase_count_desc():
 
 
 @pytest.mark.django_db
-def test_list_products_search_icontains_ordered_by_purchase_count_then_name():
+def test_list_products_search_rapidfuzz_orders_ratio_then_purchase_count():
     owner = _catalog_owner_user()
     flakes = _catalog_product("Whole oat flakes", owner=owner)
     milk = _catalog_product("Oat milk", owner=owner)
+    _catalog_product("Oat bar", owner=owner)
     _catalog_product("Rice milk", owner=owner)
     Product.objects.filter(pk=flakes.pk).update(purchase_count=2)
     Product.objects.filter(pk=milk.pk).update(purchase_count=1)
     items, _ = list_products(user_id=owner.pk, search="oat", limit=10)
-    assert [i.name for i in items] == ["Whole oat flakes", "Oat milk"]
+    # WRatio ties; partial_ratio ties; ``ratio("oat", hay)`` orders bar > milk > flakes. Rice milk out.
+    assert [i.name for i in items] == ["Oat bar", "Oat milk", "Whole oat flakes"]
 
 
 @pytest.mark.django_db
@@ -429,6 +431,34 @@ def test_list_products_search_matches_brand():
     items, _ = list_products(user_id=owner.pk, search="colún", limit=10)
     assert len(items) == 1
     assert items[0].pk == branded.pk
+
+
+@pytest.mark.django_db
+def test_list_products_search_matches_standard_name_when_display_name_differs():
+    owner = _catalog_owner_user()
+    p = _catalog_product("SKU-991", owner=owner)
+    Product.objects.filter(pk=p.pk).update(standard_name="Whole milk 1L")
+    _catalog_product("Other item", owner=owner)
+    items, _ = list_products(user_id=owner.pk, search="whole milk", limit=10)
+    assert [i.pk for i in items] == [p.pk]
+
+
+@pytest.mark.django_db
+def test_list_products_search_accent_insensitive_on_name():
+    owner = _catalog_owner_user()
+    cafe = _catalog_product("Café instantáneo", owner=owner)
+    _catalog_product("Arroz", owner=owner)
+    items, _ = list_products(user_id=owner.pk, search="cafe instantaneo", limit=10)
+    assert [p.pk for p in items] == [cafe.pk]
+
+
+@pytest.mark.django_db
+def test_list_products_search_rapidfuzz_typo_still_matches():
+    owner = _catalog_owner_user()
+    milk = _catalog_product("Oat milk", owner=owner)
+    _catalog_product("Rice", owner=owner)
+    items, _ = list_products(user_id=owner.pk, search="ot mlk", limit=10)
+    assert [p.pk for p in items] == [milk.pk]
 
 
 @pytest.mark.django_db
@@ -471,8 +501,8 @@ def test_list_products_rejects_invalid_cursor():
 @pytest.mark.django_db
 def test_list_products_excludes_products_in_open_basket():
     u = _user()
-    p_in = _catalog_product("In cart")
-    p_out = _catalog_product("Not in cart")
+    p_in = _catalog_product("In cart", owner=u)
+    p_out = _catalog_product("Not in cart", owner=u)
     add_product_to_basket(product_id=p_in.pk, user_id=u.pk)
     items, _ = list_products(user_id=u.pk, limit=10)
     assert [i.pk for i in items] == [p_out.pk]
@@ -492,8 +522,8 @@ def test_list_products_excludes_soft_deleted():
 def test_list_products_rejects_cursor_from_different_user_context():
     alice = _user(username="alice")
     bob = _user(username="bob")
-    _catalog_product("A")
-    _catalog_product("B")
+    _catalog_product("A", owner=alice)
+    _catalog_product("B", owner=alice)
     _, cur = list_products(user_id=alice.pk, limit=1)
     assert cur is not None
     with pytest.raises(InvalidProductListCursorError):

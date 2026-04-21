@@ -1,15 +1,18 @@
 import base64
 import json
 import logging
+import unicodedata
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
 from dateutil.relativedelta import relativedelta
 
 from django.db import transaction
-from django.db.models import F, Max, Prefetch, Q
+from django.db.models import F, Max, Prefetch, Q, QuerySet
 from django.utils import timezone
 from django_q.tasks import async_task
+from rapidfuzz import fuzz
 
 from groceries import gemini_service
 from groceries.favicon_service import fetch_favicon_url, normalize_website_url
@@ -207,30 +210,193 @@ def recheck_product_price(*, product_id: int, user_id: int) -> Product:
     return product
 
 
-def _b64url_encode(raw: bytes) -> str:
-    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
-
-
-def _b64url_decode(s: str) -> bytes:
-    pad = "=" * (-len(s) % 4)
-    return base64.urlsafe_b64decode(s + pad)
-
-
-def _encode_cursor(payload: dict[str, Any]) -> str:
-    return _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
-
-
-def _decode_cursor(token: str) -> dict[str, Any]:
-    try:
-        return json.loads(_b64url_decode(token).decode())
-    except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise InvalidProductListCursorError() from exc
-
-
 def _clamp_limit(limit: int) -> int:
     if limit < 1:
         return 1
     return min(limit, MAX_LIST_LIMIT)
+
+
+def _encode_bytes_as_url_safe_base64_without_padding(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _decode_url_safe_base64_without_padding_to_bytes(encoded: str) -> bytes:
+    padding = "=" * (-len(encoded) % 4)
+    return base64.urlsafe_b64decode(encoded + padding)
+
+
+def _encode_list_products_cursor(payload: dict[str, Any]) -> str:
+    return _encode_bytes_as_url_safe_base64_without_padding(
+        json.dumps(payload, separators=(",", ":")).encode()
+    )
+
+
+def _decode_list_products_cursor(token: str) -> dict[str, Any]:
+    try:
+        raw_json = _decode_url_safe_base64_without_padding_to_bytes(token).decode()
+        return json.loads(raw_json)
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise InvalidProductListCursorError() from exc
+
+
+# Keys in persisted list-products cursor payloads (short keys keep tokens small).
+_LIST_PRODUCTS_CURSOR_QUERY = "q"
+_LIST_PRODUCTS_CURSOR_PURCHASE_COUNT = "c"
+_LIST_PRODUCTS_CURSOR_NAME = "n"
+_LIST_PRODUCTS_CURSOR_PRODUCT_ID = "i"
+_LIST_PRODUCTS_CURSOR_USER_ID = "u"
+
+
+def _parse_list_products_cursor_payload(
+    cursor_payload: dict[str, Any],
+    *,
+    expected_search_query: str,
+    expected_user_id: int,
+) -> tuple[int, str, int]:
+    """Return (purchase_count, product_name, product_id) after validating query and user."""
+    try:
+        cursor_query = cursor_payload[_LIST_PRODUCTS_CURSOR_QUERY]
+        purchase_count = int(cursor_payload[_LIST_PRODUCTS_CURSOR_PURCHASE_COUNT])
+        product_name = cursor_payload[_LIST_PRODUCTS_CURSOR_NAME]
+        product_id = int(cursor_payload[_LIST_PRODUCTS_CURSOR_PRODUCT_ID])
+        cursor_user_id = cursor_payload.get(_LIST_PRODUCTS_CURSOR_USER_ID)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise InvalidProductListCursorError() from exc
+    if cursor_query != expected_search_query:
+        raise InvalidProductListCursorError(
+            "Cursor does not match request parameters."
+        )
+    if cursor_user_id != expected_user_id:
+        raise InvalidProductListCursorError(
+            "Cursor does not match request parameters."
+        )
+    return purchase_count, product_name, product_id
+
+
+def _strip_accents(text: str) -> str:
+    """ASCII-ish fold for search; NFD then drop combining marks."""
+    return "".join(
+        character
+        for character in unicodedata.normalize("NFD", text)
+        if unicodedata.category(character) != "Mn"
+    )
+
+
+def _normalize_for_product_search(text: str) -> str:
+    return _strip_accents(text.casefold())
+
+
+def _product_search_haystack(name: str, standard_name: str, brand: str) -> str:
+    """Single folded string: *name*, *standard_name*, *brand* (non-blank, deduped order)."""
+    parts: list[str] = []
+    for part in (name.strip(), standard_name.strip(), brand.strip()):
+        if part and part not in parts:
+            parts.append(part)
+    if not parts:
+        return ""
+    return _normalize_for_product_search(" ".join(parts))
+
+
+# ``fuzz.WRatio`` below this → skip row (drops weak substring noise, e.g. ``xo`` vs ``hello``).
+_MIN_PRODUCT_SEARCH_WEIGHTED_RATIO = 65
+
+
+@dataclass(frozen=True, slots=True)
+class _ProductFuzzySearchRank:
+    """Sort descending on ratio fields and purchase count; ascending on name and id for stability."""
+
+    product: Product
+    weighted_ratio: int
+    partial_ratio_score: int
+    ratio_score: int
+
+    def sort_tuple(self) -> tuple[int, int, int, int, str, int]:
+        return (
+            -self.weighted_ratio,
+            -self.partial_ratio_score,
+            -self.ratio_score,
+            -self.product.purchase_count,
+            self.product.name,
+            self.product.pk,
+        )
+
+
+def _list_products_with_fuzzy_search(
+    *,
+    product_queryset: QuerySet[Product],
+    product_ids_in_open_basket: set[int],
+    user_id: int,
+    search_query: str,
+    page_size: int,
+    cursor_token: str | None,
+) -> tuple[list[Product], str | None]:
+    """Score catalog in memory with RapidFuzz; cursor pagination over sorted hits."""
+    query_normalized = _normalize_for_product_search(search_query)
+    ranked_rows: list[_ProductFuzzySearchRank] = []
+    for product in product_queryset.iterator(chunk_size=500):
+        if product.pk in product_ids_in_open_basket:
+            continue
+        haystack_normalized = _product_search_haystack(
+            product.name, product.standard_name, product.brand
+        )
+        if not haystack_normalized:
+            continue
+        weighted_ratio = int(fuzz.WRatio(query_normalized, haystack_normalized))
+        if weighted_ratio < _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO:
+            continue
+        partial_ratio_score = int(
+            fuzz.partial_ratio(query_normalized, haystack_normalized)
+        )
+        ratio_score = int(fuzz.ratio(query_normalized, haystack_normalized))
+        ranked_rows.append(
+            _ProductFuzzySearchRank(
+                product=product,
+                weighted_ratio=weighted_ratio,
+                partial_ratio_score=partial_ratio_score,
+                ratio_score=ratio_score,
+            )
+        )
+    ranked_rows.sort(key=lambda row: row.sort_tuple())
+    products_sorted_by_score = [row.product for row in ranked_rows]
+
+    slice_start_index = 0
+    if cursor_token is not None:
+        cursor_payload = _decode_list_products_cursor(cursor_token)
+        cursor_purchase_count, cursor_product_name, cursor_product_id = (
+            _parse_list_products_cursor_payload(
+                cursor_payload,
+                expected_search_query=search_query,
+                expected_user_id=user_id,
+            )
+        )
+        for index, product in enumerate(products_sorted_by_score):
+            if (
+                product.purchase_count == cursor_purchase_count
+                and product.name == cursor_product_name
+                and product.pk == cursor_product_id
+            ):
+                slice_start_index = index + 1
+                break
+        else:
+            raise InvalidProductListCursorError()
+
+    slice_upper_bound = slice_start_index + page_size + 1
+    page_slice = products_sorted_by_score[slice_start_index:slice_upper_bound]
+    has_next_page = len(page_slice) > page_size
+    page_products = page_slice[:page_size]
+    next_cursor = None
+    if has_next_page and page_products:
+        last_product = page_products[-1]
+        next_cursor = _encode_list_products_cursor(
+            {
+                _LIST_PRODUCTS_CURSOR_QUERY: search_query,
+                _LIST_PRODUCTS_CURSOR_PURCHASE_COUNT: last_product.purchase_count,
+                _LIST_PRODUCTS_CURSOR_NAME: last_product.name,
+                _LIST_PRODUCTS_CURSOR_PRODUCT_ID: last_product.pk,
+                _LIST_PRODUCTS_CURSOR_USER_ID: user_id,
+            }
+        )
+    return page_products, next_cursor
 
 
 def get_current_basket(
@@ -252,68 +418,81 @@ def list_products(
     cursor: str | None = None,
     search: str | None = None,
 ) -> tuple[list[Product], str | None]:
-    """List products with cursor pagination; optional case-insensitive substring search (ILIKE).
+    """List products with cursor pagination; optional in-memory RapidFuzz search.
 
-    Search matches *name* or *brand* when non-empty.
-
-    Ordered by purchase count (highest first), then name, then primary key.
+    Non-search: DB pagination, ``user_id`` scoped, same ordering.
 
     Excludes products already in *user_id*'s current open basket (same basket as add/remove).
     """
-    lim = _clamp_limit(limit)
-    q = (search or "").strip()
-
-    qs = Product.objects.all().order_by("-purchase_count", "name", "pk")
-    if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(brand__icontains=q))
+    page_size = _clamp_limit(limit)
+    trimmed_search_query = (search or "").strip()
 
     basket = get_current_basket(user_id=user_id)
+    product_ids_in_open_basket: set[int] = set()
     if basket is not None:
-        cart_pks = list(basket.products.values_list("pk", flat=True))
-        if cart_pks:
-            qs = qs.exclude(pk__in=cart_pks)
+        product_ids_in_open_basket = set(
+            basket.products.values_list("pk", flat=True)
+        )
+
+    user_product_queryset = Product.objects.filter(user_id=user_id).order_by(
+        "-purchase_count", "name", "pk"
+    )
+
+    if trimmed_search_query:
+        return _list_products_with_fuzzy_search(
+            product_queryset=user_product_queryset,
+            product_ids_in_open_basket=product_ids_in_open_basket,
+            user_id=user_id,
+            search_query=trimmed_search_query,
+            page_size=page_size,
+            cursor_token=cursor,
+        )
+
+    filtered_queryset = user_product_queryset
+    if product_ids_in_open_basket:
+        filtered_queryset = filtered_queryset.exclude(
+            pk__in=product_ids_in_open_basket
+        )
 
     if cursor:
-        payload = _decode_cursor(cursor)
-        try:
-            cq = payload["q"]
-            c_count = int(payload["c"])
-            cname = payload["n"]
-            cpk = int(payload["i"])
-            cu = payload.get("u")
-        except (KeyError, TypeError, ValueError) as exc:
-            raise InvalidProductListCursorError() from exc
-        if cq != q:
-            raise InvalidProductListCursorError(
-                "Cursor does not match request parameters."
+        cursor_payload = _decode_list_products_cursor(cursor)
+        cursor_purchase_count, cursor_product_name, cursor_product_id = (
+            _parse_list_products_cursor_payload(
+                cursor_payload,
+                expected_search_query=trimmed_search_query,
+                expected_user_id=user_id,
             )
-        if cu != user_id:
-            raise InvalidProductListCursorError(
-                "Cursor does not match request parameters."
+        )
+        filtered_queryset = filtered_queryset.filter(
+            Q(purchase_count__lt=cursor_purchase_count)
+            | Q(
+                purchase_count=cursor_purchase_count,
+                name__gt=cursor_product_name,
             )
-        qs = qs.filter(
-            Q(purchase_count__lt=c_count)
-            | Q(purchase_count=c_count, name__gt=cname)
-            | Q(purchase_count=c_count, name=cname, pk__gt=cpk)
+            | Q(
+                purchase_count=cursor_purchase_count,
+                name=cursor_product_name,
+                pk__gt=cursor_product_id,
+            )
         )
 
-    rows = list(qs[: lim + 1])
-    has_more = len(rows) > lim
-    page = rows[:lim]
+    rows = list(filtered_queryset[: page_size + 1])
+    has_next_page = len(rows) > page_size
+    page_products = rows[:page_size]
 
     next_cursor = None
-    if has_more and page:
-        last = page[-1]
-        next_cursor = _encode_cursor(
+    if has_next_page and page_products:
+        last_product = page_products[-1]
+        next_cursor = _encode_list_products_cursor(
             {
-                "q": q,
-                "c": last.purchase_count,
-                "n": last.name,
-                "i": last.pk,
-                "u": user_id,
+                _LIST_PRODUCTS_CURSOR_QUERY: trimmed_search_query,
+                _LIST_PRODUCTS_CURSOR_PURCHASE_COUNT: last_product.purchase_count,
+                _LIST_PRODUCTS_CURSOR_NAME: last_product.name,
+                _LIST_PRODUCTS_CURSOR_PRODUCT_ID: last_product.pk,
+                _LIST_PRODUCTS_CURSOR_USER_ID: user_id,
             }
         )
-    return page, next_cursor
+    return page_products, next_cursor
 
 
 def add_product_to_basket(*, product_id: int, user_id: int) -> Basket:
