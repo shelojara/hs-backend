@@ -83,6 +83,14 @@ class GetSearchResponse(Schema):
     search: SearchListItemSchema
 
 
+class DeleteSearchRequest(Schema):
+    search_id: int
+
+
+class DeleteSearchResponse(Schema):
+    pass
+
+
 class CreateProductFromCandidateRequest(Schema):
     canditate: ProductCandidateSchema
     is_custom: bool = False
