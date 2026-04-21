@@ -192,6 +192,24 @@ def test_list_searches_orders_by_created_at_newest_first():
     assert [r.pk for r in rows] == [newer.pk, older.pk]
 
 
+def test_search_result_candidates_as_product_schemas_null_brand_becomes_empty():
+    rows = search_result_candidates_as_product_schemas(
+        [
+            {
+                "display_name": "X",
+                "standard_name": "s",
+                "brand": None,
+                "price": None,
+                "format": "",
+                "emoji": "",
+            },
+        ],
+        fallback_name="q",
+    )
+    assert len(rows) == 1
+    assert rows[0].brand == ""
+
+
 def test_search_result_candidates_as_product_schemas_maps_stored_json():
     rows = search_result_candidates_as_product_schemas(
         [

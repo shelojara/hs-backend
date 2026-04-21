@@ -138,7 +138,7 @@ def create_product_from_candidate(
     product = Product.objects.create(
         name=candidate.name,
         standard_name=candidate.standard_name,
-        brand=candidate.brand,
+        brand=(candidate.brand or "").strip(),
         price=candidate.price,
         format=candidate.format,
         emoji=candidate.emoji,
@@ -161,7 +161,7 @@ def update_product(
     """Update persisted merchant fields; no Gemini call."""
     product = Product.objects.get(pk=product_id, user_id=user_id)
     product.standard_name = standard_name
-    product.brand = brand
+    product.brand = (brand or "").strip()
     product.format = format
     product.price = price
     product.emoji = emoji
