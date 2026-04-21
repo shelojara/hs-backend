@@ -433,6 +433,16 @@ def test_list_products_search_matches_brand():
 
 
 @pytest.mark.django_db
+def test_list_products_search_matches_standard_name_when_display_name_differs():
+    owner = _catalog_owner_user()
+    p = _catalog_product("SKU-991", owner=owner)
+    Product.objects.filter(pk=p.pk).update(standard_name="Whole milk 1L")
+    _catalog_product("Other item", owner=owner)
+    items, _ = list_products(user_id=owner.pk, search="whole milk", limit=10)
+    assert [i.pk for i in items] == [p.pk]
+
+
+@pytest.mark.django_db
 def test_list_products_search_accent_insensitive_on_name():
     owner = _catalog_owner_user()
     cafe = _catalog_product("Café instantáneo", owner=owner)

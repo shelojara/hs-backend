@@ -73,12 +73,15 @@ def _normalize_for_product_search(s: str) -> str:
     return _strip_accents(s.casefold())
 
 
-def _product_search_haystack(name: str, brand: str) -> str:
-    n = name.strip()
-    b = brand.strip()
-    if b:
-        return _normalize_for_product_search(f"{n} {b}")
-    return _normalize_for_product_search(n)
+def _product_search_haystack(name: str, standard_name: str, brand: str) -> str:
+    """Single folded string: *name*, *standard_name*, *brand* (non-blank, deduped order)."""
+    parts: list[str] = []
+    for part in (name.strip(), standard_name.strip(), brand.strip()):
+        if part and part not in parts:
+            parts.append(part)
+    if not parts:
+        return ""
+    return _normalize_for_product_search(" ".join(parts))
 
 
 def _fuzzy_subsequence_match_positions(
@@ -303,8 +306,8 @@ def list_products(
     """List products with cursor pagination; optional fuzzy search on user's catalog.
 
     When *search* non-empty: load that user's active catalog into memory, keep rows
-    whose *name* + *brand* match query as ordered subsequence after accent fold +
-    casefold. Tie-break: purchase count desc, name, pk (same as no-search list).
+    whose *name* + *standard_name* + *brand* match query as ordered subsequence after
+    accent fold + casefold. Tie-break: purchase count desc, name, pk (same as no-search list).
 
     When *search* empty: DB pagination only (same ordering), scoped to *user_id*.
 
@@ -328,7 +331,7 @@ def list_products(
         for p in base_qs.iterator(chunk_size=500):
             if p.pk in cart_pks:
                 continue
-            hay = _product_search_haystack(p.name, p.brand)
+            hay = _product_search_haystack(p.name, p.standard_name, p.brand)
             pos = _fuzzy_subsequence_match_positions(q_norm, hay)
             if pos is None:
                 continue
