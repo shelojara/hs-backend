@@ -96,6 +96,7 @@ def list_searches(request, payload: ListSearchesRequest):
         searches=[
             SearchListItemSchema(
                 search_id=s.pk,
+                create_at=s.create_at,
                 query=s.query,
                 status=s.status,
                 completed_at=s.completed_at,

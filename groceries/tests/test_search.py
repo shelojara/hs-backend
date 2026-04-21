@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -101,6 +102,19 @@ def test_list_searches_returns_latest_ten_newest_first_ordered_by_pk():
     want = list(reversed(ids[-10:]))
     assert [r.pk for r in rows] == want
     assert all(r.user_id == u.pk for r in rows)
+
+
+@pytest.mark.django_db
+def test_list_searches_orders_by_create_at_newest_first():
+    u = User.objects.create_user(username="ls3", password="pw")
+    base = timezone.now()
+    older = Search.objects.create(user_id=u.pk, query="older")
+    newer = Search.objects.create(user_id=u.pk, query="newer")
+    Search.objects.filter(pk=older.pk).update(create_at=base - timedelta(hours=2))
+    Search.objects.filter(pk=newer.pk).update(create_at=base - timedelta(hours=1))
+    assert older.pk < newer.pk
+    rows = list_searches(user_id=u.pk)
+    assert [r.pk for r in rows] == [newer.pk, older.pk]
 
 
 def test_search_result_candidates_as_product_schemas_maps_stored_json():

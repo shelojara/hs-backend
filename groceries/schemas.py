@@ -64,6 +64,7 @@ class ListSearchesRequest(Schema):
 
 class SearchListItemSchema(Schema):
     search_id: int
+    create_at: datetime
     query: str
     status: str
     completed_at: datetime | None
