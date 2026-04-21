@@ -29,6 +29,37 @@ class ReportInterval(models.TextChoices):
     MONTHLY = "MONTHLY", "Monthly"
 
 
+class SearchStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    COMPLETED = "completed", "Completed"
+    FAILED = "failed", "Failed"
+
+
+class Search(models.Model):
+    """Stored search job with ranked or suggested result candidates."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="searches",
+    )
+    query = models.TextField()
+    status = models.CharField(
+        max_length=16,
+        choices=SearchStatus.choices,
+        default=SearchStatus.PENDING,
+        db_index=True,
+    )
+    result_candidates = models.JSONField(default=list)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("-id",)
+
+    def __str__(self) -> str:
+        return f"Search({self.query[:60]!r}…) status={self.status} user={self.user_id}"
+
+
 class Snapshot(models.Model):
     page = models.ForeignKey("Page", on_delete=models.CASCADE, related_name="snapshots")
 
