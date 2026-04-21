@@ -11,6 +11,7 @@ from django.db import transaction
 from django.db.models import F, Max, Prefetch, Q
 from django.utils import timezone
 from django_q.tasks import async_task
+from thefuzz import fuzz
 
 from groceries import gemini_service
 from groceries.favicon_service import fetch_favicon_url, normalize_website_url
@@ -84,30 +85,8 @@ def _product_search_haystack(name: str, standard_name: str, brand: str) -> str:
     return _normalize_for_product_search(" ".join(parts))
 
 
-def _fuzzy_subsequence_match_positions(
-    query_norm: str, haystack_norm: str
-) -> tuple[int, int] | None:
-    """Ordered subsequence match; return (index of first char matched, total gap span).
-
-    ``None`` if *query_norm* cannot be matched in order inside *haystack_norm*.
-    """
-    if not query_norm:
-        return None
-    qi = 0
-    first = -1
-    prev = -1
-    span = 0
-    for hi, ch in enumerate(haystack_norm):
-        if ch == query_norm[qi]:
-            if first < 0:
-                first = hi
-            if prev >= 0:
-                span += hi - prev - 1
-            prev = hi
-            qi += 1
-            if qi == len(query_norm):
-                return (first, span)
-    return None
+# ``thefuzz.WRatio`` below this → skip row (drops weak substring noise, e.g. ``xo`` vs ``hello``).
+_MIN_PRODUCT_SEARCH_WRATIO = 65
 
 
 def _fetch_merchant_product_info_by_identity_or_none(
@@ -305,9 +284,10 @@ def list_products(
 ) -> tuple[list[Product], str | None]:
     """List products with cursor pagination; optional fuzzy search on user's catalog.
 
-    When *search* non-empty: load that user's active catalog into memory, keep rows
-    whose *name* + *standard_name* + *brand* match query as ordered subsequence after
-    accent fold + casefold. Tie-break: purchase count desc, name, pk (same as no-search list).
+    When *search* non-empty: load that user's active catalog into memory, score each row with
+    ``thefuzz.fuzz.WRatio`` on accent-folded *query* vs haystack (*name* + *standard_name* +
+    *brand*). Rows below ``_MIN_PRODUCT_SEARCH_WRATIO`` dropped. Sort: WRatio desc,
+    ``partial_ratio`` desc, ``ratio`` desc, purchase count desc, name, pk.
 
     When *search* empty: DB pagination only (same ordering), scoped to *user_id*.
 
@@ -327,18 +307,22 @@ def list_products(
 
     if q:
         q_norm = _normalize_for_product_search(q)
-        scored: list[tuple[int, int, int, int, Product]] = []
+        scored: list[tuple[tuple[int, int, int, int, str, int], Product]] = []
         for p in base_qs.iterator(chunk_size=500):
             if p.pk in cart_pks:
                 continue
             hay = _product_search_haystack(p.name, p.standard_name, p.brand)
-            pos = _fuzzy_subsequence_match_positions(q_norm, hay)
-            if pos is None:
+            if not hay:
                 continue
-            first, gap = pos
-            scored.append((first, gap, -p.purchase_count, p.pk, p))
-        scored.sort(key=lambda t: (t[0], t[1], t[2], t[3]))
-        ordered = [t[4] for t in scored]
+            wr = int(fuzz.WRatio(q_norm, hay))
+            if wr < _MIN_PRODUCT_SEARCH_WRATIO:
+                continue
+            pr = int(fuzz.partial_ratio(q_norm, hay))
+            r = int(fuzz.ratio(q_norm, hay))
+            key = (-wr, -pr, -r, -p.purchase_count, p.name, p.pk)
+            scored.append((key, p))
+        scored.sort(key=lambda t: t[0])
+        ordered = [t[1] for t in scored]
 
         start = 0
         if cursor:

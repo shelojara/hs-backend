@@ -409,16 +409,17 @@ def test_list_products_orders_by_purchase_count_desc():
 
 
 @pytest.mark.django_db
-def test_list_products_search_fuzzy_orders_early_match_then_purchase_count():
+def test_list_products_search_thefuzz_orders_ratio_then_purchase_count():
     owner = _catalog_owner_user()
     flakes = _catalog_product("Whole oat flakes", owner=owner)
     milk = _catalog_product("Oat milk", owner=owner)
+    _catalog_product("Oat bar", owner=owner)
     _catalog_product("Rice milk", owner=owner)
     Product.objects.filter(pk=flakes.pk).update(purchase_count=2)
     Product.objects.filter(pk=milk.pk).update(purchase_count=1)
     items, _ = list_products(user_id=owner.pk, search="oat", limit=10)
-    # "oat" aligns at start of "Oat milk" before "Whole oat flakes"; "Rice milk" has no "oat".
-    assert [i.name for i in items] == ["Oat milk", "Whole oat flakes"]
+    # WRatio ties; partial_ratio ties; ``ratio("oat", hay)`` orders bar > milk > flakes. Rice milk out.
+    assert [i.name for i in items] == ["Oat bar", "Oat milk", "Whole oat flakes"]
 
 
 @pytest.mark.django_db
@@ -452,7 +453,7 @@ def test_list_products_search_accent_insensitive_on_name():
 
 
 @pytest.mark.django_db
-def test_list_products_search_fuzzy_subsequence_with_gaps():
+def test_list_products_search_thefuzz_typo_still_matches():
     owner = _catalog_owner_user()
     milk = _catalog_product("Oat milk", owner=owner)
     _catalog_product("Rice", owner=owner)
