@@ -89,7 +89,7 @@ def find_product_candidates(
     query: str,
     user_id: int,
 ) -> list[MerchantProductInfo]:
-    """Return up to 10 Gemini merchant product rows for *query*; no DB writes."""
+    """Return up to 20 Gemini merchant product rows for *query*; no DB writes."""
     normalized = query.strip()
     if not normalized:
         msg = "Query must not be empty."

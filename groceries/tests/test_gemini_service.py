@@ -156,6 +156,10 @@ def test_fetch_merchant_product_candidates_returns_list(mock_get_client):
     assert out[0].display_name == "One"
     assert out[0].merchant == "Lider"
     mock_client.models.generate_content.assert_called_once()
+    assert (
+        mock_client.models.generate_content.call_args.kwargs["model"]
+        == gemini_service.GEMINI_FIND_PRODUCTS_MODEL
+    )
     cfg = mock_client.models.generate_content.call_args.kwargs["config"]
     assert "array" in (cfg.system_instruction or "").lower()
 
