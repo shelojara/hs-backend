@@ -1,5 +1,7 @@
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
+from groceries.gemini_service import MerchantProductInfo
 from pagechecker import gemini_service
 
 
@@ -153,3 +155,36 @@ def test_suggest_page_category_id_unknown_id_returns_none(mock_get_client):
         )
         is None
     )
+
+
+@patch("groceries.gemini_service.fetch_merchant_product_candidates")
+def test_search_with_google_grounding_maps_rows(mock_fetch):
+    mock_fetch.return_value = [
+        MerchantProductInfo(
+            display_name="Milk 1L",
+            standard_name="Leche",
+            brand="Colún",
+            price=Decimal("2590"),
+            format="1 L",
+            emoji="🥛",
+            merchant="Lider",
+        ),
+    ]
+    out = gemini_service.search_with_google_grounding(query="  leche  ")
+    assert out == [
+        {
+            "merchant": "Lider",
+            "display_name": "Milk 1L",
+            "standard_name": "Leche",
+            "brand": "Colún",
+            "price": 2590,
+            "format": "1 L",
+            "emoji": "🥛",
+        },
+    ]
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args.kwargs["query"] == "leche"
+
+
+def test_search_with_google_grounding_empty_query():
+    assert gemini_service.search_with_google_grounding(query="  ") == []

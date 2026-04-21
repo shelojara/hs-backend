@@ -59,3 +59,16 @@ def run_monthly_page_check_dispatch() -> list[int]:
 def run_scheduled_page_check(page_id: int) -> None:
     """Daily job: fetch page, run all linked questions, email report."""
     services.run_daily_report_for_page(page_id)
+
+
+def enqueue_search_job(search_id: int) -> None:
+    async_task(
+        "pagechecker.scheduled_tasks.run_search_job",
+        search_id,
+        task_name=f"pagechecker.search:{search_id}",
+    )
+
+
+def run_search_job(search_id: int) -> None:
+    """Background worker: Gemini search + persist ``Search`` row."""
+    services.run_search_background(search_id)

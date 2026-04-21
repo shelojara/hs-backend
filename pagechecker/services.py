@@ -13,7 +13,15 @@ from pagechecker.html_utils import (
     extract_metadata,
     html_to_markdown,
 )
-from pagechecker.models import Category, Page, Question, ReportInterval, Snapshot
+from pagechecker.models import (
+    Category,
+    Page,
+    Question,
+    ReportInterval,
+    Search,
+    SearchStatus,
+    Snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -503,3 +511,44 @@ def run_daily_report_for_page(page_id: int) -> None:
         send_email_via_gmail(to_addrs=recipients, subject=subject, body=body)
     except Exception:
         logger.exception("Daily report email send failed for page id=%s", page_id)
+
+
+def create_search(*, query: str, user_id: int) -> int:
+    """Persist pending ``Search`` and enqueue background Gemini search; return id."""
+    q = (query or "").strip()
+    if not q:
+        msg = "Search query must not be empty."
+        raise ValueError(msg)
+    from pagechecker import scheduled_tasks
+
+    row = Search.objects.create(user_id=user_id, query=q, status=SearchStatus.PENDING)
+    scheduled_tasks.enqueue_search_job(row.id)
+    return row.id
+
+
+def run_search_background(search_id: int) -> None:
+    """Worker: load ``Search``, call Gemini, set ``result_candidates`` and status."""
+    try:
+        search = Search.objects.get(pk=search_id)
+    except Search.DoesNotExist:
+        logger.warning("run_search_background: Search id=%s missing", search_id)
+        return
+
+    if search.status != SearchStatus.PENDING:
+        return
+
+    try:
+        candidates = gemini_service.search_with_google_grounding(query=search.query)
+    except Exception:
+        logger.exception("Gemini search failed for search id=%s", search_id)
+        Search.objects.filter(pk=search_id).update(
+            status=SearchStatus.FAILED,
+            completed_at=timezone.now(),
+        )
+        return
+
+    Search.objects.filter(pk=search_id).update(
+        status=SearchStatus.COMPLETED,
+        result_candidates=candidates,
+        completed_at=timezone.now(),
+    )

@@ -22,6 +22,14 @@ def _strip_nonempty_category_name(v: str) -> str:
     return s
 
 
+def _strip_nonempty_search_query(v: str) -> str:
+    s = v.strip()
+    if not s:
+        msg = "Search query must not be empty."
+        raise ValueError(msg)
+    return s
+
+
 class Snapshot(Schema):
     id: int
     created_at: datetime
@@ -204,3 +212,11 @@ class SendTestEmailResponse(Schema):
 
 class SendDailyReportsResponse(Schema):
     enqueued_page_ids: list[int]
+
+
+class CreateSearchRequest(Schema):
+    query: Annotated[str, AfterValidator(_strip_nonempty_search_query)]
+
+
+class CreateSearchResponse(Schema):
+    search_id: int

@@ -296,3 +296,34 @@ def suggest_page_category_id(
             (response.text or "")[:200],
         )
     return choice
+
+
+def search_with_google_grounding(*, query: str, max_results: int = 10) -> list[dict]:
+    """Return structured result candidates for *query* via Gemini + Google Search.
+
+    Delegates to groceries Gemini helpers (Chile merchant-shaped JSON). Empty *query* → [].
+    """
+    from groceries import gemini_service as groceries_gemini
+
+    q = (query or "").strip()
+    if not q:
+        return []
+    lim = max(1, min(max_results, groceries_gemini.FIND_PRODUCTS_MAX))
+    rows = groceries_gemini.fetch_merchant_product_candidates(query=q, max_products=lim)
+    out: list[dict] = []
+    for row in rows:
+        price_val = None
+        if row.price is not None:
+            price_val = int(row.price)
+        out.append(
+            {
+                "merchant": row.merchant,
+                "display_name": row.display_name,
+                "standard_name": row.standard_name,
+                "brand": row.brand,
+                "price": price_val,
+                "format": row.format,
+                "emoji": row.emoji,
+            },
+        )
+    return out

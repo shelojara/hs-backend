@@ -27,6 +27,8 @@ from pagechecker.schemas import (
     CreateCategoryResponse,
     CreateQuestionRequest,
     CreateQuestionResponse,
+    CreateSearchRequest,
+    CreateSearchResponse,
     DeleteQuestionRequest,
     DeleteQuestionResponse,
     DeletePageRequest,
@@ -88,6 +90,16 @@ def create_question(request, payload: CreateQuestionRequest):
     user = request.auth
     q = services.create_question(text=payload.text, user_id=user.pk)
     return CreateQuestionResponse(question_id=q.id)
+
+
+@router.post("/v1.PageChecker.CreateSearch", response=CreateSearchResponse)
+def create_search(request, payload: CreateSearchRequest):
+    user = request.auth
+    try:
+        search_id = services.create_search(query=payload.query, user_id=user.pk)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return CreateSearchResponse(search_id=search_id)
 
 
 @router.post("/v1.PageChecker.ListQuestions", response=ListQuestionsResponse)
