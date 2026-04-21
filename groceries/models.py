@@ -4,6 +4,13 @@ from django.conf import settings
 from django.db import models
 
 
+class ActiveProductManager(models.Manager):
+    """Catalog rows with ``deleted_at`` unset (not soft-deleted)."""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted_at__isnull=True)
+
+
 class Product(models.Model):
     name = models.CharField(max_length=255)
     standard_name = models.CharField(max_length=255, blank=True, default="")
@@ -18,14 +25,20 @@ class Product(models.Model):
     is_custom = models.BooleanField(default=False)
     purchase_count = models.PositiveIntegerField(default=0)
     running_low = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="products",
     )
 
+    all_objects = models.Manager()
+    objects = ActiveProductManager()
+
     class Meta:
         ordering = ("name",)
+        base_manager_name = "all_objects"
+        default_manager_name = "objects"
 
     def __str__(self) -> str:
         return self.name

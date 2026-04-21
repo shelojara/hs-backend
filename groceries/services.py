@@ -160,9 +160,15 @@ def update_product(
 
 
 def delete_product(*, product_id: int, user_id: int) -> None:
-    """Delete product owned by *user_id*. Basket line rows removed via CASCADE."""
+    """Soft-delete product owned by *user_id*; drop line from current open basket only."""
     product = Product.objects.get(pk=product_id, user_id=user_id)
-    product.delete()
+    now = timezone.now()
+    with transaction.atomic():
+        basket = get_current_basket(user_id=user_id, select_for_update=True)
+        if basket is not None and basket.products.filter(pk=product.pk).exists():
+            basket.products.remove(product)
+        product.deleted_at = now
+        product.save(update_fields=["deleted_at"])
 
 
 def recheck_product_price(*, product_id: int, user_id: int) -> Product:
@@ -367,11 +373,15 @@ def get_current_basket_with_products(*, user_id: int) -> Basket | None:
 
 
 def list_purchased_baskets(*, user_id: int) -> list[Basket]:
-    """Up to :data:`LIST_PURCHASED_BASKETS_LIMIT` baskets with ``purchased_at`` set, newest first."""
+    """Up to :data:`LIST_PURCHASED_BASKETS_LIMIT` baskets with ``purchased_at`` set, newest first.
+
+    Prefetch uses ``Product.all_objects`` so lines include soft-deleted catalog rows.
+    """
+    purchased_product_qs = Product.all_objects.order_by("name", "pk")
     return list(
         Basket.objects.filter(owner_id=user_id, purchased_at__isnull=False)
         .prefetch_related(
-            Prefetch("products", queryset=Product.objects.order_by("name", "pk")),
+            Prefetch("products", queryset=purchased_product_qs),
         )
         .order_by("-purchased_at", "-pk")[:LIST_PURCHASED_BASKETS_LIMIT]
     )
@@ -381,8 +391,10 @@ def list_purchased_baskets_for_running_low(*, user_id: int) -> list[Basket]:
     """Purchased baskets in last two calendar months (by ``purchased_at``), newest first.
 
     Used for Gemini running-low sync; no row cap (window bounds size).
+    Prefetch uses active ``Product.objects`` only — soft-deleted catalog rows omitted from history.
     """
     since = timezone.now() - relativedelta(months=2)
+    purchased_product_qs = Product.objects.order_by("name", "pk")
     return list(
         Basket.objects.filter(
             owner_id=user_id,
@@ -390,7 +402,7 @@ def list_purchased_baskets_for_running_low(*, user_id: int) -> list[Basket]:
             purchased_at__gte=since,
         )
         .prefetch_related(
-            Prefetch("products", queryset=Product.objects.order_by("name", "pk")),
+            Prefetch("products", queryset=purchased_product_qs),
         )
         .order_by("-purchased_at", "-pk")
     )
@@ -517,7 +529,7 @@ def sync_running_low_flags_for_user(*, user_id: int) -> None:
 
 
 def running_low_sync_user_ids() -> list[int]:
-    """Distinct user ids that own at least one product (for daily running-low queue)."""
+    """Distinct user ids that own at least one active (non-soft-deleted) product."""
     return list(
         Product.objects.order_by()
         .values_list("user_id", flat=True)

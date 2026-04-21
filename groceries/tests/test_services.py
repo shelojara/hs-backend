@@ -313,14 +313,36 @@ def test_update_product_raises_when_wrong_user():
 
 
 @pytest.mark.django_db
-def test_delete_product_removes_row_and_basket_links():
+def test_delete_product_soft_deletes_and_removes_from_open_basket_only():
     u = _user()
     p = Product.objects.create(name="Milk", user=u)
     basket = add_product_to_basket(product_id=p.pk, user_id=u.pk)
     delete_product(product_id=p.pk, user_id=u.pk)
     assert not Product.objects.filter(pk=p.pk).exists()
+    gone = Product.all_objects.get(pk=p.pk)
+    assert gone.deleted_at is not None
     assert not BasketProduct.objects.filter(
         basket_id=basket.pk,
+        product_id=p.pk,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_delete_product_keeps_lines_on_purchased_baskets():
+    u = _user()
+    p = Product.objects.create(name="Milk", user=u)
+    old = Basket.objects.create(
+        owner=u,
+        purchased_at=timezone.now() - timedelta(days=2),
+    )
+    old.products.add(p)
+    add_product_to_basket(product_id=p.pk, user_id=u.pk)
+    open_b = get_current_basket(user_id=u.pk)
+    assert open_b is not None
+    delete_product(product_id=p.pk, user_id=u.pk)
+    assert BasketProduct.objects.filter(basket_id=old.pk, product_id=p.pk).exists()
+    assert not BasketProduct.objects.filter(
+        basket_id=open_b.pk,
         product_id=p.pk,
     ).exists()
 
@@ -429,6 +451,16 @@ def test_list_products_excludes_products_in_open_basket():
     add_product_to_basket(product_id=p_in.pk, user_id=u.pk)
     items, _ = list_products(user_id=u.pk, limit=10)
     assert [i.pk for i in items] == [p_out.pk]
+
+
+@pytest.mark.django_db
+def test_list_products_excludes_soft_deleted():
+    u = _user()
+    alive = Product.objects.create(name="Keep", user=u)
+    dead = Product.objects.create(name="Gone", user=u)
+    delete_product(product_id=dead.pk, user_id=u.pk)
+    items, _ = list_products(user_id=u.pk, limit=10)
+    assert [i.pk for i in items] == [alive.pk]
 
 
 @pytest.mark.django_db
@@ -941,6 +973,21 @@ def test_list_purchased_baskets_excludes_open():
 
 
 @pytest.mark.django_db
+def test_list_purchased_baskets_prefetch_includes_soft_deleted_products():
+    user = _user()
+    p = Product.objects.create(name="Milk", user=user)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(p)
+    delete_product(product_id=p.pk, user_id=user.pk)
+    rows = list_purchased_baskets(user_id=user.pk)
+    assert len(rows) == 1
+    prefetched = list(rows[0]._prefetched_objects_cache["products"])
+    assert len(prefetched) == 1
+    assert prefetched[0].pk == p.pk
+    assert prefetched[0].deleted_at is not None
+
+
+@pytest.mark.django_db
 def test_list_purchased_baskets_caps_at_five_newest_by_purchased_at():
     user = _user()
     base = timezone.now()
@@ -995,6 +1042,36 @@ def test_list_purchased_baskets_for_running_low_two_month_window(mock_now):
     assert {b.pk for b in rows} == {on_edge.pk, recent.pk}
     assert too_old.pk not in {b.pk for b in rows}
     assert [b.pk for b in rows] == [recent.pk, on_edge.pk]
+
+
+@pytest.mark.django_db
+def test_list_purchased_baskets_for_running_low_prefetch_excludes_soft_deleted_products():
+    user = _user()
+    p = Product.objects.create(name="Milk", user=user)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(p)
+    delete_product(product_id=p.pk, user_id=user.pk)
+    rows = list_purchased_baskets_for_running_low(user_id=user.pk)
+    assert len(rows) == 1
+    prefetched = list(rows[0]._prefetched_objects_cache["products"])
+    assert prefetched == []
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    return_value=[],
+)
+def test_sync_running_low_history_omits_soft_deleted_products(mock_suggest):
+    user = _user(username="rl_soft")
+    p = Product.objects.create(name="Gone", user=user)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(p)
+    delete_product(product_id=p.pk, user_id=user.pk)
+    sync_running_low_flags_for_user(user_id=user.pk)
+    md = mock_suggest.call_args.kwargs["history_markdown"]
+    assert "Gone" not in md
+    assert "(empty)" in md
 
 
 @pytest.mark.django_db
