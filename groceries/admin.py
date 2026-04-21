@@ -64,7 +64,13 @@ class ProductAdmin(admin.ModelAdmin):
         "format",
         "is_custom",
         "purchase_count",
+        "deleted_at",
     )
+    list_filter = (("deleted_at", admin.EmptyFieldListFilter),)
+    show_full_result_count = False
+
+    def get_queryset(self, request):
+        return Product.all_objects.select_related("user")
 
 
 @admin.register(Basket)
