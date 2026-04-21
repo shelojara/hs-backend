@@ -75,6 +75,14 @@ class ListSearchesResponse(Schema):
     searches: list[SearchListItemSchema]
 
 
+class GetSearchRequest(Schema):
+    search_id: int
+
+
+class GetSearchResponse(Schema):
+    search: SearchListItemSchema
+
+
 class CreateProductFromCandidateRequest(Schema):
     canditate: ProductCandidateSchema
     is_custom: bool = False

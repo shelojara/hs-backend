@@ -10,6 +10,7 @@ from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Search, SearchStatus
 from groceries.services import (
     create_search,
+    get_search,
     list_searches,
     run_product_search_job,
     search_result_candidates_as_product_schemas,
@@ -102,6 +103,24 @@ def test_list_searches_returns_latest_ten_newest_first_ordered_by_pk():
     want = list(reversed(ids[-10:]))
     assert [r.pk for r in rows] == want
     assert all(r.user_id == u.pk for r in rows)
+
+
+@pytest.mark.django_db
+def test_get_search_returns_row_for_owner():
+    u = User.objects.create_user(username="gs1", password="pw")
+    row = Search.objects.create(user_id=u.pk, query="milk")
+    got = get_search(search_id=row.pk, user_id=u.pk)
+    assert got.pk == row.pk
+    assert got.query == "milk"
+
+
+@pytest.mark.django_db
+def test_get_search_wrong_user_raises():
+    u = User.objects.create_user(username="gs2", password="pw")
+    other = User.objects.create_user(username="gs3", password="pw")
+    row = Search.objects.create(user_id=u.pk, query="x")
+    with pytest.raises(Search.DoesNotExist):
+        get_search(search_id=row.pk, user_id=other.pk)
 
 
 @pytest.mark.django_db

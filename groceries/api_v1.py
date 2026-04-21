@@ -24,6 +24,8 @@ from groceries.schemas import (
     FindProductCandidatesResponse,
     GetCurrentBasketRequest,
     GetCurrentBasketResponse,
+    GetSearchRequest,
+    GetSearchResponse,
     GetWhiteboardRequest,
     GetWhiteboardResponse,
     ListMerchantsRequest,
@@ -53,7 +55,7 @@ from groceries.schemas import (
     UpdateProductRequest,
     UpdateProductResponse,
 )
-from groceries.models import Merchant, Product
+from groceries.models import Merchant, Product, Search
 from groceries.services import (
     InvalidProductListCursorError,
     NoOpenBasketError,
@@ -107,6 +109,27 @@ def list_searches(request, payload: ListSearchesRequest):
             )
             for s in rows
         ],
+    )
+
+
+@router.post("/v1.Groceries.GetSearch", response=GetSearchResponse)
+def get_search(request, payload: GetSearchRequest):
+    try:
+        s = services.get_search(search_id=payload.search_id, user_id=request.auth.pk)
+    except Search.DoesNotExist as exc:
+        raise HttpError(404, "Search not found.") from exc
+    return GetSearchResponse(
+        search=SearchListItemSchema(
+            search_id=s.pk,
+            created_at=s.created_at,
+            query=s.query,
+            status=s.status,
+            completed_at=s.completed_at,
+            result_candidates=services.search_result_candidates_as_product_schemas(
+                s.result_candidates,
+                fallback_name=s.query,
+            ),
+        ),
     )
 
 
