@@ -409,7 +409,7 @@ def test_list_products_orders_by_purchase_count_desc():
 
 
 @pytest.mark.django_db
-def test_list_products_search_thefuzz_orders_ratio_then_purchase_count():
+def test_list_products_search_rapidfuzz_orders_ratio_then_purchase_count():
     owner = _catalog_owner_user()
     flakes = _catalog_product("Whole oat flakes", owner=owner)
     milk = _catalog_product("Oat milk", owner=owner)
@@ -453,7 +453,7 @@ def test_list_products_search_accent_insensitive_on_name():
 
 
 @pytest.mark.django_db
-def test_list_products_search_thefuzz_typo_still_matches():
+def test_list_products_search_rapidfuzz_typo_still_matches():
     owner = _catalog_owner_user()
     milk = _catalog_product("Oat milk", owner=owner)
     _catalog_product("Rice", owner=owner)
