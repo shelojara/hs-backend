@@ -23,3 +23,8 @@ def run_daily_running_low_sync() -> list[int]:
             task_name=f"groceries_running_low_sync:{uid}",
         )
     return user_ids
+
+
+def run_product_search_job(search_id: int) -> None:
+    """django-q2 entrypoint for async Gemini product search."""
+    services.run_product_search_job(search_id=search_id)

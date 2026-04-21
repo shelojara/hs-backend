@@ -10,6 +10,8 @@ from groceries.schemas import (
     BasketSchema,
     CreateMerchantRequest,
     CreateMerchantResponse,
+    CreateSearchRequest,
+    CreateSearchResponse,
     DeleteMerchantRequest,
     DeleteMerchantResponse,
     DeleteProductRequest,
@@ -70,6 +72,18 @@ def _product_schema(p: Product) -> ProductSchema:
         purchase_count=p.purchase_count,
         running_low=p.running_low,
     )
+
+
+@router.post("/v1.Groceries.CreateSearch", response=CreateSearchResponse)
+def create_search(request, payload: CreateSearchRequest):
+    try:
+        search_id = services.create_search(
+            query=payload.query,
+            user_id=request.auth.pk,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return CreateSearchResponse(search_id=search_id)
 
 
 @router.post(

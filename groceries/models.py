@@ -4,6 +4,37 @@ from django.conf import settings
 from django.db import models
 
 
+class SearchStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    COMPLETED = "completed", "Completed"
+    FAILED = "failed", "Failed"
+
+
+class Search(models.Model):
+    """Async Gemini product search job; ``result_candidates`` filled when completed."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="groceries_searches",
+    )
+    query = models.TextField()
+    status = models.CharField(
+        max_length=16,
+        choices=SearchStatus.choices,
+        default=SearchStatus.PENDING,
+        db_index=True,
+    )
+    result_candidates = models.JSONField(default=list)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("-id",)
+
+    def __str__(self) -> str:
+        return f"Search({self.query[:60]!r}…) status={self.status} user={self.user_id}"
+
+
 class ActiveProductManager(models.Manager):
     """Catalog rows with ``deleted_at`` unset (not soft-deleted)."""
 

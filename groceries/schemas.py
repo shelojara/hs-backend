@@ -50,6 +50,14 @@ class FindProductCandidatesResponse(Schema):
     products: list[ProductCandidateSchema]
 
 
+class CreateSearchRequest(Schema):
+    query: Annotated[str, AfterValidator(_strip_nonempty_query)]
+
+
+class CreateSearchResponse(Schema):
+    search_id: int
+
+
 class CreateProductFromCandidateRequest(Schema):
     canditate: ProductCandidateSchema
     is_custom: bool = False
