@@ -18,6 +18,7 @@ from groceries.services import (
     add_product_to_basket,
     basket_product_lines,
     create_product_from_candidate,
+    delete_product,
     delete_product_from_basket,
     find_product_candidates,
     get_current_basket,
@@ -309,6 +310,28 @@ def test_update_product_raises_when_wrong_user():
             price=Decimal("0"),
             emoji="",
         )
+
+
+@pytest.mark.django_db
+def test_delete_product_removes_row_and_basket_links():
+    u = _user()
+    p = Product.objects.create(name="Milk", user=u)
+    basket = add_product_to_basket(product_id=p.pk, user_id=u.pk)
+    delete_product(product_id=p.pk, user_id=u.pk)
+    assert not Product.objects.filter(pk=p.pk).exists()
+    assert not BasketProduct.objects.filter(
+        basket_id=basket.pk,
+        product_id=p.pk,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_delete_product_raises_when_wrong_user():
+    u1 = _user(username="a")
+    u2 = _user(username="b")
+    p = Product.objects.create(name="X", user=u1)
+    with pytest.raises(Product.DoesNotExist):
+        delete_product(product_id=p.pk, user_id=u2.pk)
 
 
 @pytest.mark.django_db

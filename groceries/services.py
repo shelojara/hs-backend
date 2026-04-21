@@ -159,6 +159,12 @@ def update_product(
     return product
 
 
+def delete_product(*, product_id: int, user_id: int) -> None:
+    """Delete product owned by *user_id*. Basket line rows removed via CASCADE."""
+    product = Product.objects.get(pk=product_id, user_id=user_id)
+    product.delete()
+
+
 def recheck_product_price(*, product_id: int, user_id: int) -> Product:
     """Refresh *price* from Gemini using *product*'s standard_name, brand, format (identity prompt).
 
