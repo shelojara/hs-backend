@@ -662,6 +662,12 @@ def get_search(search_id: int, *, user_id: int) -> Search:
     return Search.objects.get(pk=search_id, user_id=user_id)
 
 
+def delete_search(*, search_id: int, user_id: int) -> None:
+    """Remove ``Search`` row owned by *user_id*."""
+    row = Search.objects.get(pk=search_id, user_id=user_id)
+    row.delete()
+
+
 def search_result_candidates_as_product_schemas(
     raw: list[Any],
     *,

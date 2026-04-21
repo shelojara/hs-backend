@@ -12,6 +12,8 @@ from groceries.schemas import (
     CreateMerchantResponse,
     CreateSearchRequest,
     CreateSearchResponse,
+    DeleteSearchRequest,
+    DeleteSearchResponse,
     DeleteMerchantRequest,
     DeleteMerchantResponse,
     DeleteProductRequest,
@@ -131,6 +133,18 @@ def get_search(request, payload: GetSearchRequest):
             ),
         ),
     )
+
+
+@router.post("/v1.Groceries.DeleteSearch", response=DeleteSearchResponse)
+def delete_search(request, payload: DeleteSearchRequest):
+    try:
+        services.delete_search(
+            search_id=payload.search_id,
+            user_id=request.auth.pk,
+        )
+    except Search.DoesNotExist as exc:
+        raise HttpError(404, "Search not found.") from exc
+    return DeleteSearchResponse()
 
 
 @router.post(

@@ -10,6 +10,7 @@ from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Search, SearchStatus
 from groceries.services import (
     create_search,
+    delete_search,
     get_search,
     list_searches,
     run_product_search_job,
@@ -121,6 +122,24 @@ def test_get_search_wrong_user_raises():
     row = Search.objects.create(user_id=u.pk, query="x")
     with pytest.raises(Search.DoesNotExist):
         get_search(search_id=row.pk, user_id=other.pk)
+
+
+@pytest.mark.django_db
+def test_delete_search_removes_row_for_owner():
+    u = User.objects.create_user(username="ds1", password="pw")
+    row = Search.objects.create(user_id=u.pk, query="milk")
+    delete_search(search_id=row.pk, user_id=u.pk)
+    assert not Search.objects.filter(pk=row.pk).exists()
+
+
+@pytest.mark.django_db
+def test_delete_search_wrong_user_raises():
+    u = User.objects.create_user(username="ds2", password="pw")
+    other = User.objects.create_user(username="ds3", password="pw")
+    row = Search.objects.create(user_id=u.pk, query="x")
+    with pytest.raises(Search.DoesNotExist):
+        delete_search(search_id=row.pk, user_id=other.pk)
+    assert Search.objects.filter(pk=row.pk).exists()
 
 
 @pytest.mark.django_db
