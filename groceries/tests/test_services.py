@@ -264,6 +264,20 @@ def test_create_product_from_candidate_assigns_user():
     assert row.user_id == u.pk
 
 
+def test_product_candidate_schema_null_brand_coerces_to_empty_string():
+    c = ProductCandidateSchema.model_validate(
+        {
+            "name": "Item",
+            "standard_name": "s",
+            "brand": None,
+            "price": None,
+            "format": "",
+            "emoji": "",
+        },
+    )
+    assert c.brand == ""
+
+
 @pytest.mark.django_db
 def test_update_product_persists_fields_without_gemini():
     u = _user()
@@ -293,6 +307,31 @@ def test_update_product_persists_fields_without_gemini():
     assert p.format == "1 L"
     assert p.price == Decimal("2590.00")
     assert p.emoji == "🐄"
+
+
+@pytest.mark.django_db
+def test_update_product_blank_brand_stores_empty_string():
+    u = _user()
+    p = Product.objects.create(
+        name="Item",
+        standard_name="Std",
+        brand="Was",
+        price=Decimal("1.00"),
+        format="1",
+        emoji="🥛",
+        user=u,
+    )
+    update_product(
+        product_id=p.pk,
+        user_id=u.pk,
+        standard_name="Std",
+        brand="   ",
+        format="1",
+        price=Decimal("1.00"),
+        emoji="🥛",
+    )
+    p.refresh_from_db()
+    assert p.brand == ""
 
 
 @pytest.mark.django_db

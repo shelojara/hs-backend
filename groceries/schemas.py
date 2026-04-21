@@ -1,9 +1,16 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any
 
 from ninja import Schema
-from pydantic import AfterValidator
+from pydantic import AfterValidator, BeforeValidator
+
+
+def _null_str_field_to_empty(v: Any) -> Any:
+    """JSON null / missing coerced before str validation so brand may be ``\"\"``."""
+    if v is None:
+        return ""
+    return v
 
 
 def _strip_nonempty_product_name(v: str) -> str:
@@ -39,7 +46,7 @@ class ProductCandidateSchema(Schema):
 
     name: str
     standard_name: str
-    brand: str
+    brand: Annotated[str, BeforeValidator(_null_str_field_to_empty)]
     price: Decimal | None = None
     format: str
     emoji: str
@@ -103,7 +110,7 @@ class CreateProductFromCandidateResponse(Schema):
 class UpdateProductRequest(Schema):
     product_id: int
     standard_name: str
-    brand: str
+    brand: Annotated[str, BeforeValidator(_null_str_field_to_empty)]
     format: str
     price: Decimal | None = None
     emoji: str
