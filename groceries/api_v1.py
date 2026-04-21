@@ -12,6 +12,8 @@ from groceries.schemas import (
     CreateMerchantResponse,
     DeleteMerchantRequest,
     DeleteMerchantResponse,
+    DeleteProductRequest,
+    DeleteProductResponse,
     DeleteProductFromBasketRequest,
     DeleteProductFromBasketResponse,
     CreateProductFromCandidateRequest,
@@ -128,6 +130,18 @@ def update_product(request, payload: UpdateProductRequest):
     except Product.DoesNotExist as exc:
         raise HttpError(404, "Product not found.") from exc
     return UpdateProductResponse(product_id=product.pk)
+
+
+@router.post("/v1.Groceries.DeleteProduct", response=DeleteProductResponse)
+def delete_product(request, payload: DeleteProductRequest):
+    try:
+        services.delete_product(
+            product_id=payload.product_id,
+            user_id=request.auth.pk,
+        )
+    except Product.DoesNotExist as exc:
+        raise HttpError(404, "Product not found.") from exc
+    return DeleteProductResponse()
 
 
 @router.post("/v1.Groceries.ListProducts", response=ListProductsResponse)

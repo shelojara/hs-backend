@@ -72,6 +72,14 @@ class UpdateProductResponse(Schema):
     product_id: int
 
 
+class DeleteProductRequest(Schema):
+    product_id: int
+
+
+class DeleteProductResponse(Schema):
+    pass
+
+
 class ListProductsRequest(Schema):
     limit: int = 50
     cursor: str | None = None
