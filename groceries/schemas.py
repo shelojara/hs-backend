@@ -64,7 +64,7 @@ class UpdateProductRequest(Schema):
     standard_name: str
     brand: str
     format: str
-    price: Decimal
+    price: Decimal | None = None
     emoji: str
 
 
@@ -91,7 +91,7 @@ class ProductSchema(Schema):
     name: str
     standard_name: str
     brand: str
-    price: Decimal
+    price: Decimal | None
     format: str
     emoji: str
     is_custom: bool

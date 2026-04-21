@@ -18,6 +18,8 @@ class Product(models.Model):
     price = models.DecimalField(
         max_digits=12,
         decimal_places=2,
+        null=True,
+        blank=True,
         default=Decimal("0"),
     )
     format = models.CharField(max_length=255, blank=True, default="")
