@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 FIND_PRODUCTS_MAX = 20
 
-# Candidate search only; other Gemini calls use gemini-2.5-flash.
-GEMINI_FIND_PRODUCTS_MODEL = "gemini-3-flash-preview"
+# All Gemini calls use gemini-2.5-flash.
+GEMINI_FIND_PRODUCTS_MODEL = "gemini-2.5-flash"
 
 RUNNING_LOW_MAX_SUGGESTIONS = 15
 
