@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any
 
 from ninja import Schema
 from pydantic import AfterValidator
@@ -56,6 +56,22 @@ class CreateSearchRequest(Schema):
 
 class CreateSearchResponse(Schema):
     search_id: int
+
+
+class ListSearchesRequest(Schema):
+    """No fields; POST body may be `{}` for RPC transport."""
+
+
+class SearchListItemSchema(Schema):
+    search_id: int
+    query: str
+    status: str
+    completed_at: datetime | None
+    result_candidates: list[dict[str, Any]]
+
+
+class ListSearchesResponse(Schema):
+    searches: list[SearchListItemSchema]
 
 
 class CreateProductFromCandidateRequest(Schema):
