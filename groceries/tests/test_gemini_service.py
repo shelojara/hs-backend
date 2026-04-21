@@ -164,6 +164,27 @@ def test_fetch_merchant_product_candidates_returns_list(mock_get_client):
     assert "array" in (cfg.system_instruction or "").lower()
 
 
+@patch("groceries.gemini_service._get_client")
+def test_fetch_merchant_product_candidates_includes_page_context_in_prompt(mock_get_client):
+    mock_response = MagicMock()
+    mock_response.text = (
+        '[{"display_name": "One", "standard_name": "T", "brand": "", "price": 1, '
+        '"format": "", "emoji": "", "merchant": "Lider"}]'
+    )
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    gemini_service.fetch_merchant_product_candidates(
+        query="https://x.cl/p",
+        page_context="Precio $1000",
+    )
+    contents = mock_client.models.generate_content.call_args.kwargs["contents"]
+    assert "https://x.cl/p" in contents
+    assert "page text" in contents.lower()
+    assert "Precio $1000" in contents
+
+
 def test_merchant_product_instructions_include_preferred_merchant():
     pref = [
         PreferredMerchantContext(name="Jumbo", website="https://www.jumbo.cl/"),
