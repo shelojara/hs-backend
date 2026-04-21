@@ -160,11 +160,13 @@ def update_product(
 
 
 def delete_product(*, product_id: int, user_id: int) -> None:
-    """Soft-delete product owned by *user_id*; remove from all baskets (M2M)."""
+    """Soft-delete product owned by *user_id*; drop line from current open basket only."""
     product = Product.objects.get(pk=product_id, user_id=user_id)
     now = timezone.now()
     with transaction.atomic():
-        product.baskets.clear()
+        basket = get_current_basket(user_id=user_id, select_for_update=True)
+        if basket is not None and basket.products.filter(pk=product.pk).exists():
+            basket.products.remove(product)
         product.deleted_at = now
         product.save(update_fields=["deleted_at"])
 

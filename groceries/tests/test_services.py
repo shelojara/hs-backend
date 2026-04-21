@@ -313,7 +313,7 @@ def test_update_product_raises_when_wrong_user():
 
 
 @pytest.mark.django_db
-def test_delete_product_soft_deletes_and_removes_basket_links():
+def test_delete_product_soft_deletes_and_removes_from_open_basket_only():
     u = _user()
     p = Product.objects.create(name="Milk", user=u)
     basket = add_product_to_basket(product_id=p.pk, user_id=u.pk)
@@ -323,6 +323,26 @@ def test_delete_product_soft_deletes_and_removes_basket_links():
     assert gone.deleted_at is not None
     assert not BasketProduct.objects.filter(
         basket_id=basket.pk,
+        product_id=p.pk,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_delete_product_keeps_lines_on_purchased_baskets():
+    u = _user()
+    p = Product.objects.create(name="Milk", user=u)
+    old = Basket.objects.create(
+        owner=u,
+        purchased_at=timezone.now() - timedelta(days=2),
+    )
+    old.products.add(p)
+    add_product_to_basket(product_id=p.pk, user_id=u.pk)
+    open_b = get_current_basket(user_id=u.pk)
+    assert open_b is not None
+    delete_product(product_id=p.pk, user_id=u.pk)
+    assert BasketProduct.objects.filter(basket_id=old.pk, product_id=p.pk).exists()
+    assert not BasketProduct.objects.filter(
+        basket_id=open_b.pk,
         product_id=p.pk,
     ).exists()
 
