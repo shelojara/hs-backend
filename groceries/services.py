@@ -9,12 +9,21 @@ from dateutil.relativedelta import relativedelta
 from django.db import transaction
 from django.db.models import F, Max, Prefetch, Q
 from django.utils import timezone
+from django_q.tasks import async_task
 
 from groceries import gemini_service
 from groceries.favicon_service import fetch_favicon_url, normalize_website_url
 from groceries.gemini_service import MerchantProductInfo, PreferredMerchantContext
 from groceries.url_page_context import fetch_page_text_for_product_context, is_http_https_url
-from groceries.models import Basket, BasketProduct, Merchant, Product, Whiteboard
+from groceries.models import (
+    Basket,
+    BasketProduct,
+    Merchant,
+    Product,
+    Search,
+    SearchStatus,
+    Whiteboard,
+)
 from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 
 logger = logging.getLogger(__name__)
@@ -606,3 +615,77 @@ def delete_user_merchant(*, user_id: int, merchant_id: int) -> None:
     """Delete a merchant owned by *user_id*."""
     merchant = Merchant.objects.get(pk=merchant_id, user_id=user_id)
     merchant.delete()
+
+
+def _search_candidate_dict(p: MerchantProductInfo) -> dict[str, Any]:
+    """JSON-serializable dict for ``Search.result_candidates``."""
+    price_out: str | None = None
+    if p.price is not None:
+        price_out = str(p.price.quantize(Decimal("0.01")))
+    return {
+        "display_name": p.display_name,
+        "standard_name": p.standard_name,
+        "brand": p.brand,
+        "price": price_out,
+        "format": p.format,
+        "emoji": p.emoji,
+        "merchant": p.merchant,
+    }
+
+
+def _search_candidates_as_json(items: list[MerchantProductInfo]) -> list[dict[str, Any]]:
+    return [_search_candidate_dict(p) for p in items]
+
+
+def create_search(*, query: str, user_id: int) -> int:
+    """Create pending ``Search`` and enqueue Gemini worker; returns primary key."""
+    normalized = query.strip()
+    if not normalized:
+        msg = "Query must not be empty."
+        raise ValueError(msg)
+    row = Search.objects.create(user_id=user_id, query=normalized)
+    async_task(
+        "groceries.scheduled_tasks.run_product_search_job",
+        row.pk,
+        task_name=f"groceries_product_search:{row.pk}",
+    )
+    return row.pk
+
+
+def run_product_search_job(*, search_id: int) -> None:
+    """Background worker: Gemini product candidates → ``Search`` row."""
+    try:
+        search = Search.objects.get(pk=search_id)
+    except Search.DoesNotExist:
+        logger.warning("run_product_search_job: missing Search id=%s", search_id)
+        return
+    user_id = search.user_id
+    q = search.query.strip()
+    page_context: str | None = None
+    if is_http_https_url(q):
+        page_context = fetch_page_text_for_product_context(q)
+    try:
+        items = gemini_service.fetch_merchant_product_candidates(
+            query=q,
+            preferred_merchants=_preferred_merchant_context_for_user(user_id),
+            page_context=page_context,
+        )
+        search.result_candidates = _search_candidates_as_json(items)
+        search.status = SearchStatus.COMPLETED
+        search.completed_at = timezone.now()
+        search.save(
+            update_fields=["result_candidates", "status", "completed_at"],
+        )
+    except RuntimeError:
+        logger.warning(
+            "run_product_search_job: GEMINI_API_KEY unset (search id=%s).",
+            search_id,
+        )
+        search.status = SearchStatus.FAILED
+        search.completed_at = timezone.now()
+        search.save(update_fields=["status", "completed_at"])
+    except Exception:
+        logger.exception("run_product_search_job failed (search id=%s)", search_id)
+        search.status = SearchStatus.FAILED
+        search.completed_at = timezone.now()
+        search.save(update_fields=["status", "completed_at"])
