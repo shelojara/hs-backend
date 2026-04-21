@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import unicodedata
 from decimal import Decimal
 from typing import Any
 
@@ -57,6 +58,53 @@ class NoOpenBasketError(Exception):
 DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 100
 LIST_PURCHASED_BASKETS_LIMIT = 5
+
+
+def _strip_accents(s: str) -> str:
+    """ASCII-ish fold for search; NFD then drop combining marks."""
+    return "".join(
+        c
+        for c in unicodedata.normalize("NFD", s)
+        if unicodedata.category(c) != "Mn"
+    )
+
+
+def _normalize_for_product_search(s: str) -> str:
+    return _strip_accents(s.casefold())
+
+
+def _product_search_haystack(name: str, brand: str) -> str:
+    n = name.strip()
+    b = brand.strip()
+    if b:
+        return _normalize_for_product_search(f"{n} {b}")
+    return _normalize_for_product_search(n)
+
+
+def _fuzzy_subsequence_match_positions(
+    query_norm: str, haystack_norm: str
+) -> tuple[int, int] | None:
+    """Ordered subsequence match; return (index of first char matched, total gap span).
+
+    ``None`` if *query_norm* cannot be matched in order inside *haystack_norm*.
+    """
+    if not query_norm:
+        return None
+    qi = 0
+    first = -1
+    prev = -1
+    span = 0
+    for hi, ch in enumerate(haystack_norm):
+        if ch == query_norm[qi]:
+            if first < 0:
+                first = hi
+            if prev >= 0:
+                span += hi - prev - 1
+            prev = hi
+            qi += 1
+            if qi == len(query_norm):
+                return (first, span)
+    return None
 
 
 def _fetch_merchant_product_info_by_identity_or_none(
@@ -252,26 +300,93 @@ def list_products(
     cursor: str | None = None,
     search: str | None = None,
 ) -> tuple[list[Product], str | None]:
-    """List products with cursor pagination; optional case-insensitive substring search (ILIKE).
+    """List products with cursor pagination; optional fuzzy search on user's catalog.
 
-    Search matches *name* or *brand* when non-empty.
+    When *search* non-empty: load that user's active catalog into memory, keep rows
+    whose *name* + *brand* match query as ordered subsequence after accent fold +
+    casefold. Tie-break: purchase count desc, name, pk (same as no-search list).
 
-    Ordered by purchase count (highest first), then name, then primary key.
+    When *search* empty: DB pagination only (same ordering), scoped to *user_id*.
 
     Excludes products already in *user_id*'s current open basket (same basket as add/remove).
     """
     lim = _clamp_limit(limit)
     q = (search or "").strip()
 
-    qs = Product.objects.all().order_by("-purchase_count", "name", "pk")
-    if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(brand__icontains=q))
-
     basket = get_current_basket(user_id=user_id)
+    cart_pks: set[int] = set()
     if basket is not None:
-        cart_pks = list(basket.products.values_list("pk", flat=True))
-        if cart_pks:
-            qs = qs.exclude(pk__in=cart_pks)
+        cart_pks = set(basket.products.values_list("pk", flat=True))
+
+    base_qs = Product.objects.filter(user_id=user_id).order_by(
+        "-purchase_count", "name", "pk"
+    )
+
+    if q:
+        q_norm = _normalize_for_product_search(q)
+        scored: list[tuple[int, int, int, int, Product]] = []
+        for p in base_qs.iterator(chunk_size=500):
+            if p.pk in cart_pks:
+                continue
+            hay = _product_search_haystack(p.name, p.brand)
+            pos = _fuzzy_subsequence_match_positions(q_norm, hay)
+            if pos is None:
+                continue
+            first, gap = pos
+            scored.append((first, gap, -p.purchase_count, p.pk, p))
+        scored.sort(key=lambda t: (t[0], t[1], t[2], t[3]))
+        ordered = [t[4] for t in scored]
+
+        start = 0
+        if cursor:
+            payload = _decode_cursor(cursor)
+            try:
+                cq = payload["q"]
+                c_count = int(payload["c"])
+                cname = payload["n"]
+                cpk = int(payload["i"])
+                cu = payload.get("u")
+            except (KeyError, TypeError, ValueError) as exc:
+                raise InvalidProductListCursorError() from exc
+            if cq != q:
+                raise InvalidProductListCursorError(
+                    "Cursor does not match request parameters."
+                )
+            if cu != user_id:
+                raise InvalidProductListCursorError(
+                    "Cursor does not match request parameters."
+                )
+            for i, row in enumerate(ordered):
+                if (
+                    row.purchase_count == c_count
+                    and row.name == cname
+                    and row.pk == cpk
+                ):
+                    start = i + 1
+                    break
+            else:
+                raise InvalidProductListCursorError()
+
+        slice_rows = ordered[start : start + lim + 1]
+        has_more = len(slice_rows) > lim
+        page = slice_rows[:lim]
+        next_cursor = None
+        if has_more and page:
+            last = page[-1]
+            next_cursor = _encode_cursor(
+                {
+                    "q": q,
+                    "c": last.purchase_count,
+                    "n": last.name,
+                    "i": last.pk,
+                    "u": user_id,
+                }
+            )
+        return page, next_cursor
+
+    qs = base_qs
+    if cart_pks:
+        qs = qs.exclude(pk__in=cart_pks)
 
     if cursor:
         payload = _decode_cursor(cursor)
