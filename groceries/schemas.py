@@ -91,7 +91,7 @@ class ProductSchema(Schema):
     name: str
     standard_name: str
     brand: str
-    price: Decimal
+    price: Decimal | None
     format: str
     emoji: str
     is_custom: bool

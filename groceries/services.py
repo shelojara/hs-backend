@@ -127,7 +127,7 @@ def create_product_from_candidate(
         name=candidate.name,
         standard_name=candidate.standard_name,
         brand=candidate.brand,
-        price=candidate.price if candidate.price is not None else Decimal("0"),
+        price=candidate.price,
         format=candidate.format,
         emoji=candidate.emoji,
         is_custom=is_custom,
@@ -151,8 +151,7 @@ def update_product(
     product.standard_name = standard_name
     product.brand = brand
     product.format = format
-    resolved_price = price if price is not None else Decimal("0")
-    product.price = resolved_price
+    product.price = price
     product.emoji = emoji
     product.save(
         update_fields=["standard_name", "brand", "format", "price", "emoji"],

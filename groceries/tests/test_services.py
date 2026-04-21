@@ -230,7 +230,7 @@ def test_create_product_from_candidate_sets_is_custom():
 
 
 @pytest.mark.django_db
-def test_create_product_from_candidate_null_price_stores_zero_clp():
+def test_create_product_from_candidate_null_price_stores_null():
     u = _user()
     pid = create_product_from_candidate(
         candidate=ProductCandidateSchema(
@@ -243,7 +243,7 @@ def test_create_product_from_candidate_null_price_stores_zero_clp():
         ),
         user_id=u.pk,
     )
-    assert Product.objects.get(pk=pid).price == Decimal("0.00")
+    assert Product.objects.get(pk=pid).price is None
 
 
 @pytest.mark.django_db
@@ -296,7 +296,7 @@ def test_update_product_persists_fields_without_gemini():
 
 
 @pytest.mark.django_db
-def test_update_product_null_price_stores_zero():
+def test_update_product_null_price_clears_price():
     u = _user()
     p = Product.objects.create(
         name="Item",
@@ -317,7 +317,7 @@ def test_update_product_null_price_stores_zero():
         emoji="🧀",
     )
     p.refresh_from_db()
-    assert p.price == Decimal("0")
+    assert p.price is None
 
 
 @pytest.mark.django_db
