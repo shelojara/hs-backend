@@ -125,7 +125,7 @@ def compare_snapshots(
 
     client = _get_client()
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash-lite-preview",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
@@ -152,7 +152,7 @@ def answer_question_about_snapshot(
 
     client = _get_client()
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash-lite-preview",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=SINGLE_SNAPSHOT_SYSTEM_INSTRUCTION,
@@ -212,7 +212,7 @@ def extract_snapshot_feature(
         )
     client = _get_client()
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash-lite-preview",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=FEATURE_EXTRACT_SYSTEM_INSTRUCTION,
@@ -228,7 +228,7 @@ def suggest_category_emoji(category_name: str) -> str:
 
     client = _get_client()
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash-lite-preview",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=CATEGORY_EMOJI_SYSTEM_INSTRUCTION,
@@ -282,7 +282,7 @@ def suggest_page_category_id(
 
     client = _get_client()
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash-lite-preview",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=PAGE_CATEGORY_SYSTEM_INSTRUCTION,
