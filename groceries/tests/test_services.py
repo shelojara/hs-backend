@@ -1045,6 +1045,36 @@ def test_list_purchased_baskets_for_running_low_two_month_window(mock_now):
 
 
 @pytest.mark.django_db
+def test_list_purchased_baskets_for_running_low_prefetch_excludes_soft_deleted_products():
+    user = _user()
+    p = Product.objects.create(name="Milk", user=user)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(p)
+    delete_product(product_id=p.pk, user_id=user.pk)
+    rows = list_purchased_baskets_for_running_low(user_id=user.pk)
+    assert len(rows) == 1
+    prefetched = list(rows[0]._prefetched_objects_cache["products"])
+    assert prefetched == []
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    return_value=[],
+)
+def test_sync_running_low_history_omits_soft_deleted_products(mock_suggest):
+    user = _user(username="rl_soft")
+    p = Product.objects.create(name="Gone", user=user)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(p)
+    delete_product(product_id=p.pk, user_id=user.pk)
+    sync_running_low_flags_for_user(user_id=user.pk)
+    md = mock_suggest.call_args.kwargs["history_markdown"]
+    assert "Gone" not in md
+    assert "(empty)" in md
+
+
+@pytest.mark.django_db
 @patch(
     "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
 )

@@ -391,10 +391,10 @@ def list_purchased_baskets_for_running_low(*, user_id: int) -> list[Basket]:
     """Purchased baskets in last two calendar months (by ``purchased_at``), newest first.
 
     Used for Gemini running-low sync; no row cap (window bounds size).
-    Prefetch uses ``Product.all_objects`` so history includes soft-deleted products.
+    Prefetch uses active ``Product.objects`` only — soft-deleted catalog rows omitted from history.
     """
     since = timezone.now() - relativedelta(months=2)
-    purchased_product_qs = Product.all_objects.order_by("name", "pk")
+    purchased_product_qs = Product.objects.order_by("name", "pk")
     return list(
         Basket.objects.filter(
             owner_id=user_id,
