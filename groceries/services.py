@@ -657,6 +657,11 @@ def list_searches(*, user_id: int) -> list[Search]:
     return list(Search.objects.filter(user_id=user_id).order_by("-created_at", "-pk")[:10])
 
 
+def get_search(search_id: int, *, user_id: int) -> Search:
+    """Return one ``Search`` row owned by *user_id*."""
+    return Search.objects.get(pk=search_id, user_id=user_id)
+
+
 def search_result_candidates_as_product_schemas(
     raw: list[Any],
     *,
