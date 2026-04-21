@@ -23,3 +23,16 @@ def run_daily_running_low_sync() -> list[int]:
             task_name=f"groceries_running_low_sync:{uid}",
         )
     return user_ids
+
+
+def enqueue_search_job(search_id: int) -> None:
+    async_task(
+        "groceries.scheduled_tasks.run_search_job",
+        search_id,
+        task_name=f"groceries.search:{search_id}",
+    )
+
+
+def run_search_job(search_id: int) -> None:
+    """Background worker: Gemini product search + persist ``Search`` row."""
+    services.run_search_background(search_id)

@@ -8,7 +8,11 @@ from django.test import override_settings
 from django_q.models import Schedule
 
 from groceries.models import Product
-from groceries.scheduled_tasks import run_daily_running_low_sync, run_running_low_sync_for_user
+from groceries.scheduled_tasks import (
+    enqueue_search_job,
+    run_daily_running_low_sync,
+    run_running_low_sync_for_user,
+)
 
 User = get_user_model()
 
@@ -72,3 +76,13 @@ def test_run_running_low_sync_for_user_delegates(mock_sync):
     u = User.objects.create_user(username="rl_one", password="pw")
     run_running_low_sync_for_user(u.pk)
     mock_sync.assert_called_once_with(user_id=u.pk)
+
+
+@patch("groceries.scheduled_tasks.async_task")
+def test_enqueue_search_job(mock_async):
+    enqueue_search_job(42)
+    mock_async.assert_called_once_with(
+        "groceries.scheduled_tasks.run_search_job",
+        42,
+        task_name="groceries.search:42",
+    )

@@ -14,7 +14,15 @@ from groceries import gemini_service
 from groceries.favicon_service import fetch_favicon_url, normalize_website_url
 from groceries.gemini_service import MerchantProductInfo, PreferredMerchantContext
 from groceries.url_page_context import fetch_page_text_for_product_context, is_http_https_url
-from groceries.models import Basket, BasketProduct, Merchant, Product, Whiteboard
+from groceries.models import (
+    Basket,
+    BasketProduct,
+    Merchant,
+    Product,
+    Search,
+    SearchStatus,
+    Whiteboard,
+)
 from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 
 logger = logging.getLogger(__name__)
@@ -606,3 +614,74 @@ def delete_user_merchant(*, user_id: int, merchant_id: int) -> None:
     """Delete a merchant owned by *user_id*."""
     merchant = Merchant.objects.get(pk=merchant_id, user_id=user_id)
     merchant.delete()
+
+
+def _gemini_search_candidate_dicts(*, query: str, user_id: int) -> list[dict]:
+    """Gemini + Google Search product rows as JSON-serializable dicts.
+
+    ``RuntimeError`` (missing API key) → ``[]``. Other exceptions propagate so the
+    caller can mark the job failed.
+    """
+    normalized = (query or "").strip()
+    if not normalized:
+        return []
+    page_context: str | None = None
+    if is_http_https_url(normalized):
+        page_context = fetch_page_text_for_product_context(normalized)
+    try:
+        rows = gemini_service.fetch_merchant_product_candidates(
+            query=normalized,
+            preferred_merchants=_preferred_merchant_context_for_user(user_id),
+            page_context=page_context,
+        )
+    except RuntimeError:
+        logger.warning(
+            "Skipped Gemini async search: GEMINI_API_KEY not set (user id=%s).",
+            user_id,
+        )
+        return []
+    return gemini_service.search_result_rows_from_merchant_products(rows)
+
+
+def create_search(*, query: str, user_id: int) -> int:
+    """Persist pending ``Search`` and enqueue background Gemini search; return id."""
+    q = (query or "").strip()
+    if not q:
+        msg = "Query must not be empty."
+        raise ValueError(msg)
+    from groceries import scheduled_tasks
+
+    row = Search.objects.create(user_id=user_id, query=q, status=SearchStatus.PENDING)
+    scheduled_tasks.enqueue_search_job(row.id)
+    return row.id
+
+
+def run_search_background(search_id: int) -> None:
+    """Worker: load ``Search``, call Gemini, set ``result_candidates`` and status."""
+    try:
+        search = Search.objects.get(pk=search_id)
+    except Search.DoesNotExist:
+        logger.warning("run_search_background: Search id=%s missing", search_id)
+        return
+
+    if search.status != SearchStatus.PENDING:
+        return
+
+    try:
+        candidates = _gemini_search_candidate_dicts(
+            query=search.query,
+            user_id=search.user_id,
+        )
+    except Exception:
+        logger.exception("Gemini search failed for search id=%s", search_id)
+        Search.objects.filter(pk=search_id).update(
+            status=SearchStatus.FAILED,
+            completed_at=timezone.now(),
+        )
+        return
+
+    Search.objects.filter(pk=search_id).update(
+        status=SearchStatus.COMPLETED,
+        result_candidates=candidates,
+        completed_at=timezone.now(),
+    )

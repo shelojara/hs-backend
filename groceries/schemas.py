@@ -245,3 +245,11 @@ class DeleteMerchantRequest(Schema):
 
 class DeleteMerchantResponse(Schema):
     pass
+
+
+class CreateSearchRequest(Schema):
+    query: Annotated[str, AfterValidator(_strip_nonempty_query)]
+
+
+class CreateSearchResponse(Schema):
+    search_id: int

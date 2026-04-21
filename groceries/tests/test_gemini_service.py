@@ -256,3 +256,28 @@ def test_suggest_running_low_from_purchase_history(mock_get_client):
     mock_client.models.generate_content.assert_called_once()
     cfg = mock_client.models.generate_content.call_args.kwargs["config"]
     assert cfg.tools is None
+
+
+def test_search_result_rows_from_merchant_products():
+    rows = [
+        MerchantProductInfo(
+            display_name="Milk 1L",
+            standard_name="Leche",
+            brand="Colún",
+            price=Decimal("2590"),
+            format="1 L",
+            emoji="🥛",
+            merchant="Lider",
+        ),
+    ]
+    assert gemini_service.search_result_rows_from_merchant_products(rows) == [
+        {
+            "merchant": "Lider",
+            "display_name": "Milk 1L",
+            "standard_name": "Leche",
+            "brand": "Colún",
+            "price": 2590,
+            "format": "1 L",
+            "emoji": "🥛",
+        },
+    ]

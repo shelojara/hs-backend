@@ -518,3 +518,26 @@ def suggest_running_low_from_purchase_history(
         ),
     )
     return _parse_running_low_suggestions(response.text, max_items=lim)
+
+
+def search_result_rows_from_merchant_products(
+    rows: list[MerchantProductInfo],
+) -> list[dict]:
+    """Serialize ``MerchantProductInfo`` rows for ``Search.result_candidates`` JSON."""
+    out: list[dict] = []
+    for row in rows:
+        price_val = None
+        if row.price is not None:
+            price_val = int(row.price)
+        out.append(
+            {
+                "merchant": row.merchant,
+                "display_name": row.display_name,
+                "standard_name": row.standard_name,
+                "brand": row.brand,
+                "price": price_val,
+                "format": row.format,
+                "emoji": row.emoji,
+            },
+        )
+    return out
