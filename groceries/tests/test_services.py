@@ -462,6 +462,20 @@ def test_list_products_search_rapidfuzz_typo_still_matches():
 
 
 @pytest.mark.django_db
+def test_list_products_search_matches_keyword_in_long_standard_name():
+    """Full-string WRatio underrates substring matches on long fields; gate uses per-field best."""
+    owner = _catalog_owner_user()
+    p = _catalog_product("SKU long label", owner=owner)
+    Product.objects.filter(pk=p.pk).update(
+        standard_name="Organic fair trade whole milk 1 L vitamin enriched",
+        brand="Colún",
+    )
+    _catalog_product("Rice", owner=owner)
+    items, _ = list_products(user_id=owner.pk, search="milk", limit=10)
+    assert [i.pk for i in items] == [p.pk]
+
+
+@pytest.mark.django_db
 def test_list_products_search_paginates_with_cursor():
     owner = _catalog_owner_user()
     milk = _catalog_product("Oat milk", owner=owner)

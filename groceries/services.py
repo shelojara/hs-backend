@@ -297,7 +297,38 @@ def _product_search_haystack(name: str, standard_name: str, brand: str) -> str:
     return _normalize_for_product_search(" ".join(parts))
 
 
-# ``fuzz.WRatio`` below this → skip row (drops weak substring noise, e.g. ``xo`` vs ``hello``).
+def _product_search_field_strings(name: str, standard_name: str, brand: str) -> list[str]:
+    """Normalized non-blank fields (name, standard_name, brand), deduped order — for per-field fuzzy gate."""
+    out: list[str] = []
+    for raw in (name.strip(), standard_name.strip(), brand.strip()):
+        if not raw:
+            continue
+        folded = _normalize_for_product_search(raw)
+        if folded and folded not in out:
+            out.append(folded)
+    return out
+
+
+def _field_fuzzy_gate_score(query_normalized: str, field_normalized: str) -> int:
+    """0–100 match strength for *query* vs one product field.
+
+    ``fuzz.WRatio`` on full field underrates substring matches when field is long; per-token
+    ``fuzz.ratio`` fixes that. Combined with ``token_set_ratio`` on the field so multi-word
+    queries still match (e.g. ``organic milk`` vs a long ``standard_name``).
+    """
+    if not field_normalized:
+        return 0
+    words = field_normalized.split()
+    if not words:
+        return int(fuzz.ratio(query_normalized, field_normalized))
+    max_word_ratio = max(
+        int(fuzz.ratio(query_normalized, word)) for word in words
+    )
+    token_set = int(fuzz.token_set_ratio(query_normalized, field_normalized))
+    return max(max_word_ratio, token_set)
+
+
+# Best per-field gate score below this → skip row.
 _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO = 65
 
 
@@ -341,7 +372,13 @@ def _list_products_with_fuzzy_search(
         )
         if not haystack_normalized:
             continue
-        weighted_ratio = int(fuzz.WRatio(query_normalized, haystack_normalized))
+        field_strings = _product_search_field_strings(
+            product.name, product.standard_name, product.brand
+        )
+        weighted_ratio = max(
+            _field_fuzzy_gate_score(query_normalized, field_text)
+            for field_text in field_strings
+        )
         if weighted_ratio < _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO:
             continue
         partial_ratio_score = int(
