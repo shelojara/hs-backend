@@ -10,6 +10,13 @@ class SearchStatus(models.TextChoices):
     FAILED = "failed", "Failed"
 
 
+class ActiveSearchManager(models.Manager):
+    """Rows with ``deleted_at`` unset (not soft-deleted)."""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted_at__isnull=True)
+
+
 class Search(models.Model):
     """Async Gemini product search job; ``result_candidates`` filled when completed."""
 
@@ -28,9 +35,15 @@ class Search(models.Model):
     )
     result_candidates = models.JSONField(default=list)
     completed_at = models.DateTimeField(null=True, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    all_objects = models.Manager()
+    objects = ActiveSearchManager()
 
     class Meta:
         ordering = ("-created_at", "-id")
+        base_manager_name = "all_objects"
+        default_manager_name = "objects"
 
     def __str__(self) -> str:
         return f"Search({self.query[:60]!r}…) status={self.status} user={self.user_id}"

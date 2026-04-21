@@ -663,9 +663,11 @@ def get_search(search_id: int, *, user_id: int) -> Search:
 
 
 def delete_search(*, search_id: int, user_id: int) -> None:
-    """Remove ``Search`` row owned by *user_id*."""
+    """Soft-delete ``Search`` row owned by *user_id*."""
     row = Search.objects.get(pk=search_id, user_id=user_id)
-    row.delete()
+    now = timezone.now()
+    row.deleted_at = now
+    row.save(update_fields=["deleted_at"])
 
 
 def search_result_candidates_as_product_schemas(
@@ -711,9 +713,15 @@ def search_result_candidates_as_product_schemas(
 def run_product_search_job(*, search_id: int) -> None:
     """Background worker: Gemini product candidates → ``Search`` row."""
     try:
-        search = Search.objects.get(pk=search_id)
+        search = Search.all_objects.get(pk=search_id)
     except Search.DoesNotExist:
         logger.warning("run_product_search_job: missing Search id=%s", search_id)
+        return
+    if search.deleted_at is not None:
+        logger.warning(
+            "run_product_search_job: Search id=%s soft-deleted; skipping.",
+            search_id,
+        )
         return
     user_id = search.user_id
     q = search.query.strip()
