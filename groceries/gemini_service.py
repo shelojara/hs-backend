@@ -357,7 +357,7 @@ def fetch_merchant_product_info_by_identity(
     client = _get_client()
     grounding = types.Tool(google_search=types.GoogleSearch())
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash-lite-preview",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=merchant_product_single_system_instruction(
@@ -391,7 +391,7 @@ def fetch_merchant_product_candidates(
     client = _get_client()
     grounding = types.Tool(google_search=types.GoogleSearch())
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash-lite-preview",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=merchant_product_find_system_instruction(
@@ -494,7 +494,7 @@ def suggest_running_low_from_purchase_history(
 
     client = _get_client()
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash-lite-preview",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=RUNNING_LOW_SYSTEM_INSTRUCTION,
