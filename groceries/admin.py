@@ -96,7 +96,7 @@ class BasketProductAdmin(admin.ModelAdmin):
 
 @admin.register(Search)
 class SearchAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "status", "query_preview", "create_at", "completed_at")
+    list_display = ("id", "user", "status", "query_preview", "created_at", "completed_at")
     list_filter = ("status",)
     search_fields = ("query",)
 

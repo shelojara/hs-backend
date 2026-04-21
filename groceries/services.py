@@ -654,7 +654,7 @@ def create_search(*, query: str, user_id: int) -> int:
 
 def list_searches(*, user_id: int) -> list[Search]:
     """Latest 10 ``Search`` rows for *user_id*, newest first (by primary key)."""
-    return list(Search.objects.filter(user_id=user_id).order_by("-create_at", "-pk")[:10])
+    return list(Search.objects.filter(user_id=user_id).order_by("-created_at", "-pk")[:10])
 
 
 def search_result_candidates_as_product_schemas(

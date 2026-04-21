@@ -19,7 +19,7 @@ class Search(models.Model):
         related_name="groceries_searches",
     )
     query = models.TextField()
-    create_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(
         max_length=16,
         choices=SearchStatus.choices,
@@ -30,7 +30,7 @@ class Search(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        ordering = ("-create_at", "-id")
+        ordering = ("-created_at", "-id")
 
     def __str__(self) -> str:
         return f"Search({self.query[:60]!r}…) status={self.status} user={self.user_id}"

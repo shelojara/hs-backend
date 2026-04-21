@@ -105,13 +105,13 @@ def test_list_searches_returns_latest_ten_newest_first_ordered_by_pk():
 
 
 @pytest.mark.django_db
-def test_list_searches_orders_by_create_at_newest_first():
+def test_list_searches_orders_by_created_at_newest_first():
     u = User.objects.create_user(username="ls3", password="pw")
     base = timezone.now()
     older = Search.objects.create(user_id=u.pk, query="older")
     newer = Search.objects.create(user_id=u.pk, query="newer")
-    Search.objects.filter(pk=older.pk).update(create_at=base - timedelta(hours=2))
-    Search.objects.filter(pk=newer.pk).update(create_at=base - timedelta(hours=1))
+    Search.objects.filter(pk=older.pk).update(created_at=base - timedelta(hours=2))
+    Search.objects.filter(pk=newer.pk).update(created_at=base - timedelta(hours=1))
     assert older.pk < newer.pk
     rows = list_searches(user_id=u.pk)
     assert [r.pk for r in rows] == [newer.pk, older.pk]
