@@ -160,9 +160,13 @@ def update_product(
 
 
 def delete_product(*, product_id: int, user_id: int) -> None:
-    """Delete product owned by *user_id*. Basket line rows removed via CASCADE."""
+    """Soft-delete product owned by *user_id*; remove from all baskets (M2M)."""
     product = Product.objects.get(pk=product_id, user_id=user_id)
-    product.delete()
+    now = timezone.now()
+    with transaction.atomic():
+        product.baskets.clear()
+        product.deleted_at = now
+        product.save(update_fields=["deleted_at"])
 
 
 def recheck_product_price(*, product_id: int, user_id: int) -> Product:
@@ -517,7 +521,7 @@ def sync_running_low_flags_for_user(*, user_id: int) -> None:
 
 
 def running_low_sync_user_ids() -> list[int]:
-    """Distinct user ids that own at least one product (for daily running-low queue)."""
+    """Distinct user ids that own at least one active (non-soft-deleted) product."""
     return list(
         Product.objects.order_by()
         .values_list("user_id", flat=True)

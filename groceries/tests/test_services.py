@@ -313,12 +313,14 @@ def test_update_product_raises_when_wrong_user():
 
 
 @pytest.mark.django_db
-def test_delete_product_removes_row_and_basket_links():
+def test_delete_product_soft_deletes_and_removes_basket_links():
     u = _user()
     p = Product.objects.create(name="Milk", user=u)
     basket = add_product_to_basket(product_id=p.pk, user_id=u.pk)
     delete_product(product_id=p.pk, user_id=u.pk)
     assert not Product.objects.filter(pk=p.pk).exists()
+    gone = Product.all_objects.get(pk=p.pk)
+    assert gone.deleted_at is not None
     assert not BasketProduct.objects.filter(
         basket_id=basket.pk,
         product_id=p.pk,
@@ -429,6 +431,16 @@ def test_list_products_excludes_products_in_open_basket():
     add_product_to_basket(product_id=p_in.pk, user_id=u.pk)
     items, _ = list_products(user_id=u.pk, limit=10)
     assert [i.pk for i in items] == [p_out.pk]
+
+
+@pytest.mark.django_db
+def test_list_products_excludes_soft_deleted():
+    u = _user()
+    alive = Product.objects.create(name="Keep", user=u)
+    dead = Product.objects.create(name="Gone", user=u)
+    delete_product(product_id=dead.pk, user_id=u.pk)
+    items, _ = list_products(user_id=u.pk, limit=10)
+    assert [i.pk for i in items] == [alive.pk]
 
 
 @pytest.mark.django_db
