@@ -652,6 +652,51 @@ def create_search(*, query: str, user_id: int) -> int:
     return row.pk
 
 
+def list_searches(*, user_id: int) -> list[Search]:
+    """Latest 10 ``Search`` rows for *user_id*, newest first (by primary key)."""
+    return list(Search.objects.filter(user_id=user_id).order_by("-created_at", "-pk")[:10])
+
+
+def search_result_candidates_as_product_schemas(
+    raw: list[Any],
+    *,
+    fallback_name: str,
+) -> list[ProductCandidateSchema]:
+    """Map persisted ``Search.result_candidates`` JSON to ``ProductCandidateSchema`` rows."""
+    q = (fallback_name or "").strip()
+    out: list[ProductCandidateSchema] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        d: dict[str, Any] = item
+        disp = str(d.get("display_name") or d.get("name") or "").strip()
+        label = disp if disp else q
+        std = str(d.get("standard_name") or "").strip()
+        brand = str(d.get("brand") or "").strip()
+        fmt = str(d.get("format") or "").strip()
+        emoji = str(d.get("emoji") or "").strip()
+        merchant = str(d.get("merchant") or "").strip()
+        price_out: Decimal | None = None
+        pr = d.get("price")
+        if pr is not None and pr != "":
+            try:
+                price_out = Decimal(str(pr))
+            except (ArithmeticError, ValueError, TypeError):
+                price_out = None
+        out.append(
+            ProductCandidateSchema(
+                name=label,
+                standard_name=std,
+                brand=brand,
+                price=price_out,
+                format=fmt,
+                emoji=emoji,
+                merchant=merchant,
+            ),
+        )
+    return out
+
+
 def run_product_search_job(*, search_id: int) -> None:
     """Background worker: Gemini product candidates → ``Search`` row."""
     try:

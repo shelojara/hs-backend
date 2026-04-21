@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -7,7 +8,12 @@ from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Search, SearchStatus
-from groceries.services import create_search, run_product_search_job
+from groceries.services import (
+    create_search,
+    list_searches,
+    run_product_search_job,
+    search_result_candidates_as_product_schemas,
+)
 
 User = get_user_model()
 
@@ -79,3 +85,77 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini):
     assert row.completed_at is not None
     assert row.completed_at >= before
     assert row.result_candidates == []
+
+
+@pytest.mark.django_db
+def test_list_searches_returns_latest_ten_newest_first_ordered_by_pk():
+    u = User.objects.create_user(username="ls1", password="pw")
+    other = User.objects.create_user(username="ls2", password="pw")
+    ids = []
+    for i in range(12):
+        row = Search.objects.create(user_id=u.pk, query=f"q{i}")
+        ids.append(row.pk)
+    for i in range(3):
+        Search.objects.create(user_id=other.pk, query=f"other{i}")
+    rows = list_searches(user_id=u.pk)
+    assert len(rows) == 10
+    want = list(reversed(ids[-10:]))
+    assert [r.pk for r in rows] == want
+    assert all(r.user_id == u.pk for r in rows)
+
+
+@pytest.mark.django_db
+def test_list_searches_orders_by_created_at_newest_first():
+    u = User.objects.create_user(username="ls3", password="pw")
+    base = timezone.now()
+    older = Search.objects.create(user_id=u.pk, query="older")
+    newer = Search.objects.create(user_id=u.pk, query="newer")
+    Search.objects.filter(pk=older.pk).update(created_at=base - timedelta(hours=2))
+    Search.objects.filter(pk=newer.pk).update(created_at=base - timedelta(hours=1))
+    assert older.pk < newer.pk
+    rows = list_searches(user_id=u.pk)
+    assert [r.pk for r in rows] == [newer.pk, older.pk]
+
+
+def test_search_result_candidates_as_product_schemas_maps_stored_json():
+    rows = search_result_candidates_as_product_schemas(
+        [
+            {
+                "display_name": "Leche 1 L",
+                "standard_name": "Leche entera",
+                "brand": "Colún",
+                "price": "1990.00",
+                "format": "1 L",
+                "emoji": "🥛",
+                "merchant": "Lider",
+            },
+        ],
+        fallback_name="leche",
+    )
+    assert len(rows) == 1
+    c = rows[0]
+    assert c.name == "Leche 1 L"
+    assert c.standard_name == "Leche entera"
+    assert c.brand == "Colún"
+    assert c.price == Decimal("1990.00")
+    assert c.format == "1 L"
+    assert c.emoji == "🥛"
+    assert c.merchant == "Lider"
+
+
+def test_search_result_candidates_as_product_schemas_skips_non_dict_entries():
+    rows = search_result_candidates_as_product_schemas(
+        [None, "x", {"display_name": "A", "standard_name": "", "brand": "", "format": "", "emoji": ""}],
+        fallback_name="q",
+    )
+    assert len(rows) == 1
+    assert rows[0].name == "A"
+
+
+def test_search_result_candidates_as_product_schemas_uses_fallback_name_when_missing_label():
+    rows = search_result_candidates_as_product_schemas(
+        [{"standard_name": "s", "brand": "", "format": "", "emoji": ""}],
+        fallback_name="  milk  ",
+    )
+    assert len(rows) == 1
+    assert rows[0].name == "milk"

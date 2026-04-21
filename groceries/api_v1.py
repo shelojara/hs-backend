@@ -32,9 +32,12 @@ from groceries.schemas import (
     ListProductsResponse,
     ListPurchasedBasketsRequest,
     ListPurchasedBasketsResponse,
+    ListSearchesRequest,
+    ListSearchesResponse,
     MerchantSchema,
     ProductCandidateSchema,
     ProductSchema,
+    SearchListItemSchema,
     PurchaseBasketRequest,
     PurchaseBasketResponse,
     PurchaseSingleProductRequest,
@@ -84,6 +87,27 @@ def create_search(request, payload: CreateSearchRequest):
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     return CreateSearchResponse(search_id=search_id)
+
+
+@router.post("/v1.Groceries.ListSearches", response=ListSearchesResponse)
+def list_searches(request, payload: ListSearchesRequest):
+    rows = services.list_searches(user_id=request.auth.pk)
+    return ListSearchesResponse(
+        searches=[
+            SearchListItemSchema(
+                search_id=s.pk,
+                created_at=s.created_at,
+                query=s.query,
+                status=s.status,
+                completed_at=s.completed_at,
+                result_candidates=services.search_result_candidates_as_product_schemas(
+                    s.result_candidates,
+                    fallback_name=s.query,
+                ),
+            )
+            for s in rows
+        ],
+    )
 
 
 @router.post(

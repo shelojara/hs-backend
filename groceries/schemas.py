@@ -58,6 +58,23 @@ class CreateSearchResponse(Schema):
     search_id: int
 
 
+class ListSearchesRequest(Schema):
+    """No fields; POST body may be `{}` for RPC transport."""
+
+
+class SearchListItemSchema(Schema):
+    search_id: int
+    created_at: datetime
+    query: str
+    status: str
+    completed_at: datetime | None
+    result_candidates: list[ProductCandidateSchema]
+
+
+class ListSearchesResponse(Schema):
+    searches: list[SearchListItemSchema]
+
+
 class CreateProductFromCandidateRequest(Schema):
     canditate: ProductCandidateSchema
     is_custom: bool = False
