@@ -373,11 +373,15 @@ def get_current_basket_with_products(*, user_id: int) -> Basket | None:
 
 
 def list_purchased_baskets(*, user_id: int) -> list[Basket]:
-    """Up to :data:`LIST_PURCHASED_BASKETS_LIMIT` baskets with ``purchased_at`` set, newest first."""
+    """Up to :data:`LIST_PURCHASED_BASKETS_LIMIT` baskets with ``purchased_at`` set, newest first.
+
+    Prefetch uses ``Product.all_objects`` so lines include soft-deleted catalog rows.
+    """
+    purchased_product_qs = Product.all_objects.order_by("name", "pk")
     return list(
         Basket.objects.filter(owner_id=user_id, purchased_at__isnull=False)
         .prefetch_related(
-            Prefetch("products", queryset=Product.objects.order_by("name", "pk")),
+            Prefetch("products", queryset=purchased_product_qs),
         )
         .order_by("-purchased_at", "-pk")[:LIST_PURCHASED_BASKETS_LIMIT]
     )
@@ -387,8 +391,10 @@ def list_purchased_baskets_for_running_low(*, user_id: int) -> list[Basket]:
     """Purchased baskets in last two calendar months (by ``purchased_at``), newest first.
 
     Used for Gemini running-low sync; no row cap (window bounds size).
+    Prefetch uses ``Product.all_objects`` so history includes soft-deleted products.
     """
     since = timezone.now() - relativedelta(months=2)
+    purchased_product_qs = Product.all_objects.order_by("name", "pk")
     return list(
         Basket.objects.filter(
             owner_id=user_id,
@@ -396,7 +402,7 @@ def list_purchased_baskets_for_running_low(*, user_id: int) -> list[Basket]:
             purchased_at__gte=since,
         )
         .prefetch_related(
-            Prefetch("products", queryset=Product.objects.order_by("name", "pk")),
+            Prefetch("products", queryset=purchased_product_qs),
         )
         .order_by("-purchased_at", "-pk")
     )

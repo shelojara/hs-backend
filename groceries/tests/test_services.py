@@ -973,6 +973,21 @@ def test_list_purchased_baskets_excludes_open():
 
 
 @pytest.mark.django_db
+def test_list_purchased_baskets_prefetch_includes_soft_deleted_products():
+    user = _user()
+    p = Product.objects.create(name="Milk", user=user)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(p)
+    delete_product(product_id=p.pk, user_id=user.pk)
+    rows = list_purchased_baskets(user_id=user.pk)
+    assert len(rows) == 1
+    prefetched = list(rows[0]._prefetched_objects_cache["products"])
+    assert len(prefetched) == 1
+    assert prefetched[0].pk == p.pk
+    assert prefetched[0].deleted_at is not None
+
+
+@pytest.mark.django_db
 def test_list_purchased_baskets_caps_at_five_newest_by_purchased_at():
     user = _user()
     base = timezone.now()
