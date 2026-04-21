@@ -378,6 +378,7 @@ def fetch_merchant_product_candidates(
     query: str,
     max_products: int = FIND_PRODUCTS_MAX,
     preferred_merchants: Sequence[PreferredMerchantContext] | None = None,
+    page_context: str | None = None,
 ) -> list[MerchantProductInfo]:
     """Ask Gemini for up to *max_products* distinct merchant product rows for *query*."""
     name = (query or "").strip()
@@ -385,11 +386,23 @@ def fetch_merchant_product_candidates(
         return []
     lim = max(1, min(max_products, FIND_PRODUCTS_MAX))
 
-    prompt = (
-        f"Product search query (as entered by user): {name!r}\n\n"
-        f"Search the merchant's Chile site and return up to {lim} distinct matching products as the "
-        "JSON array described in the system instruction."
-    )
+    ctx = (page_context or "").strip()
+    if ctx:
+        prompt = (
+            f"The user pasted a product or listing page URL (reference only): {name!r}\n\n"
+            "Below is plain text extracted from that page (may be noisy). "
+            "Infer product identity (name, brand, format, price if visible) from this content.\n\n"
+            f"--- page text ---\n{ctx}\n--- end ---\n\n"
+            f"Return up to {lim} distinct products implied by this page as the JSON array described in the "
+            "system instruction. Prefer the main product on the page when it is a single-product listing; "
+            "otherwise include distinct items found in the content."
+        )
+    else:
+        prompt = (
+            f"Product search query (as entered by user): {name!r}\n\n"
+            f"Search the merchant's Chile site and return up to {lim} distinct matching products as the "
+            "JSON array described in the system instruction."
+        )
 
     client = _get_client()
     grounding = types.Tool(google_search=types.GoogleSearch())

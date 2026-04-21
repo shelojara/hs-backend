@@ -143,6 +143,51 @@ def test_find_product_candidates_passes_merchants_in_preference_order(mock_fetch
 
 
 @pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+@patch("groceries.services.fetch_page_text_for_product_context")
+def test_find_product_candidates_plain_query_skips_page_fetch(
+    mock_page_text,
+    mock_gemini,
+):
+    u = _user(username="find_plain")
+    mock_gemini.return_value = []
+    find_product_candidates(query="leche", user_id=u.pk)
+    mock_page_text.assert_not_called()
+    assert mock_gemini.call_args.kwargs["page_context"] is None
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+@patch("groceries.services.fetch_page_text_for_product_context")
+def test_find_product_candidates_url_passes_fetched_page_text(
+    mock_page_text,
+    mock_gemini,
+):
+    u = _user(username="find_url")
+    mock_page_text.return_value = "Leche Colún 1 L $2590"
+    mock_gemini.return_value = []
+    find_product_candidates(
+        query="https://www.example.cl/producto/123",
+        user_id=u.pk,
+    )
+    mock_page_text.assert_called_once_with("https://www.example.cl/producto/123")
+    assert mock_gemini.call_args.kwargs["page_context"] == "Leche Colún 1 L $2590"
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+@patch("groceries.services.fetch_page_text_for_product_context", return_value=None)
+def test_find_product_candidates_url_fetch_empty_still_calls_gemini(
+    _mock_page_text,
+    mock_gemini,
+):
+    u = _user(username="find_url_empty")
+    mock_gemini.return_value = []
+    find_product_candidates(query="https://shop.example/item", user_id=u.pk)
+    assert mock_gemini.call_args.kwargs["page_context"] is None
+
+
+@pytest.mark.django_db
 def test_create_product_from_candidate_persists_without_gemini():
     u = _user()
     pid = create_product_from_candidate(

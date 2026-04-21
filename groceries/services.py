@@ -13,6 +13,7 @@ from django.utils import timezone
 from groceries import gemini_service
 from groceries.favicon_service import fetch_favicon_url, normalize_website_url
 from groceries.gemini_service import MerchantProductInfo, PreferredMerchantContext
+from groceries.url_page_context import fetch_page_text_for_product_context, is_http_https_url
 from groceries.models import Basket, BasketProduct, Merchant, Product, Whiteboard
 from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 
@@ -94,10 +95,14 @@ def find_product_candidates(
     if not normalized:
         msg = "Query must not be empty."
         raise ValueError(msg)
+    page_context: str | None = None
+    if is_http_https_url(normalized):
+        page_context = fetch_page_text_for_product_context(normalized)
     try:
         return gemini_service.fetch_merchant_product_candidates(
             query=normalized,
             preferred_merchants=_preferred_merchant_context_for_user(user_id),
+            page_context=page_context,
         )
     except RuntimeError:
         logger.warning(
