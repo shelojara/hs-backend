@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated
 
 from ninja import Schema
 from pydantic import AfterValidator
@@ -67,7 +67,7 @@ class SearchListItemSchema(Schema):
     query: str
     status: str
     completed_at: datetime | None
-    result_candidates: list[dict[str, Any]]
+    result_candidates: list[ProductCandidateSchema]
 
 
 class ListSearchesResponse(Schema):

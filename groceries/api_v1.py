@@ -99,7 +99,10 @@ def list_searches(request, payload: ListSearchesRequest):
                 query=s.query,
                 status=s.status,
                 completed_at=s.completed_at,
-                result_candidates=s.result_candidates,
+                result_candidates=services.search_result_candidates_as_product_schemas(
+                    s.result_candidates,
+                    fallback_name=s.query,
+                ),
             )
             for s in rows
         ],

@@ -7,7 +7,12 @@ from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Search, SearchStatus
-from groceries.services import create_search, list_searches, run_product_search_job
+from groceries.services import (
+    create_search,
+    list_searches,
+    run_product_search_job,
+    search_result_candidates_as_product_schemas,
+)
 
 User = get_user_model()
 
@@ -96,3 +101,47 @@ def test_list_searches_returns_latest_ten_newest_first_ordered_by_pk():
     want = list(reversed(ids[-10:]))
     assert [r.pk for r in rows] == want
     assert all(r.user_id == u.pk for r in rows)
+
+
+def test_search_result_candidates_as_product_schemas_maps_stored_json():
+    rows = search_result_candidates_as_product_schemas(
+        [
+            {
+                "display_name": "Leche 1 L",
+                "standard_name": "Leche entera",
+                "brand": "Colún",
+                "price": "1990.00",
+                "format": "1 L",
+                "emoji": "🥛",
+                "merchant": "Lider",
+            },
+        ],
+        fallback_name="leche",
+    )
+    assert len(rows) == 1
+    c = rows[0]
+    assert c.name == "Leche 1 L"
+    assert c.standard_name == "Leche entera"
+    assert c.brand == "Colún"
+    assert c.price == Decimal("1990.00")
+    assert c.format == "1 L"
+    assert c.emoji == "🥛"
+    assert c.merchant == "Lider"
+
+
+def test_search_result_candidates_as_product_schemas_skips_non_dict_entries():
+    rows = search_result_candidates_as_product_schemas(
+        [None, "x", {"display_name": "A", "standard_name": "", "brand": "", "format": "", "emoji": ""}],
+        fallback_name="q",
+    )
+    assert len(rows) == 1
+    assert rows[0].name == "A"
+
+
+def test_search_result_candidates_as_product_schemas_uses_fallback_name_when_missing_label():
+    rows = search_result_candidates_as_product_schemas(
+        [{"standard_name": "s", "brand": "", "format": "", "emoji": ""}],
+        fallback_name="  milk  ",
+    )
+    assert len(rows) == 1
+    assert rows[0].name == "milk"
