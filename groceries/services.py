@@ -143,7 +143,7 @@ def update_product(
     standard_name: str,
     brand: str,
     format: str,
-    price: Decimal,
+    price: Decimal | None,
     emoji: str,
 ) -> Product:
     """Update persisted merchant fields; no Gemini call."""
@@ -151,7 +151,8 @@ def update_product(
     product.standard_name = standard_name
     product.brand = brand
     product.format = format
-    product.price = price
+    resolved_price = price if price is not None else Decimal("0")
+    product.price = resolved_price
     product.emoji = emoji
     product.save(
         update_fields=["standard_name", "brand", "format", "price", "emoji"],

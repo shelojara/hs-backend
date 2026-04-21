@@ -296,6 +296,31 @@ def test_update_product_persists_fields_without_gemini():
 
 
 @pytest.mark.django_db
+def test_update_product_null_price_stores_zero():
+    u = _user()
+    p = Product.objects.create(
+        name="Item",
+        standard_name="Std",
+        brand="B",
+        price=Decimal("5.00"),
+        format="1",
+        emoji="🧀",
+        user=u,
+    )
+    update_product(
+        product_id=p.pk,
+        user_id=u.pk,
+        standard_name="Std",
+        brand="B",
+        format="1",
+        price=None,
+        emoji="🧀",
+    )
+    p.refresh_from_db()
+    assert p.price == Decimal("0")
+
+
+@pytest.mark.django_db
 def test_update_product_raises_when_wrong_user():
     u1 = _user(username="a")
     u2 = _user(username="b")
