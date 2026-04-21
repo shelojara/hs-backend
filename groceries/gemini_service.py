@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 FIND_PRODUCTS_MAX = 20
 
-# Candidate search only; identity + running-low use default model constant elsewhere.
+# Candidate search only; other Gemini calls use gemini-2.5-flash.
 GEMINI_FIND_PRODUCTS_MODEL = "gemini-3-flash-preview"
 
 RUNNING_LOW_MAX_SUGGESTIONS = 15
@@ -360,7 +360,7 @@ def fetch_merchant_product_info_by_identity(
     client = _get_client()
     grounding = types.Tool(google_search=types.GoogleSearch())
     response = client.models.generate_content(
-        model="gemini-3.1-flash-lite-preview",
+        model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=merchant_product_single_system_instruction(
@@ -497,7 +497,7 @@ def suggest_running_low_from_purchase_history(
 
     client = _get_client()
     response = client.models.generate_content(
-        model="gemini-3.1-flash-lite-preview",
+        model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=RUNNING_LOW_SYSTEM_INSTRUCTION,
