@@ -90,6 +90,33 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini):
 
 
 @pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    return_value=[
+        MerchantProductInfo(
+            display_name="X",
+            standard_name="",
+            brand="",
+            price=None,
+            format="",
+            emoji="",
+            merchant="",
+        ),
+    ],
+)
+def test_run_product_search_job_skips_soft_deleted_search(_mock_gemini):
+    u = User.objects.create_user(username="s_skip", password="pw")
+    row = Search.objects.create(user_id=u.pk, query="leche")
+    delete_search(search_id=row.pk, user_id=u.pk)
+    run_product_search_job(search_id=row.pk)
+    row = Search.all_objects.get(pk=row.pk)
+    assert row.status == SearchStatus.PENDING
+    assert row.result_candidates == []
+    assert row.completed_at is None
+    _mock_gemini.assert_not_called()
+
+
+@pytest.mark.django_db
 def test_list_searches_returns_latest_ten_newest_first_ordered_by_pk():
     u = User.objects.create_user(username="ls1", password="pw")
     other = User.objects.create_user(username="ls2", password="pw")
@@ -125,11 +152,21 @@ def test_get_search_wrong_user_raises():
 
 
 @pytest.mark.django_db
-def test_delete_search_removes_row_for_owner():
+def test_delete_search_soft_deletes_row_for_owner():
     u = User.objects.create_user(username="ds1", password="pw")
     row = Search.objects.create(user_id=u.pk, query="milk")
     delete_search(search_id=row.pk, user_id=u.pk)
     assert not Search.objects.filter(pk=row.pk).exists()
+    dead = Search.all_objects.get(pk=row.pk)
+    assert dead.deleted_at is not None
+
+
+@pytest.mark.django_db
+def test_list_searches_excludes_soft_deleted():
+    u = User.objects.create_user(username="ds4", password="pw")
+    row = Search.objects.create(user_id=u.pk, query="gone")
+    delete_search(search_id=row.pk, user_id=u.pk)
+    assert list_searches(user_id=u.pk) == []
 
 
 @pytest.mark.django_db
