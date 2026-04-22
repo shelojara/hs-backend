@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
-from groceries.models import Search, SearchStatus
+from groceries.models import Product, Search, SearchStatus
 from groceries.services import (
     create_search,
     delete_search,
@@ -147,6 +147,111 @@ def test_run_product_search_job_persists_query_kind(_mock_recipe_fetch, _mock_ki
             "ingredient": "Pasta",
         },
     ]
+
+
+@pytest.mark.django_db
+@patch("groceries.services.async_task")
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="recipe",
+)
+@patch(
+    "groceries.services.gemini_service.fetch_recipe_ingredient_product_candidates",
+    return_value=[
+        MerchantProductInfo(
+            display_name="Pasta penne 500 g",
+            standard_name="Pasta seca",
+            brand="",
+            price=None,
+            format="500 g",
+            emoji="🍝",
+            merchant="Lider",
+            ingredient="Pasta",
+        ),
+        MerchantProductInfo(
+            display_name="Leche 1 L",
+            standard_name="Leche entera",
+            brand="",
+            price=None,
+            format="1 L",
+            emoji="🥛",
+            merchant="Lider",
+            ingredient="Leche",
+        ),
+        MerchantProductInfo(
+            display_name="Arroz 1 kg",
+            standard_name="Arroz",
+            brand="",
+            price=None,
+            format="1 kg",
+            emoji="🍚",
+            merchant="Lider",
+            ingredient="Arroz",
+        ),
+    ],
+)
+def test_run_product_search_job_recipe_spawns_child_searches_for_missing_ingredients_only(
+    _mock_recipe_fetch,
+    _mock_kind,
+    mock_async,
+):
+    u = User.objects.create_user(username="srecipe_children", password="pw")
+    Product.objects.create(
+        user_id=u.pk,
+        name="Leche entera 1 L",
+        standard_name="Leche entera",
+        brand="",
+        price=Decimal("1990"),
+        format="1 L",
+        emoji="🥛",
+    )
+    root = Search.objects.create(user_id=u.pk, query="carbonara")
+    run_product_search_job(search_id=root.pk)
+    children = list(
+        Search.objects.filter(parent_id=root.pk, user_id=u.pk).order_by("pk"),
+    )
+    assert len(children) == 2
+    queries = {c.query for c in children}
+    assert queries == {"Pasta", "Arroz"}
+    assert all(c.skip_query_kind_classify for c in children)
+    assert mock_async.call_count == 2
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.classify_search_query_kind")
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    return_value=[
+        MerchantProductInfo(
+            display_name="Crema 200 ml",
+            standard_name="Crema de leche",
+            brand="",
+            price=None,
+            format="200 ml",
+            emoji="🥛",
+            merchant="Lider",
+        ),
+    ],
+)
+def test_run_product_search_job_skip_kind_flag_skips_classifier(
+    _mock_fetch,
+    mock_classify,
+):
+    u = User.objects.create_user(username="s_skip_kind", password="pw")
+    parent = Search.objects.create(user_id=u.pk, query="carbonara")
+    child = Search.objects.create(
+        user_id=u.pk,
+        parent_id=parent.pk,
+        query="Crema para cocinar",
+        skip_query_kind_classify=True,
+    )
+    run_product_search_job(search_id=child.pk)
+    child.refresh_from_db()
+    mock_classify.assert_not_called()
+    assert child.kind == "product"
+    assert child.status == SearchStatus.COMPLETED
+    _mock_fetch.assert_called_once()
+    assert _mock_fetch.call_args.kwargs["query"] == "Crema para cocinar"
 
 
 @pytest.mark.django_db

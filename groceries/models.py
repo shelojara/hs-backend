@@ -59,6 +59,10 @@ class Search(models.Model):
     result_candidates = models.JSONField(default=list)
     completed_at = models.DateTimeField(null=True, blank=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
+    skip_query_kind_classify = models.BooleanField(
+        default=False,
+        help_text="When true, product search job treats query as product search without Gemini classifier.",
+    )
 
     all_objects = models.Manager()
     objects = ActiveSearchManager()

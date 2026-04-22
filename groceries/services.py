@@ -32,6 +32,9 @@ from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 
 logger = logging.getLogger(__name__)
 
+# Child product searches spawned from recipe root (catalog gap fill); cap limits async load.
+RECIPE_CHILD_SEARCH_MAX = 10
+
 
 def _preferred_merchant_context_for_user(user_id: int) -> list[PreferredMerchantContext]:
     rows = Merchant.objects.filter(user_id=user_id).order_by(
@@ -353,6 +356,60 @@ def _field_fuzzy_gate_score(query_normalized: str, field_normalized: str) -> int
 
 # Best per-field gate score below this → skip row.
 _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO = 65
+
+
+def _user_catalog_has_ingredient_fuzzy_match(*, user_id: int, ingredient_label: str) -> bool:
+    """True when *ingredient_label* matches any active catalog row like list-products fuzzy gate."""
+    folded = _normalize_for_product_search(ingredient_label.strip())
+    if not folded:
+        return False
+    for product in Product.objects.filter(user_id=user_id).iterator(chunk_size=500):
+        field_strings = _product_search_field_strings(
+            product.name,
+            product.standard_name,
+            product.brand,
+        )
+        if any(
+            _field_fuzzy_gate_score(folded, field_text) >= _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO
+            for field_text in field_strings
+        ):
+            return True
+    return False
+
+
+def _enqueue_child_ingredient_product_searches(
+    *,
+    parent_search_id: int,
+    user_id: int,
+    ingredient_queries: list[str],
+) -> None:
+    """Create up to ``RECIPE_CHILD_SEARCH_MAX`` pending child ``Search`` rows and enqueue workers."""
+    seen_normalized: set[str] = set()
+    spawned = 0
+    for raw in ingredient_queries:
+        label = (raw or "").strip()
+        if not label:
+            continue
+        key = _normalize_for_product_search(label)
+        if not key or key in seen_normalized:
+            continue
+        if _user_catalog_has_ingredient_fuzzy_match(user_id=user_id, ingredient_label=label):
+            continue
+        seen_normalized.add(key)
+        child = Search.objects.create(
+            user_id=user_id,
+            parent_id=parent_search_id,
+            query=label,
+            skip_query_kind_classify=True,
+        )
+        async_task(
+            "groceries.scheduled_tasks.run_product_search_job",
+            child.pk,
+            task_name=f"groceries_product_search:{child.pk}",
+        )
+        spawned += 1
+        if spawned >= RECIPE_CHILD_SEARCH_MAX:
+            break
 
 
 @dataclass(frozen=True, slots=True)
@@ -982,19 +1039,23 @@ def run_product_search_job(*, search_id: int) -> None:
         return
     user_id = search.user_id
     q = search.query.strip()
+    parent_id = search.parent_id
     kind_val = ""
-    try:
-        kind_val = gemini_service.classify_search_query_kind(query=q)
-    except RuntimeError:
-        logger.warning(
-            "run_product_search_job: skip query kind (GEMINI unset) (search id=%s).",
-            search_id,
-        )
-    except Exception:
-        logger.exception(
-            "run_product_search_job: classify query kind failed (search id=%s)",
-            search_id,
-        )
+    if search.skip_query_kind_classify:
+        kind_val = SearchQueryKind.PRODUCT.value
+    else:
+        try:
+            kind_val = gemini_service.classify_search_query_kind(query=q)
+        except RuntimeError:
+            logger.warning(
+                "run_product_search_job: skip query kind (GEMINI unset) (search id=%s).",
+                search_id,
+            )
+        except Exception:
+            logger.exception(
+                "run_product_search_job: classify query kind failed (search id=%s)",
+                search_id,
+            )
     search.kind = kind_val
     if kind_val == SearchQueryKind.QUESTION.value:
         search.status = SearchStatus.FAILED
@@ -1023,6 +1084,27 @@ def run_product_search_job(*, search_id: int) -> None:
         search.save(
             update_fields=["kind", "result_candidates", "status", "completed_at"],
         )
+        if (
+            kind_val == SearchQueryKind.RECIPE.value
+            and parent_id is None
+            and items
+        ):
+            ordered_ingredients: list[str] = []
+            seen_ing: set[str] = set()
+            for row in items:
+                ing = (row.ingredient or "").strip()
+                if not ing:
+                    continue
+                nk = _normalize_for_product_search(ing)
+                if not nk or nk in seen_ing:
+                    continue
+                seen_ing.add(nk)
+                ordered_ingredients.append(ing)
+            _enqueue_child_ingredient_product_searches(
+                parent_search_id=search.pk,
+                user_id=user_id,
+                ingredient_queries=ordered_ingredients,
+            )
     except RuntimeError:
         logger.warning(
             "run_product_search_job: GEMINI_API_KEY unset (search id=%s).",
