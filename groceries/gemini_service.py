@@ -80,10 +80,10 @@ _RECIPE_INGREDIENT_PRODUCT_JSON_KEYS = (
     "Each object must have these keys: "
     '"ingredient" (string: one recipe ingredient the product row satisfies — short Spanish Chile phrase, '
     "e.g. \"Pasta\", \"Crema para cocinar\"; empty if unknown), "
-    '"merchant" (string: retail chain or store name whose Chile site or listing you used, e.g. "Lider", "Jumbo"; '
-    "Spanish Chile when appropriate; empty if unknown), "
+    '"merchant" (string: optional; use empty string "" — do not focus on store chains; locality context is enough), '
     '"display_name" (string: best retail-style product title for lists: proper capitalization, '
-    "brand + product line + key format as on shelf or the merchant site; Spanish Chile; empty if unknown), "
+    "brand + product line + key format as commonly sold in the shopper's locality; Spanish Chile when locality is Chile; "
+    "empty if unknown), "
     '"standard_name" (string: generic product type for grouping across brands and formats: Spanish Chile; '
     'omit marca, precio, and envase/tamaño; short noun phrase e.g. "Leche entera", "Arroz grano largo"; '
     "empty if unknown), "
@@ -95,7 +95,7 @@ _RECIPE_INGREDIENT_PRODUCT_JSON_KEYS = (
     'empty string "" if unsure). '
     'Use empty string "" for unknown string fields. Use JSON null for unknown price (legacy 0 is treated as unknown). '
     "Include at most one primary product row per distinct ingredient line. "
-    "Do not repeat the same merchant SKU or identical display_name twice."
+    "Do not repeat identical display_name twice."
 )
 
 _MERCHANT_PRODUCT_JSON_KEYS_SINGLE = (
@@ -160,6 +160,17 @@ def _merchant_scope_paragraph(
     return "\n".join(lines)
 
 
+def _recipe_locality_scope_paragraph() -> str:
+    """Recipe ingredient flow: Chile default; no merchant-site prioritization."""
+    return (
+        "The shopper's grocery locality defaults to Chile unless the recipe query clearly names another country or region. "
+        "Use Google Search to learn which grocery ingredients and typical shelf products for that dish are common in that "
+        "locality (supermarkets, home cooking, regional names). "
+        "Do not prioritize any specific retail chain or merchant website; ignore preferred-store lists. "
+        "Ground answers in what is realistically bought for home cooking there."
+    )
+
+
 def merchant_product_find_system_instruction(
     *,
     preferred: Sequence[PreferredMerchantContext] | None = None,
@@ -178,12 +189,14 @@ def recipe_ingredient_product_find_system_instruction(
     *,
     preferred: Sequence[PreferredMerchantContext] | None = None,
 ) -> str:
-    """System instruction: recipe → JSON array of ingredient-labeled merchant rows."""
-    head = _merchant_scope_paragraph(preferred=preferred, multi_query=True)
+    """System instruction: recipe → JSON array of ingredient-labeled rows (locality-first; *preferred* ignored)."""
+    _ = preferred
+    head = _recipe_locality_scope_paragraph()
     return (
         f"{head}"
         "The user named a dish or recipe to cook — not a single product query. "
-        "Infer typical grocery ingredients (proteins, produce, pantry, dairy, etc.) for that dish in a Chile home kitchen. "
+        "Infer typical grocery ingredients (proteins, produce, pantry, dairy, etc.) for that dish as a home cook in the "
+        "shopper's locality would shop for them. "
         f"Respond with a single JSON array only — no markdown, no code fences, no text before or after. "
         f"The array must have at most {RECIPE_INGREDIENT_FINDS_MAX} elements. Each element is one JSON object with the "
         f"{_RECIPE_INGREDIENT_PRODUCT_JSON_KEYS}"
@@ -483,7 +496,8 @@ def fetch_recipe_ingredient_product_candidates(
     max_products: int = RECIPE_INGREDIENT_FINDS_MAX,
     preferred_merchants: Sequence[PreferredMerchantContext] | None = None,
 ) -> list[MerchantProductInfo]:
-    """Ask Gemini for merchant product rows keyed by inferred recipe ingredients."""
+    """Ask Gemini for product rows keyed by inferred recipe ingredients (locality-first; *preferred_merchants* ignored)."""
+    _ = preferred_merchants
     name = (recipe_query or "").strip()
     if not name:
         return []
@@ -491,9 +505,12 @@ def fetch_recipe_ingredient_product_candidates(
 
     prompt = (
         f"Recipe or dish the shopper wants to cook (as entered): {name!r}\n\n"
-        f"Use Google Search on the merchant Chile site(s). For each important grocery ingredient for this recipe, "
-        f"return one representative purchasable product as the JSON array described in the system instruction. "
-        f"Return at most {lim} elements total."
+        "Shopper locality defaults to Chile unless the query clearly indicates another place. "
+        "Use Google Search for how this dish is typically made and shopped for in that locality — ingredients, "
+        "common product types, and Spanish Chile names when locality is Chile. "
+        "Do not anchor on specific supermarket chains or merchant sites. "
+        f"For each important grocery ingredient, return one representative purchasable product as the JSON array "
+        f"described in the system instruction. Return at most {lim} elements total."
     )
 
     client = _get_client()
