@@ -158,6 +158,51 @@ def test_find_product_candidates_recipe_lists_ingredients_then_product_fetch_per
 
 @pytest.mark.django_db
 @patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+@patch(
+    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
+    return_value=["Huevos", "Pasta"],
+)
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="recipe",
+)
+def test_find_product_candidates_recipe_skips_ingredients_already_in_catalog(
+    _mock_kind,
+    _mock_ingredients,
+    mock_plain_fetch,
+):
+    u = _user(username="find_recipe_skip")
+    Product.objects.create(
+        user_id=u.pk,
+        name="Huevos",
+        standard_name="Huevos de gallina",
+    )
+
+    def _fake_fetch(*, query, **kwargs):
+        if query == "Pasta":
+            return [
+                MerchantProductInfo(
+                    display_name="Pasta penne",
+                    standard_name="Pasta seca",
+                    brand="",
+                    price=None,
+                    format="500 g",
+                    emoji="🍝",
+                    merchant="Lider",
+                ),
+            ]
+        return []
+
+    mock_plain_fetch.side_effect = _fake_fetch
+    rows = find_product_candidates(query="tarta", user_id=u.pk)
+    assert len(rows) == 1
+    assert rows[0].ingredient == "Pasta"
+    assert mock_plain_fetch.call_count == 1
+    assert mock_plain_fetch.call_args.kwargs["query"] == "Pasta"
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
 def test_find_product_candidates_passes_preferred_merchants(mock_fetch):
     u = _user(username="find_pref")
     Merchant.objects.create(

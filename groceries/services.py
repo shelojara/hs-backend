@@ -155,6 +155,8 @@ def find_product_candidates(
             )
             out: list[MerchantProductInfo] = []
             for line in ingredients:
+                if _ingredient_string_matches_user_catalog(line, user_id=user_id):
+                    continue
                 rows = gemini_service.fetch_merchant_product_candidates(
                     query=line,
                     max_products=gemini_service.FIND_PRODUCTS_MAX,
@@ -381,6 +383,26 @@ def _field_fuzzy_gate_score(query_normalized: str, field_normalized: str) -> int
 
 # Best per-field gate score below this → skip row.
 _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO = 65
+
+
+def _ingredient_string_matches_user_catalog(ingredient: str, *, user_id: int) -> bool:
+    """True when *ingredient* would fuzzy-match a catalog row in ``list_products`` (same gate, no basket filter)."""
+    query_normalized = _normalize_for_product_search(ingredient.strip())
+    if not query_normalized:
+        return False
+    for product in Product.objects.filter(user_id=user_id).iterator(chunk_size=500):
+        field_strings = _product_search_field_strings(
+            product.name, product.standard_name, product.brand
+        )
+        if not field_strings:
+            continue
+        weighted_ratio = max(
+            _field_fuzzy_gate_score(query_normalized, field_text)
+            for field_text in field_strings
+        )
+        if weighted_ratio >= _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO:
+            return True
+    return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1129,6 +1151,13 @@ def run_ingredient_product_search_job(*, search_id: int) -> None:
             search.status = SearchStatus.FAILED
             search.completed_at = timezone.now()
             search.save(update_fields=["status", "completed_at"])
+        elif _ingredient_string_matches_user_catalog(ing, user_id=user_id):
+            search.result_candidates = []
+            search.status = SearchStatus.COMPLETED
+            search.completed_at = timezone.now()
+            search.save(
+                update_fields=["result_candidates", "status", "completed_at"],
+            )
         else:
             items = gemini_service.fetch_merchant_product_candidates(
                 query=ing,

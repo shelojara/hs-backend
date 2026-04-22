@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
-from groceries.models import Search, SearchStatus
+from groceries.models import Product, Search, SearchStatus
 from groceries.services import (
     create_search,
     delete_search,
@@ -178,6 +178,39 @@ def test_recipe_search_enqueues_parallel_ingredient_jobs_then_child_completes_pa
             "ingredient": "Pasta seca",
         },
     ]
+
+
+@pytest.mark.django_db
+@patch("groceries.services.async_task")
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="recipe",
+)
+@patch(
+    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
+    return_value=["Pasta seca"],
+)
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+def test_ingredient_child_search_skips_gemini_when_ingredient_already_in_catalog(
+    mock_fetch,
+    _mock_ingredients,
+    _mock_kind,
+    _mock_async,
+):
+    u = User.objects.create_user(username="scat1", password="pw")
+    Product.objects.create(
+        user_id=u.pk,
+        name="Pasta",
+        standard_name="Pasta seca",
+    )
+    root = Search.objects.create(user_id=u.pk, query="carbonara")
+    run_product_search_job(search_id=root.pk)
+    child = Search.objects.get(parent_id=root.pk)
+    run_ingredient_product_search_job(search_id=child.pk)
+    child.refresh_from_db()
+    assert child.status == SearchStatus.COMPLETED
+    assert child.result_candidates == []
+    mock_fetch.assert_not_called()
 
 
 @pytest.mark.django_db
