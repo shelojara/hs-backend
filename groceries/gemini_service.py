@@ -63,16 +63,12 @@ _MERCHANT_PRODUCT_JSON_KEYS_FIND = (
     "Spanish Chile when appropriate; empty if unknown), "
     '"display_name" (string: best retail-style product title for lists: proper capitalization, '
     "brand + product line + key format as on shelf or the merchant site; Spanish Chile; empty if unknown), "
-    '"standard_name" (string: generic product type for grouping across brands and formats: Spanish Chile; '
-    'omit marca, precio, and envase/tamaño; short noun phrase e.g. "Leche entera", "Arroz grano largo"; '
-    "empty if unknown), "
-    '"brand" (string: marca comercial or empty), '
-    '"price" (number or null: typical shelf price in Chilean pesos CLP as a plain number — integer pesos, '
-    "no thousands separators, no currency symbol; e.g. 3990 for a shelf label like $3.990; use null if unknown), "
-    '"format" (string: presentation: size, units, e.g. "1 L", "6 x 330 ml", "500 g"; empty if unknown), '
+    '"standard_name" (string: generic grocery ingredient or product type name for grouping: Spanish Chile; '
+    'short noun phrase e.g. "Leche entera", "Arroz grano largo"; empty if unknown), '
     '"emoji" (string: one Unicode emoji best matching product type or category, e.g. 🥛 for milk, 🍚 for rice; '
     'empty string "" if unsure). '
-    'Use empty string "" for unknown string fields. Use JSON null for unknown price (legacy 0 is treated as unknown). '
+    'Do not include brand, pack size, price, or format fields — only the keys above. '
+    'Use empty string "" for unknown string fields. '
     "Do not repeat the same merchant SKU or identical display_name twice. Prefer distinct products."
 )
 
