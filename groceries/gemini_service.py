@@ -14,9 +14,9 @@ from groceries.models import SearchQueryKind
 
 logger = logging.getLogger(__name__)
 
-FIND_PRODUCTS_MAX = 20
+FIND_PRODUCTS_MAX = 10
 # Recipe flow: one merchant row per ingredient line (cap total array size).
-RECIPE_INGREDIENT_FINDS_MAX = 40
+RECIPE_INGREDIENT_FINDS_MAX = 20
 
 # All Gemini calls use gemini-2.5-flash.
 GEMINI_FIND_PRODUCTS_MODEL = "gemini-2.5-flash"

@@ -225,9 +225,11 @@ def test_merchant_product_instructions_include_preferred_merchant():
     find = merchant_product_find_system_instruction(preferred=pref)
     assert "Jumbo" in find
     assert "JSON array" in find
+    assert f"at most {gemini_service.FIND_PRODUCTS_MAX} elements" in find
     recipe = recipe_ingredient_product_find_system_instruction(preferred=pref)
     assert "Jumbo" in recipe
     assert "ingredient" in recipe.lower()
+    assert f"at most {gemini_service.RECIPE_INGREDIENT_FINDS_MAX} elements" in recipe
 
 
 @patch("groceries.gemini_service._get_client")
