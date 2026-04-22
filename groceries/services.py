@@ -1071,7 +1071,26 @@ def run_product_search_job(*, search_id: int) -> None:
                 search.completed_at = timezone.now()
                 search.save(update_fields=["kind", "status", "completed_at"])
                 return
-            for line in ingredients:
+            to_enqueue = [
+                line
+                for line in ingredients
+                if not _ingredient_string_matches_user_catalog(line, user_id=user_id)
+            ]
+            if not to_enqueue:
+                now = timezone.now()
+                search.result_candidates = []
+                search.status = SearchStatus.COMPLETED
+                search.completed_at = now
+                search.save(
+                    update_fields=[
+                        "kind",
+                        "result_candidates",
+                        "status",
+                        "completed_at",
+                    ],
+                )
+                return
+            for line in to_enqueue:
                 child = Search.objects.create(
                     user_id=user_id,
                     parent_id=search.pk,
@@ -1151,13 +1170,6 @@ def run_ingredient_product_search_job(*, search_id: int) -> None:
             search.status = SearchStatus.FAILED
             search.completed_at = timezone.now()
             search.save(update_fields=["status", "completed_at"])
-        elif _ingredient_string_matches_user_catalog(ing, user_id=user_id):
-            search.result_candidates = []
-            search.status = SearchStatus.COMPLETED
-            search.completed_at = timezone.now()
-            search.save(
-                update_fields=["result_candidates", "status", "completed_at"],
-            )
         else:
             items = gemini_service.fetch_merchant_product_candidates(
                 query=ing,

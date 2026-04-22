@@ -191,7 +191,7 @@ def test_recipe_search_enqueues_parallel_ingredient_jobs_then_child_completes_pa
     return_value=["Pasta seca"],
 )
 @patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
-def test_ingredient_child_search_skips_gemini_when_ingredient_already_in_catalog(
+def test_recipe_root_skips_enqueue_when_all_ingredients_in_catalog(
     mock_fetch,
     _mock_ingredients,
     _mock_kind,
@@ -205,12 +205,50 @@ def test_ingredient_child_search_skips_gemini_when_ingredient_already_in_catalog
     )
     root = Search.objects.create(user_id=u.pk, query="carbonara")
     run_product_search_job(search_id=root.pk)
-    child = Search.objects.get(parent_id=root.pk)
-    run_ingredient_product_search_job(search_id=child.pk)
-    child.refresh_from_db()
-    assert child.status == SearchStatus.COMPLETED
-    assert child.result_candidates == []
+    root.refresh_from_db()
+    assert root.status == SearchStatus.COMPLETED
+    assert not Search.all_objects.filter(parent_id=root.pk).exists()
+    _mock_async.assert_not_called()
     mock_fetch.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("groceries.services.async_task")
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="recipe",
+)
+@patch(
+    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
+    return_value=["Pasta seca", "Leche"],
+)
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+def test_recipe_root_enqueues_only_ingredients_not_in_catalog(
+    mock_fetch,
+    _mock_ingredients,
+    _mock_kind,
+    mock_async,
+):
+    u = User.objects.create_user(username="scat_mix", password="pw")
+    Product.objects.create(
+        user_id=u.pk,
+        name="Pasta",
+        standard_name="Pasta seca",
+    )
+    root = Search.objects.create(user_id=u.pk, query="tarta")
+    run_product_search_job(search_id=root.pk)
+    children = list(Search.all_objects.filter(parent_id=root.pk).order_by("pk"))
+    assert len(children) == 1
+    assert children[0].query == "Leche"
+    mock_async.assert_called_once_with(
+        "groceries.scheduled_tasks.run_ingredient_product_search_job",
+        children[0].pk,
+        task_name=f"groceries_ingredient_search:{children[0].pk}",
+    )
+    mock_fetch.assert_not_called()
+    run_ingredient_product_search_job(search_id=children[0].pk)
+    assert mock_fetch.call_count == 1
+    assert mock_fetch.call_args.kwargs["query"] == "Leche"
 
 
 @pytest.mark.django_db
