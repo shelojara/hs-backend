@@ -981,6 +981,11 @@ def run_product_search_job(*, search_id: int) -> None:
             search_id,
         )
     search.kind = kind_val
+    if kind_val == SearchQueryKind.QUESTION.value:
+        search.status = SearchStatus.FAILED
+        search.completed_at = timezone.now()
+        search.save(update_fields=["kind", "status", "completed_at"])
+        return
     page_context: str | None = None
     if is_http_https_url(q):
         page_context = fetch_page_text_for_product_context(q)

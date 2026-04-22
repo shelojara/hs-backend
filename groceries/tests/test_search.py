@@ -152,17 +152,20 @@ def test_run_product_search_job_persists_query_kind(_mock_recipe_fetch, _mock_ki
     "groceries.services.gemini_service.classify_search_query_kind",
     return_value="question",
 )
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_candidates",
-    side_effect=RuntimeError("no key"),
-)
-def test_run_product_search_job_failed_still_saves_kind(_mock_fetch, _mock_kind):
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+def test_run_product_search_job_marks_failed_when_query_is_question(
+    _mock_fetch,
+    _mock_kind,
+):
     u = User.objects.create_user(username="skind2", password="pw")
     row = Search.objects.create(user_id=u.pk, query="is oat milk healthy")
     run_product_search_job(search_id=row.pk)
     row.refresh_from_db()
     assert row.status == SearchStatus.FAILED
     assert row.kind == "question"
+    assert row.completed_at is not None
+    assert row.result_candidates == []
+    _mock_fetch.assert_not_called()
 
 
 @pytest.mark.django_db
