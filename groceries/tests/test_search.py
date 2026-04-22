@@ -12,6 +12,7 @@ from groceries.services import (
     create_search,
     delete_search,
     get_search,
+    list_direct_child_searches,
     list_searches,
     run_product_search_job,
     search_result_candidates_as_product_schemas,
@@ -28,6 +29,7 @@ def test_create_search_persists_pending_and_enqueues_worker(mock_async):
     row = Search.objects.get(pk=sid)
     assert row.user_id == u.pk
     assert row.query == "leche"
+    assert row.parent_id is None
     assert row.status == SearchStatus.PENDING
     assert row.result_candidates == []
     assert row.kind == ""
@@ -215,6 +217,16 @@ def test_list_searches_returns_latest_ten_newest_first_ordered_by_pk():
 
 
 @pytest.mark.django_db
+def test_list_searches_excludes_child_searches():
+    u = User.objects.create_user(username="ls_child", password="pw")
+    root = Search.objects.create(user_id=u.pk, query="root")
+    Search.objects.create(user_id=u.pk, query="child", parent_id=root.pk)
+    rows = list_searches(user_id=u.pk)
+    assert len(rows) == 1
+    assert rows[0].pk == root.pk
+
+
+@pytest.mark.django_db
 def test_get_search_returns_row_for_owner():
     u = User.objects.create_user(username="gs1", password="pw")
     row = Search.objects.create(user_id=u.pk, query="milk")
@@ -230,6 +242,18 @@ def test_get_search_wrong_user_raises():
     row = Search.objects.create(user_id=u.pk, query="x")
     with pytest.raises(Search.DoesNotExist):
         get_search(search_id=row.pk, user_id=other.pk)
+
+
+@pytest.mark.django_db
+def test_list_direct_child_searches_newest_first_excludes_other_parent():
+    u = User.objects.create_user(username="ch1", password="pw")
+    root_a = Search.objects.create(user_id=u.pk, query="a")
+    root_b = Search.objects.create(user_id=u.pk, query="b")
+    c_old = Search.objects.create(user_id=u.pk, query="old", parent_id=root_a.pk)
+    c_new = Search.objects.create(user_id=u.pk, query="new", parent_id=root_a.pk)
+    Search.objects.create(user_id=u.pk, query="other tree", parent_id=root_b.pk)
+    got = list_direct_child_searches(root_a.pk, user_id=u.pk)
+    assert [r.pk for r in got] == [c_new.pk, c_old.pk]
 
 
 @pytest.mark.django_db

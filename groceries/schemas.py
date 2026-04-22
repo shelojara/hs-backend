@@ -70,17 +70,18 @@ class ListSearchesRequest(Schema):
     """No fields; POST body may be `{}` for RPC transport."""
 
 
-class SearchListItemSchema(Schema):
+class SearchSchema(Schema):
     search_id: int
     created_at: datetime
     query: str
     status: str
     completed_at: datetime | None
+    parent_id: int | None = None
     result_candidates: list[ProductCandidateSchema]
 
 
 class ListSearchesResponse(Schema):
-    searches: list[SearchListItemSchema]
+    searches: list[SearchSchema]
 
 
 class GetSearchRequest(Schema):
@@ -88,7 +89,8 @@ class GetSearchRequest(Schema):
 
 
 class GetSearchResponse(Schema):
-    search: SearchListItemSchema
+    search: SearchSchema
+    child_searches: list[SearchSchema]
 
 
 class DeleteSearchRequest(Schema):
