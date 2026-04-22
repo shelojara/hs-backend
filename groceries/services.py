@@ -1078,7 +1078,10 @@ def run_product_search_job(*, search_id: int) -> None:
                 preferred_merchants=preferred,
                 page_context=page_context,
             )
-        search.result_candidates = _search_candidates_as_json(items)
+        if kind_val == SearchQueryKind.RECIPE.value and parent_id is None:
+            search.result_candidates = []
+        else:
+            search.result_candidates = _search_candidates_as_json(items)
         search.status = SearchStatus.COMPLETED
         search.completed_at = timezone.now()
         search.save(

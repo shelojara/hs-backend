@@ -135,18 +135,7 @@ def test_run_product_search_job_persists_query_kind(_mock_recipe_fetch, _mock_ki
     assert row.status == SearchStatus.COMPLETED
     _mock_recipe_fetch.assert_called_once()
     assert _mock_recipe_fetch.call_args.kwargs["recipe_query"] == "carbonara"
-    assert row.result_candidates == [
-        {
-            "display_name": "Pasta penne 500 g",
-            "standard_name": "Pasta seca",
-            "brand": "",
-            "price": None,
-            "format": "500 g",
-            "emoji": "🍝",
-            "merchant": "Lider",
-            "ingredient": "Pasta",
-        },
-    ]
+    assert row.result_candidates == []
 
 
 @pytest.mark.django_db
