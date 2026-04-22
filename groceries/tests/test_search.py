@@ -12,6 +12,7 @@ from groceries.services import (
     create_search,
     delete_search,
     get_search,
+    list_direct_child_searches,
     list_searches,
     run_product_search_job,
     search_result_candidates_as_product_schemas,
@@ -241,6 +242,18 @@ def test_get_search_wrong_user_raises():
     row = Search.objects.create(user_id=u.pk, query="x")
     with pytest.raises(Search.DoesNotExist):
         get_search(search_id=row.pk, user_id=other.pk)
+
+
+@pytest.mark.django_db
+def test_list_direct_child_searches_newest_first_excludes_other_parent():
+    u = User.objects.create_user(username="ch1", password="pw")
+    root_a = Search.objects.create(user_id=u.pk, query="a")
+    root_b = Search.objects.create(user_id=u.pk, query="b")
+    c_old = Search.objects.create(user_id=u.pk, query="old", parent_id=root_a.pk)
+    c_new = Search.objects.create(user_id=u.pk, query="new", parent_id=root_a.pk)
+    Search.objects.create(user_id=u.pk, query="other tree", parent_id=root_b.pk)
+    got = list_direct_child_searches(root_a.pk, user_id=u.pk)
+    assert [r.pk for r in got] == [c_new.pk, c_old.pk]
 
 
 @pytest.mark.django_db

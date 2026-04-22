@@ -41,7 +41,7 @@ from groceries.schemas import (
     MerchantSchema,
     ProductCandidateSchema,
     ProductSchema,
-    SearchListItemSchema,
+    SearchSchema,
     PurchaseBasketRequest,
     PurchaseBasketResponse,
     PurchaseSingleProductRequest,
@@ -64,6 +64,21 @@ from groceries.services import (
 )
 
 router = Router(auth=protected_api_auth, tags=["Groceries"])
+
+
+def _search_schema(s: Search) -> SearchSchema:
+    return SearchSchema(
+        search_id=s.pk,
+        created_at=s.created_at,
+        query=s.query,
+        status=s.status,
+        completed_at=s.completed_at,
+        parent_id=s.parent_id,
+        result_candidates=services.search_result_candidates_as_product_schemas(
+            s.result_candidates,
+            fallback_name=s.query,
+        ),
+    )
 
 
 def _product_schema(p: Product) -> ProductSchema:
@@ -97,21 +112,7 @@ def create_search(request, payload: CreateSearchRequest):
 def list_searches(request, payload: ListSearchesRequest):
     rows = services.list_searches(user_id=request.auth.pk)
     return ListSearchesResponse(
-        searches=[
-            SearchListItemSchema(
-                search_id=s.pk,
-                created_at=s.created_at,
-                query=s.query,
-                status=s.status,
-                completed_at=s.completed_at,
-                parent_id=s.parent_id,
-                result_candidates=services.search_result_candidates_as_product_schemas(
-                    s.result_candidates,
-                    fallback_name=s.query,
-                ),
-            )
-            for s in rows
-        ],
+        searches=[_search_schema(s) for s in rows],
     )
 
 
@@ -121,19 +122,10 @@ def get_search(request, payload: GetSearchRequest):
         s = services.get_search(search_id=payload.search_id, user_id=request.auth.pk)
     except Search.DoesNotExist as exc:
         raise HttpError(404, "Search not found.") from exc
+    children = services.list_direct_child_searches(s.pk, user_id=request.auth.pk)
     return GetSearchResponse(
-        search=SearchListItemSchema(
-            search_id=s.pk,
-            created_at=s.created_at,
-            query=s.query,
-            status=s.status,
-            completed_at=s.completed_at,
-            parent_id=s.parent_id,
-            result_candidates=services.search_result_candidates_as_product_schemas(
-                s.result_candidates,
-                fallback_name=s.query,
-            ),
-        ),
+        search=_search_schema(s),
+        child_searches=[_search_schema(c) for c in children],
     )
 
 

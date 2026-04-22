@@ -907,6 +907,16 @@ def get_search(search_id: int, *, user_id: int) -> Search:
     return Search.objects.get(pk=search_id, user_id=user_id)
 
 
+def list_direct_child_searches(parent_search_id: int, *, user_id: int) -> list[Search]:
+    """Direct child ``Search`` rows for *parent_search_id*, same user, newest first."""
+    return list(
+        Search.objects.filter(
+            parent_id=parent_search_id,
+            user_id=user_id,
+        ).order_by("-created_at", "-pk"),
+    )
+
+
 def delete_search(*, search_id: int, user_id: int) -> None:
     """Soft-delete ``Search`` row owned by *user_id*."""
     row = Search.objects.get(pk=search_id, user_id=user_id)
