@@ -941,6 +941,20 @@ def run_product_search_job(*, search_id: int) -> None:
         return
     user_id = search.user_id
     q = search.query.strip()
+    kind_val = ""
+    try:
+        kind_val = gemini_service.classify_search_query_kind(query=q)
+    except RuntimeError:
+        logger.warning(
+            "run_product_search_job: skip query kind (GEMINI unset) (search id=%s).",
+            search_id,
+        )
+    except Exception:
+        logger.exception(
+            "run_product_search_job: classify query kind failed (search id=%s)",
+            search_id,
+        )
+    search.kind = kind_val
     page_context: str | None = None
     if is_http_https_url(q):
         page_context = fetch_page_text_for_product_context(q)
@@ -954,7 +968,7 @@ def run_product_search_job(*, search_id: int) -> None:
         search.status = SearchStatus.COMPLETED
         search.completed_at = timezone.now()
         search.save(
-            update_fields=["result_candidates", "status", "completed_at"],
+            update_fields=["kind", "result_candidates", "status", "completed_at"],
         )
     except RuntimeError:
         logger.warning(
@@ -963,9 +977,9 @@ def run_product_search_job(*, search_id: int) -> None:
         )
         search.status = SearchStatus.FAILED
         search.completed_at = timezone.now()
-        search.save(update_fields=["status", "completed_at"])
+        search.save(update_fields=["kind", "status", "completed_at"])
     except Exception:
         logger.exception("run_product_search_job failed (search id=%s)", search_id)
         search.status = SearchStatus.FAILED
         search.completed_at = timezone.now()
-        search.save(update_fields=["status", "completed_at"])
+        search.save(update_fields=["kind", "status", "completed_at"])
