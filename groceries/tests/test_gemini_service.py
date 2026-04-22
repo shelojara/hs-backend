@@ -12,6 +12,7 @@ from groceries.gemini_service import (
     _parse_search_query_kind_payload,
     merchant_product_find_system_instruction,
     merchant_product_single_system_instruction,
+    recipe_ingredient_product_find_system_instruction,
 )
 
 
@@ -57,6 +58,7 @@ def test_fetch_merchant_product_info_by_identity_parses_json(mock_get_client):
         format="1 L",
         emoji="🥛",
         merchant="",
+        ingredient="",
     )
     mock_client.models.generate_content.assert_called_once()
     call_kw = mock_client.models.generate_content.call_args.kwargs
@@ -87,6 +89,7 @@ def test_fetch_merchant_product_info_by_identity_strips_json_fence(mock_get_clie
         format="500 g",
         emoji="",
         merchant="",
+        ingredient="",
     )
 
 
@@ -222,6 +225,32 @@ def test_merchant_product_instructions_include_preferred_merchant():
     find = merchant_product_find_system_instruction(preferred=pref)
     assert "Jumbo" in find
     assert "JSON array" in find
+    recipe = recipe_ingredient_product_find_system_instruction(preferred=pref)
+    assert "Jumbo" in recipe
+    assert "ingredient" in recipe.lower()
+
+
+@patch("groceries.gemini_service._get_client")
+def test_fetch_recipe_ingredient_product_candidates(mock_get_client):
+    mock_response = MagicMock()
+    mock_response.text = (
+        '[{"ingredient": "Pasta", "display_name": "Pasta penne 500 g", "standard_name": "Pasta seca", '
+        '"brand": "", "price": 1990, "format": "500 g", "emoji": "🍝", "merchant": "Lider"}]'
+    )
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    out = gemini_service.fetch_recipe_ingredient_product_candidates(
+        recipe_query="  carbonara  ",
+    )
+    assert len(out) == 1
+    assert out[0].ingredient == "Pasta"
+    assert out[0].display_name == "Pasta penne 500 g"
+    contents = mock_client.models.generate_content.call_args.kwargs["contents"]
+    assert "carbonara" in contents
+    cfg = mock_client.models.generate_content.call_args.kwargs["config"]
+    assert "dish" in (cfg.system_instruction or "").lower()
 
 
 def test_parse_running_low_suggestions_array():

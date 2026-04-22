@@ -51,6 +51,7 @@ class ProductCandidateSchema(Schema):
     format: str
     emoji: str
     merchant: str = ""
+    ingredient: str = ""
 
 
 class FindProductCandidatesResponse(Schema):

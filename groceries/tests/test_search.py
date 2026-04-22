@@ -77,6 +77,7 @@ def test_run_product_search_job_marks_completed_with_candidates(
             "format": "1 L",
             "emoji": "🥛",
             "merchant": "Lider",
+            "ingredient": "",
         },
     ]
     _mock_kind.assert_called_once_with(query="leche")
@@ -109,26 +110,41 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini, _mock_k
     return_value="recipe",
 )
 @patch(
-    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    "groceries.services.gemini_service.fetch_recipe_ingredient_product_candidates",
     return_value=[
         MerchantProductInfo(
-            display_name="Pasta",
-            standard_name="Pasta",
+            display_name="Pasta penne 500 g",
+            standard_name="Pasta seca",
             brand="",
             price=None,
             format="500 g",
             emoji="🍝",
-            merchant="",
+            merchant="Lider",
+            ingredient="Pasta",
         ),
     ],
 )
-def test_run_product_search_job_persists_query_kind(_mock_fetch, _mock_kind):
+def test_run_product_search_job_persists_query_kind(_mock_recipe_fetch, _mock_kind):
     u = User.objects.create_user(username="skind", password="pw")
     row = Search.objects.create(user_id=u.pk, query="carbonara")
     run_product_search_job(search_id=row.pk)
     row.refresh_from_db()
     assert row.kind == "recipe"
     assert row.status == SearchStatus.COMPLETED
+    _mock_recipe_fetch.assert_called_once()
+    assert _mock_recipe_fetch.call_args.kwargs["recipe_query"] == "carbonara"
+    assert row.result_candidates == [
+        {
+            "display_name": "Pasta penne 500 g",
+            "standard_name": "Pasta seca",
+            "brand": "",
+            "price": None,
+            "format": "500 g",
+            "emoji": "🍝",
+            "merchant": "Lider",
+            "ingredient": "Pasta",
+        },
+    ]
 
 
 @pytest.mark.django_db
@@ -283,6 +299,7 @@ def test_search_result_candidates_as_product_schemas_maps_stored_json():
                 "format": "1 L",
                 "emoji": "🥛",
                 "merchant": "Lider",
+                "ingredient": "Leche",
             },
         ],
         fallback_name="leche",
@@ -296,6 +313,7 @@ def test_search_result_candidates_as_product_schemas_maps_stored_json():
     assert c.format == "1 L"
     assert c.emoji == "🥛"
     assert c.merchant == "Lider"
+    assert c.ingredient == "Leche"
 
 
 def test_search_result_candidates_as_product_schemas_skips_non_dict_entries():
