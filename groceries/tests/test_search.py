@@ -40,27 +40,6 @@ def test_create_search_persists_pending_and_enqueues_worker(mock_async):
 
 
 @pytest.mark.django_db
-@patch("groceries.services.async_task")
-def test_create_search_with_parent_links_row(mock_async):
-    u = User.objects.create_user(username="s_parent", password="pw")
-    root = Search.objects.create(user_id=u.pk, query="root q")
-    sid = create_search(query="child q", user_id=u.pk, parent_search_id=root.pk)
-    row = Search.objects.get(pk=sid)
-    assert row.parent_id == root.pk
-    assert row.query == "child q"
-    mock_async.assert_called_once()
-
-
-@pytest.mark.django_db
-def test_create_search_parent_wrong_user_raises():
-    u = User.objects.create_user(username="sp1", password="pw")
-    other = User.objects.create_user(username="sp2", password="pw")
-    root = Search.objects.create(user_id=other.pk, query="not yours")
-    with pytest.raises(Search.DoesNotExist):
-        create_search(query="x", user_id=u.pk, parent_search_id=root.pk)
-
-
-@pytest.mark.django_db
 @patch(
     "groceries.services.gemini_service.classify_search_query_kind",
     return_value="",

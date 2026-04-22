@@ -87,10 +87,7 @@ def create_search(request, payload: CreateSearchRequest):
         search_id = services.create_search(
             query=payload.query,
             user_id=request.auth.pk,
-            parent_search_id=payload.parent_id,
         )
-    except Search.DoesNotExist as exc:
-        raise HttpError(404, "Parent search not found.") from exc
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     return CreateSearchResponse(search_id=search_id)

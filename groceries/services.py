@@ -877,26 +877,13 @@ def _search_candidates_as_json(items: list[MerchantProductInfo]) -> list[dict[st
     return [_search_candidate_dict(p) for p in items]
 
 
-def create_search(
-    *,
-    query: str,
-    user_id: int,
-    parent_search_id: int | None = None,
-) -> int:
-    """Create pending ``Search`` and enqueue Gemini worker; returns primary key."""
+def create_search(*, query: str, user_id: int) -> int:
+    """Create pending root ``Search`` and enqueue Gemini worker; returns primary key."""
     normalized = query.strip()
     if not normalized:
         msg = "Query must not be empty."
         raise ValueError(msg)
-    parent_id: int | None = None
-    if parent_search_id is not None:
-        parent = Search.objects.get(pk=parent_search_id, user_id=user_id)
-        parent_id = parent.pk
-    row = Search.objects.create(
-        user_id=user_id,
-        query=normalized,
-        parent_id=parent_id,
-    )
+    row = Search.objects.create(user_id=user_id, query=normalized)
     async_task(
         "groceries.scheduled_tasks.run_product_search_job",
         row.pk,

@@ -60,7 +60,6 @@ class FindProductCandidatesResponse(Schema):
 
 class CreateSearchRequest(Schema):
     query: Annotated[str, AfterValidator(_strip_nonempty_query)]
-    parent_id: int | None = None
 
 
 class CreateSearchResponse(Schema):
