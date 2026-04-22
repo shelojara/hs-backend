@@ -192,9 +192,18 @@ def test_merchant_product_instructions_include_preferred_merchant():
     single = merchant_product_single_system_instruction(preferred=pref)
     assert "Jumbo" in single
     assert "jumbo.cl" in single
+    assert "recipe" in single.lower()
     find = merchant_product_find_system_instruction(preferred=pref)
     assert "Jumbo" in find
     assert "JSON array" in find
+    assert "recipe" in find.lower()
+    assert "merchant order" in find.lower()
+
+
+def test_merchant_product_find_instruction_default_merchant_mentions_broad_query():
+    find = merchant_product_find_system_instruction(preferred=None)
+    assert "recipe" in find.lower()
+    assert "líder.cl" in find.lower() or "lider" in find.lower()
 
 
 def test_parse_running_low_suggestions_array():

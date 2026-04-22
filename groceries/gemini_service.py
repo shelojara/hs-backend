@@ -94,10 +94,14 @@ def _merchant_scope_paragraph(
             "You help catalog grocery products sold in Chile for a specific retail merchant "
             "(default: Lider / Walmart Chile, website líder.cl). "
             + (
-                "Use Google Search to find how products matching the user's query appear on that merchant's site "
+                "The user message may be a product name, brand, recipe, question, or other grocery-related text; "
+                "interpret it and find related purchasable grocery items. "
+                "Use Google Search to find how those items appear on that merchant's site "
                 "or in that merchant's Chile listings when possible. "
                 if multi_query
-                else "Use Google Search to find how this product appears on that merchant's site or in that merchant's "
+                else "The user message may name a product, brand, recipe, question, or similar; "
+                "interpret it and find the relevant grocery item(s). "
+                "Use Google Search to find how they appear on that merchant's site or in that merchant's "
                 "Chile listings when possible. "
             )
         )
@@ -112,9 +116,11 @@ def _merchant_scope_paragraph(
     tail = (
         "Use Google Search to find listings on these site(s); prefer the first merchant when several apply. "
         + (
-            "Match products matching the user's query."
+            "The user query may be a product name, brand, recipe, question, or other grocery-related text; "
+            "interpret it and return related purchasable grocery items, still respecting this merchant order."
             if multi_query
-            else "Match this product."
+            else "The user request may name a product, brand, recipe, question, or similar; "
+            "interpret it and match the relevant grocery item(s), still respecting this merchant order."
         )
     )
     lines.append(tail)
@@ -399,9 +405,10 @@ def fetch_merchant_product_candidates(
         )
     else:
         prompt = (
-            f"Product search query (as entered by user): {name!r}\n\n"
-            f"Search the merchant's Chile site and return up to {lim} distinct matching products as the "
-            "JSON array described in the system instruction."
+            f"User query (as entered; may be product, brand, recipe, question, or other grocery-related text): "
+            f"{name!r}\n\n"
+            f"Search the preferred merchant Chile site(s) from the system instruction and return up to {lim} "
+            "distinct related grocery products as the JSON array described there."
         )
 
     client = _get_client()
