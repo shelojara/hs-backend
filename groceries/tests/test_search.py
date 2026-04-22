@@ -30,6 +30,7 @@ def test_create_search_persists_pending_and_enqueues_worker(mock_async):
     assert row.query == "leche"
     assert row.status == SearchStatus.PENDING
     assert row.result_candidates == []
+    assert row.kind == ""
     mock_async.assert_called_once_with(
         "groceries.scheduled_tasks.run_product_search_job",
         sid,
@@ -38,6 +39,10 @@ def test_create_search_persists_pending_and_enqueues_worker(mock_async):
 
 
 @pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="",
+)
 @patch(
     "groceries.services.gemini_service.fetch_merchant_product_candidates",
     return_value=[
@@ -52,13 +57,17 @@ def test_create_search_persists_pending_and_enqueues_worker(mock_async):
         ),
     ],
 )
-def test_run_product_search_job_marks_completed_with_candidates(_mock_gemini):
+def test_run_product_search_job_marks_completed_with_candidates(
+    _mock_gemini,
+    _mock_kind,
+):
     u = User.objects.create_user(username="s2", password="pw")
     row = Search.objects.create(user_id=u.pk, query="leche")
     run_product_search_job(search_id=row.pk)
     row.refresh_from_db()
     assert row.status == SearchStatus.COMPLETED
     assert row.completed_at is not None
+    assert row.kind == ""
     assert row.result_candidates == [
         {
             "display_name": "Leche 1 L",
@@ -70,14 +79,19 @@ def test_run_product_search_job_marks_completed_with_candidates(_mock_gemini):
             "merchant": "Lider",
         },
     ]
+    _mock_kind.assert_called_once_with(query="leche")
 
 
 @pytest.mark.django_db
 @patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="",
+)
+@patch(
     "groceries.services.gemini_service.fetch_merchant_product_candidates",
     side_effect=RuntimeError("no key"),
 )
-def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini):
+def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini, _mock_kind):
     u = User.objects.create_user(username="s3", password="pw")
     row = Search.objects.create(user_id=u.pk, query="x")
     before = timezone.now()
@@ -87,6 +101,52 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini):
     assert row.completed_at is not None
     assert row.completed_at >= before
     assert row.result_candidates == []
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="recipe",
+)
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    return_value=[
+        MerchantProductInfo(
+            display_name="Pasta",
+            standard_name="Pasta",
+            brand="",
+            price=None,
+            format="500 g",
+            emoji="🍝",
+            merchant="",
+        ),
+    ],
+)
+def test_run_product_search_job_persists_query_kind(_mock_fetch, _mock_kind):
+    u = User.objects.create_user(username="skind", password="pw")
+    row = Search.objects.create(user_id=u.pk, query="carbonara")
+    run_product_search_job(search_id=row.pk)
+    row.refresh_from_db()
+    assert row.kind == "recipe"
+    assert row.status == SearchStatus.COMPLETED
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="question",
+)
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    side_effect=RuntimeError("no key"),
+)
+def test_run_product_search_job_failed_still_saves_kind(_mock_fetch, _mock_kind):
+    u = User.objects.create_user(username="skind2", password="pw")
+    row = Search.objects.create(user_id=u.pk, query="is oat milk healthy")
+    run_product_search_job(search_id=row.pk)
+    row.refresh_from_db()
+    assert row.status == SearchStatus.FAILED
+    assert row.kind == "question"
 
 
 @pytest.mark.django_db
@@ -104,7 +164,8 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini):
         ),
     ],
 )
-def test_run_product_search_job_skips_soft_deleted_search(_mock_gemini):
+@patch("groceries.services.gemini_service.classify_search_query_kind")
+def test_run_product_search_job_skips_soft_deleted_search(_mock_kind, _mock_gemini):
     u = User.objects.create_user(username="s_skip", password="pw")
     row = Search.objects.create(user_id=u.pk, query="leche")
     delete_search(search_id=row.pk, user_id=u.pk)
@@ -114,6 +175,7 @@ def test_run_product_search_job_skips_soft_deleted_search(_mock_gemini):
     assert row.result_candidates == []
     assert row.completed_at is None
     _mock_gemini.assert_not_called()
+    _mock_kind.assert_not_called()
 
 
 @pytest.mark.django_db
