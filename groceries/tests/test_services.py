@@ -104,36 +104,56 @@ def test_find_product_candidates_rejects_blank_query():
 @pytest.mark.django_db
 @patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
 @patch(
-    "groceries.services.gemini_service.fetch_recipe_ingredient_product_candidates",
-    return_value=[
-        MerchantProductInfo(
-            display_name="Huevos docena",
-            standard_name="Huevos",
-            brand="",
-            price=Decimal("2500"),
-            format="12 u",
-            emoji="🥚",
-            merchant="Lider",
-            ingredient="Huevos",
-        ),
-    ],
+    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
+    return_value=["Huevos", "Pasta"],
 )
 @patch(
     "groceries.services.gemini_service.classify_search_query_kind",
     return_value="recipe",
 )
-def test_find_product_candidates_recipe_uses_ingredient_fetch(
+def test_find_product_candidates_recipe_lists_ingredients_then_product_fetch_per_line(
     _mock_kind,
-    mock_recipe_fetch,
+    mock_ingredients,
     mock_plain_fetch,
 ):
     u = _user(username="find_recipe")
+
+    def _fake_fetch(*, query, **kwargs):
+        if query == "Huevos":
+            return [
+                MerchantProductInfo(
+                    display_name="Huevos docena",
+                    standard_name="Huevos",
+                    brand="",
+                    price=Decimal("2500"),
+                    format="12 u",
+                    emoji="🥚",
+                    merchant="Lider",
+                ),
+            ]
+        if query == "Pasta":
+            return [
+                MerchantProductInfo(
+                    display_name="Pasta penne",
+                    standard_name="Pasta seca",
+                    brand="",
+                    price=None,
+                    format="500 g",
+                    emoji="🍝",
+                    merchant="Lider",
+                ),
+            ]
+        return []
+
+    mock_plain_fetch.side_effect = _fake_fetch
     rows = find_product_candidates(query="carbonara", user_id=u.pk)
-    assert len(rows) == 1
-    assert rows[0].ingredient == "Huevos"
-    mock_recipe_fetch.assert_called_once()
-    assert mock_recipe_fetch.call_args.kwargs["recipe_query"] == "carbonara"
-    mock_plain_fetch.assert_not_called()
+    assert len(rows) == 2
+    assert {r.ingredient for r in rows} == {"Huevos", "Pasta"}
+    mock_ingredients.assert_called_once()
+    assert mock_ingredients.call_args.kwargs["recipe_query"] == "carbonara"
+    assert mock_plain_fetch.call_count == 2
+    calls = [c.kwargs["query"] for c in mock_plain_fetch.call_args_list]
+    assert calls == ["Huevos", "Pasta"]
 
 
 @pytest.mark.django_db

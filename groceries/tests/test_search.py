@@ -14,6 +14,7 @@ from groceries.services import (
     get_search,
     list_direct_child_searches,
     list_searches,
+    run_ingredient_product_search_job,
     run_product_search_job,
     search_result_candidates_as_product_schemas,
 )
@@ -107,12 +108,17 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini, _mock_k
 
 
 @pytest.mark.django_db
+@patch("groceries.services.async_task")
 @patch(
     "groceries.services.gemini_service.classify_search_query_kind",
     return_value="recipe",
 )
 @patch(
-    "groceries.services.gemini_service.fetch_recipe_ingredient_product_candidates",
+    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
+    return_value=["Pasta seca"],
+)
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_candidates",
     return_value=[
         MerchantProductInfo(
             display_name="Pasta penne 500 g",
@@ -122,20 +128,45 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini, _mock_k
             format="500 g",
             emoji="🍝",
             merchant="Lider",
-            ingredient="Pasta",
         ),
     ],
 )
-def test_run_product_search_job_persists_query_kind(_mock_recipe_fetch, _mock_kind):
+def test_recipe_search_enqueues_parallel_ingredient_jobs_then_child_completes_parent(
+    _mock_fetch,
+    _mock_ingredients,
+    _mock_kind,
+    mock_async,
+):
     u = User.objects.create_user(username="skind", password="pw")
     row = Search.objects.create(user_id=u.pk, query="carbonara")
     run_product_search_job(search_id=row.pk)
     row.refresh_from_db()
     assert row.kind == "recipe"
     assert row.status == SearchStatus.COMPLETED
-    _mock_recipe_fetch.assert_called_once()
-    assert _mock_recipe_fetch.call_args.kwargs["recipe_query"] == "carbonara"
-    assert row.result_candidates == [
+    assert row.result_candidates == []
+    assert row.completed_at is not None
+    _mock_ingredients.assert_called_once()
+    assert _mock_ingredients.call_args.kwargs["recipe_query"] == "carbonara"
+    children = list(Search.all_objects.filter(parent_id=row.pk).order_by("pk"))
+    assert len(children) == 1
+    assert children[0].query == "Pasta seca"
+    assert children[0].status == SearchStatus.PENDING
+    mock_async.assert_called_once_with(
+        "groceries.scheduled_tasks.run_ingredient_product_search_job",
+        children[0].pk,
+        task_name=f"groceries_ingredient_search:{children[0].pk}",
+    )
+    _mock_fetch.assert_not_called()
+    run_ingredient_product_search_job(search_id=children[0].pk)
+    row.refresh_from_db()
+    children[0].refresh_from_db()
+    assert children[0].status == SearchStatus.COMPLETED
+    assert row.status == SearchStatus.COMPLETED
+    assert row.result_candidates == []
+    _mock_fetch.assert_called_once()
+    assert _mock_fetch.call_args.kwargs["query"] == "Pasta seca"
+    assert _mock_fetch.call_args.kwargs["max_products"] == 10
+    assert children[0].result_candidates == [
         {
             "display_name": "Pasta penne 500 g",
             "standard_name": "Pasta seca",
@@ -144,7 +175,7 @@ def test_run_product_search_job_persists_query_kind(_mock_recipe_fetch, _mock_ki
             "format": "500 g",
             "emoji": "🍝",
             "merchant": "Lider",
-            "ingredient": "Pasta",
+            "ingredient": "Pasta seca",
         },
     ]
 

@@ -8,11 +8,11 @@ from groceries.gemini_service import (
     RunningLowSuggestion,
     _parse_merchant_product_list_payload,
     _parse_merchant_product_payload,
+    _parse_recipe_ingredient_string_list,
     _parse_running_low_suggestions,
     _parse_search_query_kind_payload,
     merchant_product_find_system_instruction,
     merchant_product_single_system_instruction,
-    recipe_ingredient_product_find_system_instruction,
 )
 
 
@@ -226,33 +226,32 @@ def test_merchant_product_instructions_include_preferred_merchant():
     assert "Jumbo" in find
     assert "JSON array" in find
     assert f"at most {gemini_service.FIND_PRODUCTS_MAX} elements" in find
-    recipe = recipe_ingredient_product_find_system_instruction(preferred=pref)
-    assert "Jumbo" in recipe
-    assert "ingredient" in recipe.lower()
-    assert f"at most {gemini_service.RECIPE_INGREDIENT_FINDS_MAX} elements" in recipe
+    assert "Chile" in gemini_service.RECIPE_CHILE_INGREDIENT_LIST_SYSTEM_INSTRUCTION
+
+
+def test_parse_recipe_ingredient_string_list_strings_and_objects():
+    raw = '["Pasta", {"ingredient": "Huevos"}, "Pasta", "  "]'
+    out = _parse_recipe_ingredient_string_list(raw, max_items=10)
+    assert out == ["Pasta", "Huevos"]
 
 
 @patch("groceries.gemini_service._get_client")
-def test_fetch_recipe_ingredient_product_candidates(mock_get_client):
+def test_fetch_recipe_common_ingredients_chile(mock_get_client):
     mock_response = MagicMock()
-    mock_response.text = (
-        '[{"ingredient": "Pasta", "display_name": "Pasta penne 500 g", "standard_name": "Pasta seca", '
-        '"brand": "", "price": 1990, "format": "500 g", "emoji": "🍝", "merchant": "Lider"}]'
-    )
+    mock_response.text = '["Pasta seca", {"ingredient": "Huevos"}]'
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = mock_response
     mock_get_client.return_value = mock_client
 
-    out = gemini_service.fetch_recipe_ingredient_product_candidates(
+    out = gemini_service.fetch_recipe_common_ingredients_chile(
         recipe_query="  carbonara  ",
     )
-    assert len(out) == 1
-    assert out[0].ingredient == "Pasta"
-    assert out[0].display_name == "Pasta penne 500 g"
+    assert out == ["Pasta seca", "Huevos"]
     contents = mock_client.models.generate_content.call_args.kwargs["contents"]
     assert "carbonara" in contents
     cfg = mock_client.models.generate_content.call_args.kwargs["config"]
-    assert "dish" in (cfg.system_instruction or "").lower()
+    assert "Chile" in (cfg.system_instruction or "")
+    assert cfg.tools is None
 
 
 def test_parse_running_low_suggestions_array():

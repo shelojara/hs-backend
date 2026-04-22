@@ -28,3 +28,8 @@ def run_daily_running_low_sync() -> list[int]:
 def run_product_search_job(search_id: int) -> None:
     """django-q2 entrypoint for async Gemini product search."""
     services.run_product_search_job(search_id=search_id)
+
+
+def run_ingredient_product_search_job(search_id: int) -> None:
+    """django-q2 entrypoint: one ingredient line → product candidates (no query classification)."""
+    services.run_ingredient_product_search_job(search_id=search_id)
