@@ -227,7 +227,10 @@ def test_merchant_product_instructions_include_preferred_merchant():
     assert "JSON array" in find
     assert f"at most {gemini_service.FIND_PRODUCTS_MAX} elements" in find
     recipe = recipe_ingredient_product_find_system_instruction(preferred=pref)
-    assert "Jumbo" in recipe
+    assert "Jumbo" not in recipe
+    assert "Chile" in recipe
+    assert "merchant" in recipe.lower()
+    assert "preferred-store" in recipe.lower() or "preferred" in recipe.lower()
     assert "ingredient" in recipe.lower()
     assert f"at most {gemini_service.RECIPE_INGREDIENT_FINDS_MAX} elements" in recipe
 
@@ -251,8 +254,12 @@ def test_fetch_recipe_ingredient_product_candidates(mock_get_client):
     assert out[0].display_name == "Pasta penne 500 g"
     contents = mock_client.models.generate_content.call_args.kwargs["contents"]
     assert "carbonara" in contents
+    assert "Chile" in contents
+    assert "locality" in contents.lower()
+    assert "supermarket chains" in contents.lower()
     cfg = mock_client.models.generate_content.call_args.kwargs["config"]
     assert "dish" in (cfg.system_instruction or "").lower()
+    assert "locality" in (cfg.system_instruction or "").lower()
 
 
 def test_parse_running_low_suggestions_array():
