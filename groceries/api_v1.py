@@ -87,7 +87,10 @@ def create_search(request, payload: CreateSearchRequest):
         search_id = services.create_search(
             query=payload.query,
             user_id=request.auth.pk,
+            parent_search_id=payload.parent_id,
         )
+    except Search.DoesNotExist as exc:
+        raise HttpError(404, "Parent search not found.") from exc
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     return CreateSearchResponse(search_id=search_id)
@@ -104,6 +107,7 @@ def list_searches(request, payload: ListSearchesRequest):
                 query=s.query,
                 status=s.status,
                 completed_at=s.completed_at,
+                parent_id=s.parent_id,
                 result_candidates=services.search_result_candidates_as_product_schemas(
                     s.result_candidates,
                     fallback_name=s.query,
@@ -127,6 +131,7 @@ def get_search(request, payload: GetSearchRequest):
             query=s.query,
             status=s.status,
             completed_at=s.completed_at,
+            parent_id=s.parent_id,
             result_candidates=services.search_result_candidates_as_product_schemas(
                 s.result_candidates,
                 fallback_name=s.query,

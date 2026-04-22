@@ -877,13 +877,26 @@ def _search_candidates_as_json(items: list[MerchantProductInfo]) -> list[dict[st
     return [_search_candidate_dict(p) for p in items]
 
 
-def create_search(*, query: str, user_id: int) -> int:
+def create_search(
+    *,
+    query: str,
+    user_id: int,
+    parent_search_id: int | None = None,
+) -> int:
     """Create pending ``Search`` and enqueue Gemini worker; returns primary key."""
     normalized = query.strip()
     if not normalized:
         msg = "Query must not be empty."
         raise ValueError(msg)
-    row = Search.objects.create(user_id=user_id, query=normalized)
+    parent_id: int | None = None
+    if parent_search_id is not None:
+        parent = Search.objects.get(pk=parent_search_id, user_id=user_id)
+        parent_id = parent.pk
+    row = Search.objects.create(
+        user_id=user_id,
+        query=normalized,
+        parent_id=parent_id,
+    )
     async_task(
         "groceries.scheduled_tasks.run_product_search_job",
         row.pk,
@@ -893,8 +906,13 @@ def create_search(*, query: str, user_id: int) -> int:
 
 
 def list_searches(*, user_id: int) -> list[Search]:
-    """Latest 10 ``Search`` rows for *user_id*, newest first (by primary key)."""
-    return list(Search.objects.filter(user_id=user_id).order_by("-created_at", "-pk")[:10])
+    """Latest 10 root ``Search`` rows (*parent* unset) for *user_id*, newest first."""
+    return list(
+        Search.objects.filter(user_id=user_id, parent_id__isnull=True).order_by(
+            "-created_at",
+            "-pk",
+        )[:10],
+    )
 
 
 def get_search(search_id: int, *, user_id: int) -> Search:
