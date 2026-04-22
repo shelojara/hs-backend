@@ -57,6 +57,8 @@ class Search(models.Model):
         db_index=True,
     )
     result_candidates = models.JSONField(default=list)
+    # Recipe root only: ordered merge slots (catalog rows and/or async child search ids).
+    recipe_merge_plan = models.JSONField(default=list, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
 

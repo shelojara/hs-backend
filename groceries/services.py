@@ -139,7 +139,7 @@ def _candidates_tagged_with_ingredient(
 
 
 def _try_finalize_parent_recipe_search(*, parent_search_id: int) -> None:
-    """When all child ingredient searches finished, merge results into parent (recipe) row."""
+    """When all async ingredient children finished, merge plan + children into parent."""
     try:
         with transaction.atomic():
             parent = Search.all_objects.select_for_update().get(pk=parent_search_id)
@@ -155,18 +155,50 @@ def _try_finalize_parent_recipe_search(*, parent_search_id: int) -> None:
         return
     if parent.status != SearchStatus.PENDING:
         return
-    children = list(
-        Search.all_objects.filter(parent_id=parent_search_id).order_by("pk"),
-    )
-    if not children:
-        return
-    if any(c.status == SearchStatus.PENDING for c in children):
-        return
+    plan = parent.recipe_merge_plan or []
     aggregated: list[dict[str, Any]] = []
-    for child in children:
-        if child.status == SearchStatus.COMPLETED:
-            aggregated.extend(child.result_candidates or [])
-    any_failed = any(c.status == SearchStatus.FAILED for c in children)
+    any_failed = False
+
+    if plan:
+        for slot in plan:
+            if not isinstance(slot, dict):
+                continue
+            src = slot.get("source")
+            if src == "catalog":
+                cand = slot.get("candidates")
+                if isinstance(cand, list):
+                    aggregated.extend(cand)
+                continue
+            if src != "async":
+                continue
+            sid = slot.get("search_id")
+            if not isinstance(sid, int):
+                any_failed = True
+                continue
+            try:
+                ch = Search.all_objects.get(pk=sid, parent_id=parent_search_id)
+            except Search.DoesNotExist:
+                any_failed = True
+                continue
+            if ch.status == SearchStatus.PENDING:
+                return
+            if ch.status == SearchStatus.FAILED:
+                any_failed = True
+            elif ch.status == SearchStatus.COMPLETED:
+                aggregated.extend(ch.result_candidates or [])
+    else:
+        children = list(
+            Search.all_objects.filter(parent_id=parent_search_id).order_by("pk"),
+        )
+        if not children:
+            return
+        if any(c.status == SearchStatus.PENDING for c in children):
+            return
+        for child in children:
+            if child.status == SearchStatus.COMPLETED:
+                aggregated.extend(child.result_candidates or [])
+        any_failed = any(c.status == SearchStatus.FAILED for c in children)
+
     parent.result_candidates = aggregated
     parent.status = SearchStatus.FAILED if any_failed else SearchStatus.COMPLETED
     parent.completed_at = timezone.now()
@@ -1169,38 +1201,36 @@ def run_product_search_job(*, search_id: int) -> None:
                 search.completed_at = timezone.now()
                 search.save(update_fields=["kind", "status", "completed_at"])
                 return
-            search.save(update_fields=["kind"])
-            now = timezone.now()
+            merge_plan: list[dict[str, Any]] = []
             any_async = False
             for line in ingredients:
-                child = Search.objects.create(
-                    user_id=user_id,
-                    parent_id=search.pk,
-                    query=line,
-                )
                 owned = _best_catalog_match_for_recipe_ingredient(
                     user_id=user_id,
                     ingredient_line=line,
                 )
                 if owned is not None:
                     tagged = _product_as_merchant_candidate_for_ingredient(owned, line)
-                    child.result_candidates = _search_candidates_as_json([tagged])
-                    child.status = SearchStatus.COMPLETED
-                    child.completed_at = now
-                    child.save(
-                        update_fields=[
-                            "result_candidates",
-                            "status",
-                            "completed_at",
-                        ],
+                    merge_plan.append(
+                        {
+                            "source": "catalog",
+                            "candidates": _search_candidates_as_json([tagged]),
+                        },
                     )
                     continue
                 any_async = True
+                child = Search.objects.create(
+                    user_id=user_id,
+                    parent_id=search.pk,
+                    query=line,
+                )
+                merge_plan.append({"source": "async", "search_id": child.pk})
                 async_task(
                     "groceries.scheduled_tasks.run_ingredient_product_search_job",
                     child.pk,
                     task_name=f"groceries_ingredient_search:{child.pk}",
                 )
+            search.recipe_merge_plan = merge_plan
+            search.save(update_fields=["kind", "recipe_merge_plan"])
             if not any_async:
                 _try_finalize_parent_recipe_search(parent_search_id=search.pk)
             return
