@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
-from groceries.models import Product, Search, SearchStatus
+from groceries.models import Search, SearchStatus
 from groceries.services import (
     create_search,
     delete_search,
@@ -142,13 +142,13 @@ def test_recipe_search_enqueues_parallel_ingredient_jobs_then_child_completes_pa
     run_product_search_job(search_id=row.pk)
     row.refresh_from_db()
     assert row.kind == "recipe"
-    assert row.status == SearchStatus.PENDING
+    assert row.status == SearchStatus.COMPLETED
     assert row.result_candidates == []
+    assert row.completed_at is not None
     _mock_ingredients.assert_called_once()
     assert _mock_ingredients.call_args.kwargs["recipe_query"] == "carbonara"
     children = list(Search.all_objects.filter(parent_id=row.pk).order_by("pk"))
     assert len(children) == 1
-    assert row.recipe_merge_plan == [{"source": "async", "search_id": children[0].pk}]
     assert children[0].query == "Pasta seca"
     assert children[0].status == SearchStatus.PENDING
     mock_async.assert_called_once_with(
@@ -162,10 +162,11 @@ def test_recipe_search_enqueues_parallel_ingredient_jobs_then_child_completes_pa
     children[0].refresh_from_db()
     assert children[0].status == SearchStatus.COMPLETED
     assert row.status == SearchStatus.COMPLETED
+    assert row.result_candidates == []
     _mock_fetch.assert_called_once()
     assert _mock_fetch.call_args.kwargs["query"] == "Pasta seca"
     assert _mock_fetch.call_args.kwargs["max_products"] == 10
-    assert row.result_candidates == [
+    assert children[0].result_candidates == [
         {
             "display_name": "Pasta penne 500 g",
             "standard_name": "Pasta seca",
@@ -174,128 +175,6 @@ def test_recipe_search_enqueues_parallel_ingredient_jobs_then_child_completes_pa
             "format": "500 g",
             "emoji": "🍝",
             "merchant": "Lider",
-            "ingredient": "Pasta seca",
-        },
-    ]
-
-
-@pytest.mark.django_db
-@patch("groceries.services.async_task")
-@patch(
-    "groceries.services.gemini_service.classify_search_query_kind",
-    return_value="recipe",
-)
-@patch(
-    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
-    return_value=["Pasta seca", "Merquén"],
-)
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_candidates",
-    return_value=[
-        MerchantProductInfo(
-            display_name="Merquén 100 g",
-            standard_name="Merquén",
-            brand="",
-            price=Decimal("2500"),
-            format="100 g",
-            emoji="🌶️",
-            merchant="Lider",
-        ),
-    ],
-)
-def test_recipe_search_merge_plan_mixes_catalog_then_async_child(
-    _mock_fetch,
-    _mock_ingredients,
-    _mock_kind,
-    mock_async,
-):
-    u = User.objects.create_user(username="sk_mix", password="pw")
-    Product.objects.create(
-        user=u,
-        name="Penne rigate 500 g",
-        standard_name="Pasta seca",
-        brand="",
-        format="500 g",
-        emoji="🍝",
-        price=Decimal("1990"),
-    )
-    row = Search.objects.create(user_id=u.pk, query="pastel de choclo")
-    run_product_search_job(search_id=row.pk)
-    row.refresh_from_db()
-    children = list(Search.all_objects.filter(parent_id=row.pk).order_by("pk"))
-    assert len(children) == 1
-    assert children[0].query == "Merquén"
-    assert row.recipe_merge_plan[0]["source"] == "catalog"
-    assert row.recipe_merge_plan[1] == {"source": "async", "search_id": children[0].pk}
-    mock_async.assert_called_once()
-    run_ingredient_product_search_job(search_id=children[0].pk)
-    row.refresh_from_db()
-    assert row.status == SearchStatus.COMPLETED
-    assert row.result_candidates[0]["ingredient"] == "Pasta seca"
-    assert row.result_candidates[1]["ingredient"] == "Merquén"
-
-
-@pytest.mark.django_db
-@patch("groceries.services.async_task")
-@patch(
-    "groceries.services.gemini_service.classify_search_query_kind",
-    return_value="recipe",
-)
-@patch(
-    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
-    return_value=["Pasta seca"],
-)
-@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
-def test_recipe_search_skips_child_job_when_catalog_matches_ingredient(
-    mock_fetch,
-    _mock_ingredients,
-    _mock_kind,
-    mock_async,
-):
-    u = User.objects.create_user(username="sk_owned", password="pw")
-    Product.objects.create(
-        user=u,
-        name="Penne rigate 500 g",
-        standard_name="Pasta seca",
-        brand="",
-        format="500 g",
-        emoji="🍝",
-        price=Decimal("1990"),
-    )
-    row = Search.objects.create(user_id=u.pk, query="carbonara")
-    run_product_search_job(search_id=row.pk)
-    row.refresh_from_db()
-    assert row.kind == "recipe"
-    assert row.status == SearchStatus.COMPLETED
-    mock_async.assert_not_called()
-    mock_fetch.assert_not_called()
-    assert not Search.all_objects.filter(parent_id=row.pk).exists()
-    assert row.recipe_merge_plan == [
-        {
-            "source": "catalog",
-            "candidates": [
-                {
-                    "display_name": "Penne rigate 500 g",
-                    "standard_name": "Pasta seca",
-                    "brand": "",
-                    "price": "1990.00",
-                    "format": "500 g",
-                    "emoji": "🍝",
-                    "merchant": "",
-                    "ingredient": "Pasta seca",
-                },
-            ],
-        },
-    ]
-    assert row.result_candidates == [
-        {
-            "display_name": "Penne rigate 500 g",
-            "standard_name": "Pasta seca",
-            "brand": "",
-            "price": "1990.00",
-            "format": "500 g",
-            "emoji": "🍝",
-            "merchant": "",
             "ingredient": "Pasta seca",
         },
     ]

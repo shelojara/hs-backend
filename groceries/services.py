@@ -44,80 +44,6 @@ def _preferred_merchant_context_for_user(user_id: int) -> list[PreferredMerchant
     ]
 
 
-def _product_as_merchant_candidate_for_ingredient(
-    product: Product,
-    ingredient_line: str,
-) -> MerchantProductInfo:
-    """Map catalog ``Product`` to merchant-shaped candidate (recipe child / sync preview)."""
-    tag = (ingredient_line or "").strip()
-    pr = product.price
-    price_out: Decimal | None = None
-    if pr is not None and pr != Decimal("0"):
-        price_out = pr
-    return MerchantProductInfo(
-        display_name=(product.name or "").strip(),
-        standard_name=(product.standard_name or "").strip(),
-        brand=(product.brand or "").strip(),
-        price=price_out,
-        format=(product.format or "").strip(),
-        emoji=(product.emoji or "").strip(),
-        merchant="",
-        ingredient=tag,
-    )
-
-
-def _better_recipe_catalog_match(
-    new_product: Product,
-    new_score: int,
-    old_product: Product | None,
-    old_score: int,
-) -> bool:
-    """Prefer higher fuzzy score; tie-break: purchase_count, name, pk."""
-    if old_product is None:
-        return True
-    if new_score != old_score:
-        return new_score > old_score
-    if new_product.purchase_count != old_product.purchase_count:
-        return new_product.purchase_count > old_product.purchase_count
-    if new_product.name != old_product.name:
-        return new_product.name < old_product.name
-    return new_product.pk < old_product.pk
-
-
-def _best_catalog_match_for_recipe_ingredient(
-    *,
-    user_id: int,
-    ingredient_line: str,
-) -> Product | None:
-    """Strongest catalog row for *ingredient_line* using same fuzzy gate as product list search."""
-    line = (ingredient_line or "").strip()
-    if not line:
-        return None
-    query_normalized = _normalize_for_product_search(line)
-    if not query_normalized:
-        return None
-    best: Product | None = None
-    best_score = 0
-    for product in Product.objects.filter(user_id=user_id).iterator(chunk_size=500):
-        field_strings = _product_search_field_strings(
-            product.name,
-            product.standard_name,
-            product.brand,
-        )
-        if not field_strings:
-            continue
-        score = max(
-            _field_fuzzy_gate_score(query_normalized, field_text)
-            for field_text in field_strings
-        )
-        if score < _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO:
-            continue
-        if _better_recipe_catalog_match(product, score, best, best_score):
-            best = product
-            best_score = score
-    return best
-
-
 def _candidates_tagged_with_ingredient(
     items: list[MerchantProductInfo],
     ingredient: str,
@@ -136,75 +62,6 @@ def _candidates_tagged_with_ingredient(
         )
         for p in items
     ]
-
-
-def _try_finalize_parent_recipe_search(*, parent_search_id: int) -> None:
-    """When all async ingredient children finished, merge plan + children into parent."""
-    try:
-        with transaction.atomic():
-            parent = Search.all_objects.select_for_update().get(pk=parent_search_id)
-    except Search.DoesNotExist:
-        logger.warning(
-            "_try_finalize_parent_recipe_search: parent Search id=%s missing",
-            parent_search_id,
-        )
-        return
-    if parent.deleted_at is not None:
-        return
-    if parent.kind != SearchQueryKind.RECIPE.value:
-        return
-    if parent.status != SearchStatus.PENDING:
-        return
-    plan = parent.recipe_merge_plan or []
-    aggregated: list[dict[str, Any]] = []
-    any_failed = False
-
-    if plan:
-        for slot in plan:
-            if not isinstance(slot, dict):
-                continue
-            src = slot.get("source")
-            if src == "catalog":
-                cand = slot.get("candidates")
-                if isinstance(cand, list):
-                    aggregated.extend(cand)
-                continue
-            if src != "async":
-                continue
-            sid = slot.get("search_id")
-            if not isinstance(sid, int):
-                any_failed = True
-                continue
-            try:
-                ch = Search.all_objects.get(pk=sid, parent_id=parent_search_id)
-            except Search.DoesNotExist:
-                any_failed = True
-                continue
-            if ch.status == SearchStatus.PENDING:
-                return
-            if ch.status == SearchStatus.FAILED:
-                any_failed = True
-            elif ch.status == SearchStatus.COMPLETED:
-                aggregated.extend(ch.result_candidates or [])
-    else:
-        children = list(
-            Search.all_objects.filter(parent_id=parent_search_id).order_by("pk"),
-        )
-        if not children:
-            return
-        if any(c.status == SearchStatus.PENDING for c in children):
-            return
-        for child in children:
-            if child.status == SearchStatus.COMPLETED:
-                aggregated.extend(child.result_candidates or [])
-        any_failed = any(c.status == SearchStatus.FAILED for c in children)
-
-    parent.result_candidates = aggregated
-    parent.status = SearchStatus.FAILED if any_failed else SearchStatus.COMPLETED
-    parent.completed_at = timezone.now()
-    parent.save(
-        update_fields=["result_candidates", "status", "completed_at"],
-    )
 
 
 class InvalidProductListCursorError(Exception):
@@ -298,15 +155,6 @@ def find_product_candidates(
             )
             out: list[MerchantProductInfo] = []
             for line in ingredients:
-                owned = _best_catalog_match_for_recipe_ingredient(
-                    user_id=user_id,
-                    ingredient_line=line,
-                )
-                if owned is not None:
-                    out.append(
-                        _product_as_merchant_candidate_for_ingredient(owned, line),
-                    )
-                    continue
                 rows = gemini_service.fetch_merchant_product_candidates(
                     query=line,
                     max_products=gemini_service.FIND_PRODUCTS_MAX,
@@ -1201,38 +1049,29 @@ def run_product_search_job(*, search_id: int) -> None:
                 search.completed_at = timezone.now()
                 search.save(update_fields=["kind", "status", "completed_at"])
                 return
-            merge_plan: list[dict[str, Any]] = []
-            any_async = False
             for line in ingredients:
-                owned = _best_catalog_match_for_recipe_ingredient(
-                    user_id=user_id,
-                    ingredient_line=line,
-                )
-                if owned is not None:
-                    tagged = _product_as_merchant_candidate_for_ingredient(owned, line)
-                    merge_plan.append(
-                        {
-                            "source": "catalog",
-                            "candidates": _search_candidates_as_json([tagged]),
-                        },
-                    )
-                    continue
-                any_async = True
                 child = Search.objects.create(
                     user_id=user_id,
                     parent_id=search.pk,
                     query=line,
                 )
-                merge_plan.append({"source": "async", "search_id": child.pk})
                 async_task(
                     "groceries.scheduled_tasks.run_ingredient_product_search_job",
                     child.pk,
                     task_name=f"groceries_ingredient_search:{child.pk}",
                 )
-            search.recipe_merge_plan = merge_plan
-            search.save(update_fields=["kind", "recipe_merge_plan"])
-            if not any_async:
-                _try_finalize_parent_recipe_search(parent_search_id=search.pk)
+            now = timezone.now()
+            search.result_candidates = []
+            search.status = SearchStatus.COMPLETED
+            search.completed_at = now
+            search.save(
+                update_fields=[
+                    "kind",
+                    "result_candidates",
+                    "status",
+                    "completed_at",
+                ],
+            )
             return
         items = gemini_service.fetch_merchant_product_candidates(
             query=q,
@@ -1261,7 +1100,7 @@ def run_product_search_job(*, search_id: int) -> None:
 
 
 def run_ingredient_product_search_job(*, search_id: int) -> None:
-    """Background worker: one ingredient string → up to ``FIND_PRODUCTS_MAX`` product rows; finalize parent recipe."""
+    """Background worker: one ingredient string → up to ``FIND_PRODUCTS_MAX`` product rows."""
     try:
         search = Search.all_objects.get(pk=search_id)
     except Search.DoesNotExist:
@@ -1276,8 +1115,7 @@ def run_ingredient_product_search_job(*, search_id: int) -> None:
             search_id,
         )
         return
-    parent_id = search.parent_id
-    if parent_id is None:
+    if search.parent_id is None:
         logger.warning(
             "run_ingredient_product_search_job: Search id=%s has no parent; skipping.",
             search_id,
@@ -1320,4 +1158,3 @@ def run_ingredient_product_search_job(*, search_id: int) -> None:
         search.status = SearchStatus.FAILED
         search.completed_at = timezone.now()
         search.save(update_fields=["status", "completed_at"])
-    _try_finalize_parent_recipe_search(parent_search_id=parent_id)
