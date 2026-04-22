@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
-from groceries.models import Search, SearchStatus
+from groceries.models import Product, Search, SearchStatus
 from groceries.services import (
     create_search,
     delete_search,
@@ -173,6 +173,56 @@ def test_recipe_search_enqueues_parallel_ingredient_jobs_then_child_completes_pa
             "format": "500 g",
             "emoji": "🍝",
             "merchant": "Lider",
+            "ingredient": "Pasta seca",
+        },
+    ]
+
+
+@pytest.mark.django_db
+@patch("groceries.services.async_task")
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="recipe",
+)
+@patch(
+    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
+    return_value=["Pasta seca"],
+)
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+def test_recipe_search_skips_child_job_when_catalog_matches_ingredient(
+    mock_fetch,
+    _mock_ingredients,
+    _mock_kind,
+    mock_async,
+):
+    u = User.objects.create_user(username="sk_owned", password="pw")
+    Product.objects.create(
+        user=u,
+        name="Penne rigate 500 g",
+        standard_name="Pasta seca",
+        brand="",
+        format="500 g",
+        emoji="🍝",
+        price=Decimal("1990"),
+    )
+    row = Search.objects.create(user_id=u.pk, query="carbonara")
+    run_product_search_job(search_id=row.pk)
+    row.refresh_from_db()
+    assert row.kind == "recipe"
+    assert row.status == SearchStatus.COMPLETED
+    mock_async.assert_not_called()
+    mock_fetch.assert_not_called()
+    child = Search.all_objects.get(parent_id=row.pk)
+    assert child.status == SearchStatus.COMPLETED
+    assert row.result_candidates == [
+        {
+            "display_name": "Penne rigate 500 g",
+            "standard_name": "Pasta seca",
+            "brand": "",
+            "price": "1990.00",
+            "format": "500 g",
+            "emoji": "🍝",
+            "merchant": "",
             "ingredient": "Pasta seca",
         },
     ]

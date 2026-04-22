@@ -44,6 +44,80 @@ def _preferred_merchant_context_for_user(user_id: int) -> list[PreferredMerchant
     ]
 
 
+def _product_as_merchant_candidate_for_ingredient(
+    product: Product,
+    ingredient_line: str,
+) -> MerchantProductInfo:
+    """Map catalog ``Product`` to merchant-shaped candidate (recipe child / sync preview)."""
+    tag = (ingredient_line or "").strip()
+    pr = product.price
+    price_out: Decimal | None = None
+    if pr is not None and pr != Decimal("0"):
+        price_out = pr
+    return MerchantProductInfo(
+        display_name=(product.name or "").strip(),
+        standard_name=(product.standard_name or "").strip(),
+        brand=(product.brand or "").strip(),
+        price=price_out,
+        format=(product.format or "").strip(),
+        emoji=(product.emoji or "").strip(),
+        merchant="",
+        ingredient=tag,
+    )
+
+
+def _better_recipe_catalog_match(
+    new_product: Product,
+    new_score: int,
+    old_product: Product | None,
+    old_score: int,
+) -> bool:
+    """Prefer higher fuzzy score; tie-break: purchase_count, name, pk."""
+    if old_product is None:
+        return True
+    if new_score != old_score:
+        return new_score > old_score
+    if new_product.purchase_count != old_product.purchase_count:
+        return new_product.purchase_count > old_product.purchase_count
+    if new_product.name != old_product.name:
+        return new_product.name < old_product.name
+    return new_product.pk < old_product.pk
+
+
+def _best_catalog_match_for_recipe_ingredient(
+    *,
+    user_id: int,
+    ingredient_line: str,
+) -> Product | None:
+    """Strongest catalog row for *ingredient_line* using same fuzzy gate as product list search."""
+    line = (ingredient_line or "").strip()
+    if not line:
+        return None
+    query_normalized = _normalize_for_product_search(line)
+    if not query_normalized:
+        return None
+    best: Product | None = None
+    best_score = 0
+    for product in Product.objects.filter(user_id=user_id).iterator(chunk_size=500):
+        field_strings = _product_search_field_strings(
+            product.name,
+            product.standard_name,
+            product.brand,
+        )
+        if not field_strings:
+            continue
+        score = max(
+            _field_fuzzy_gate_score(query_normalized, field_text)
+            for field_text in field_strings
+        )
+        if score < _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO:
+            continue
+        if _better_recipe_catalog_match(product, score, best, best_score):
+            best = product
+            best_score = score
+    return best
+
+
 def _candidates_tagged_with_ingredient(
     items: list[MerchantProductInfo],
     ingredient: str,
@@ -192,6 +266,15 @@ def find_product_candidates(
             )
             out: list[MerchantProductInfo] = []
             for line in ingredients:
+                owned = _best_catalog_match_for_recipe_ingredient(
+                    user_id=user_id,
+                    ingredient_line=line,
+                )
+                if owned is not None:
+                    out.append(
+                        _product_as_merchant_candidate_for_ingredient(owned, line),
+                    )
+                    continue
                 rows = gemini_service.fetch_merchant_product_candidates(
                     query=line,
                     max_products=gemini_service.FIND_PRODUCTS_MAX,
@@ -1087,17 +1170,39 @@ def run_product_search_job(*, search_id: int) -> None:
                 search.save(update_fields=["kind", "status", "completed_at"])
                 return
             search.save(update_fields=["kind"])
+            now = timezone.now()
+            any_async = False
             for line in ingredients:
                 child = Search.objects.create(
                     user_id=user_id,
                     parent_id=search.pk,
                     query=line,
                 )
+                owned = _best_catalog_match_for_recipe_ingredient(
+                    user_id=user_id,
+                    ingredient_line=line,
+                )
+                if owned is not None:
+                    tagged = _product_as_merchant_candidate_for_ingredient(owned, line)
+                    child.result_candidates = _search_candidates_as_json([tagged])
+                    child.status = SearchStatus.COMPLETED
+                    child.completed_at = now
+                    child.save(
+                        update_fields=[
+                            "result_candidates",
+                            "status",
+                            "completed_at",
+                        ],
+                    )
+                    continue
+                any_async = True
                 async_task(
                     "groceries.scheduled_tasks.run_ingredient_product_search_job",
                     child.pk,
                     task_name=f"groceries_ingredient_search:{child.pk}",
                 )
+            if not any_async:
+                _try_finalize_parent_recipe_search(parent_search_id=search.pk)
             return
         items = gemini_service.fetch_merchant_product_candidates(
             query=q,

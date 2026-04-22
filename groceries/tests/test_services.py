@@ -158,6 +158,58 @@ def test_find_product_candidates_recipe_lists_ingredients_then_product_fetch_per
 
 @pytest.mark.django_db
 @patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+@patch(
+    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
+    return_value=["Huevos", "Pasta"],
+)
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="recipe",
+)
+def test_find_product_candidates_recipe_skips_gemini_when_catalog_matches(
+    _mock_kind,
+    _mock_ingredients,
+    mock_plain_fetch,
+):
+    u = _user(username="find_recipe_owned")
+    Product.objects.create(
+        user=u,
+        name="Huevos frescos 12 u",
+        standard_name="Huevos",
+        brand="",
+        format="12 u",
+        emoji="🥚",
+        price=Decimal("2200"),
+    )
+
+    def _fake_fetch(*, query, **kwargs):
+        if query == "Pasta":
+            return [
+                MerchantProductInfo(
+                    display_name="Pasta penne",
+                    standard_name="Pasta seca",
+                    brand="",
+                    price=None,
+                    format="500 g",
+                    emoji="🍝",
+                    merchant="Lider",
+                ),
+            ]
+        return []
+
+    mock_plain_fetch.side_effect = _fake_fetch
+    rows = find_product_candidates(query="carbonara", user_id=u.pk)
+    assert len(rows) == 2
+    owned = next(r for r in rows if r.ingredient == "Huevos")
+    assert owned.display_name == "Huevos frescos 12 u"
+    assert owned.merchant == ""
+    assert owned.price == Decimal("2200")
+    mock_plain_fetch.assert_called_once()
+    assert mock_plain_fetch.call_args.kwargs["query"] == "Pasta"
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
 def test_find_product_candidates_passes_preferred_merchants(mock_fetch):
     u = _user(username="find_pref")
     Merchant.objects.create(
