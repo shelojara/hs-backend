@@ -44,6 +44,63 @@ def _preferred_merchant_context_for_user(user_id: int) -> list[PreferredMerchant
     ]
 
 
+def _candidates_tagged_with_ingredient(
+    items: list[MerchantProductInfo],
+    ingredient: str,
+) -> list[MerchantProductInfo]:
+    tag = (ingredient or "").strip()
+    return [
+        MerchantProductInfo(
+            display_name=p.display_name,
+            standard_name=p.standard_name,
+            brand=p.brand,
+            price=p.price,
+            format=p.format,
+            emoji=p.emoji,
+            merchant=p.merchant,
+            ingredient=tag,
+        )
+        for p in items
+    ]
+
+
+def _try_finalize_parent_recipe_search(*, parent_search_id: int) -> None:
+    """When all child ingredient searches finished, merge results into parent (recipe) row."""
+    try:
+        with transaction.atomic():
+            parent = Search.all_objects.select_for_update().get(pk=parent_search_id)
+    except Search.DoesNotExist:
+        logger.warning(
+            "_try_finalize_parent_recipe_search: parent Search id=%s missing",
+            parent_search_id,
+        )
+        return
+    if parent.deleted_at is not None:
+        return
+    if parent.kind != SearchQueryKind.RECIPE.value:
+        return
+    if parent.status != SearchStatus.PENDING:
+        return
+    children = list(
+        Search.all_objects.filter(parent_id=parent_search_id).order_by("pk"),
+    )
+    if not children:
+        return
+    if any(c.status == SearchStatus.PENDING for c in children):
+        return
+    aggregated: list[dict[str, Any]] = []
+    for child in children:
+        if child.status == SearchStatus.COMPLETED:
+            aggregated.extend(child.result_candidates or [])
+    any_failed = any(c.status == SearchStatus.FAILED for c in children)
+    parent.result_candidates = aggregated
+    parent.status = SearchStatus.FAILED if any_failed else SearchStatus.COMPLETED
+    parent.completed_at = timezone.now()
+    parent.save(
+        update_fields=["result_candidates", "status", "completed_at"],
+    )
+
+
 class InvalidProductListCursorError(Exception):
     """Cursor token invalid or used with wrong parameters."""
 
@@ -130,10 +187,18 @@ def find_product_candidates(
     preferred = _preferred_merchant_context_for_user(user_id)
     try:
         if kind_val == SearchQueryKind.RECIPE.value:
-            return gemini_service.fetch_recipe_ingredient_product_candidates(
+            ingredients = gemini_service.fetch_recipe_common_ingredients_chile(
                 recipe_query=normalized,
-                preferred_merchants=preferred,
             )
+            out: list[MerchantProductInfo] = []
+            for line in ingredients:
+                rows = gemini_service.fetch_merchant_product_candidates(
+                    query=line,
+                    max_products=gemini_service.FIND_PRODUCTS_MAX,
+                    preferred_merchants=preferred,
+                )
+                out.extend(_candidates_tagged_with_ingredient(rows, line))
+            return out
         return gemini_service.fetch_merchant_product_candidates(
             query=normalized,
             preferred_merchants=preferred,
@@ -1001,22 +1066,44 @@ def run_product_search_job(*, search_id: int) -> None:
         search.completed_at = timezone.now()
         search.save(update_fields=["kind", "status", "completed_at"])
         return
+    if search.parent_id is not None:
+        logger.warning(
+            "run_product_search_job: Search id=%s has parent (use ingredient worker); skipping.",
+            search_id,
+        )
+        return
     page_context: str | None = None
     if is_http_https_url(q):
         page_context = fetch_page_text_for_product_context(q)
     preferred = _preferred_merchant_context_for_user(user_id)
     try:
         if kind_val == SearchQueryKind.RECIPE.value:
-            items = gemini_service.fetch_recipe_ingredient_product_candidates(
+            ingredients = gemini_service.fetch_recipe_common_ingredients_chile(
                 recipe_query=q,
-                preferred_merchants=preferred,
             )
-        else:
-            items = gemini_service.fetch_merchant_product_candidates(
-                query=q,
-                preferred_merchants=preferred,
-                page_context=page_context,
-            )
+            if not ingredients:
+                search.status = SearchStatus.FAILED
+                search.completed_at = timezone.now()
+                search.save(update_fields=["kind", "status", "completed_at"])
+                return
+            search.save(update_fields=["kind"])
+            for line in ingredients:
+                child = Search.objects.create(
+                    user_id=user_id,
+                    parent_id=search.pk,
+                    query=line,
+                )
+                async_task(
+                    "groceries.scheduled_tasks.run_ingredient_product_search_job",
+                    child.pk,
+                    task_name=f"groceries_ingredient_search:{child.pk}",
+                )
+            return
+        items = gemini_service.fetch_merchant_product_candidates(
+            query=q,
+            preferred_merchants=preferred,
+            page_context=page_context,
+        )
         search.result_candidates = _search_candidates_as_json(items)
         search.status = SearchStatus.COMPLETED
         search.completed_at = timezone.now()
@@ -1036,3 +1123,66 @@ def run_product_search_job(*, search_id: int) -> None:
         search.status = SearchStatus.FAILED
         search.completed_at = timezone.now()
         search.save(update_fields=["kind", "status", "completed_at"])
+
+
+def run_ingredient_product_search_job(*, search_id: int) -> None:
+    """Background worker: one ingredient string → up to ``FIND_PRODUCTS_MAX`` product rows; finalize parent recipe."""
+    try:
+        search = Search.all_objects.get(pk=search_id)
+    except Search.DoesNotExist:
+        logger.warning(
+            "run_ingredient_product_search_job: missing Search id=%s",
+            search_id,
+        )
+        return
+    if search.deleted_at is not None:
+        logger.warning(
+            "run_ingredient_product_search_job: Search id=%s soft-deleted; skipping.",
+            search_id,
+        )
+        return
+    parent_id = search.parent_id
+    if parent_id is None:
+        logger.warning(
+            "run_ingredient_product_search_job: Search id=%s has no parent; skipping.",
+            search_id,
+        )
+        return
+    user_id = search.user_id
+    ing = search.query.strip()
+    preferred = _preferred_merchant_context_for_user(user_id)
+    try:
+        if not ing:
+            search.status = SearchStatus.FAILED
+            search.completed_at = timezone.now()
+            search.save(update_fields=["status", "completed_at"])
+        else:
+            items = gemini_service.fetch_merchant_product_candidates(
+                query=ing,
+                max_products=gemini_service.FIND_PRODUCTS_MAX,
+                preferred_merchants=preferred,
+            )
+            tagged = _candidates_tagged_with_ingredient(items, ing)
+            search.result_candidates = _search_candidates_as_json(tagged)
+            search.status = SearchStatus.COMPLETED
+            search.completed_at = timezone.now()
+            search.save(
+                update_fields=["result_candidates", "status", "completed_at"],
+            )
+    except RuntimeError:
+        logger.warning(
+            "run_ingredient_product_search_job: GEMINI_API_KEY unset (search id=%s).",
+            search_id,
+        )
+        search.status = SearchStatus.FAILED
+        search.completed_at = timezone.now()
+        search.save(update_fields=["status", "completed_at"])
+    except Exception:
+        logger.exception(
+            "run_ingredient_product_search_job failed (search id=%s)",
+            search_id,
+        )
+        search.status = SearchStatus.FAILED
+        search.completed_at = timezone.now()
+        search.save(update_fields=["status", "completed_at"])
+    _try_finalize_parent_recipe_search(parent_search_id=parent_id)

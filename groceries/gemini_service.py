@@ -15,8 +15,8 @@ from groceries.models import SearchQueryKind
 logger = logging.getLogger(__name__)
 
 FIND_PRODUCTS_MAX = 10
-# Recipe flow: one merchant row per ingredient line (cap total array size).
-RECIPE_INGREDIENT_FINDS_MAX = 20
+# Recipe flow: cap how many common ingredients we ask Gemini to list (Chile).
+RECIPE_INGREDIENT_LIST_MAX = 20
 
 # All Gemini calls use gemini-2.5-flash.
 GEMINI_FIND_PRODUCTS_MODEL = "gemini-2.5-flash"
@@ -74,28 +74,6 @@ _MERCHANT_PRODUCT_JSON_KEYS_FIND = (
     'empty string "" if unsure). '
     'Use empty string "" for unknown string fields. Use JSON null for unknown price (legacy 0 is treated as unknown). '
     "Do not repeat the same merchant SKU or identical display_name twice. Prefer distinct products."
-)
-
-_RECIPE_INGREDIENT_PRODUCT_JSON_KEYS = (
-    "Each object must have these keys: "
-    '"ingredient" (string: one recipe ingredient the product row satisfies — short Spanish Chile phrase, '
-    "e.g. \"Pasta\", \"Crema para cocinar\"; empty if unknown), "
-    '"merchant" (string: retail chain or store name whose Chile site or listing you used, e.g. "Lider", "Jumbo"; '
-    "Spanish Chile when appropriate; empty if unknown), "
-    '"display_name" (string: best retail-style product title for lists: proper capitalization, '
-    "brand + product line + key format as on shelf or the merchant site; Spanish Chile; empty if unknown), "
-    '"standard_name" (string: generic product type for grouping across brands and formats: Spanish Chile; '
-    'omit marca, precio, and envase/tamaño; short noun phrase e.g. "Leche entera", "Arroz grano largo"; '
-    "empty if unknown), "
-    '"brand" (string: marca comercial or empty), '
-    '"price" (number or null: typical shelf price in Chilean pesos CLP as a plain number — integer pesos, '
-    "no thousands separators, no currency symbol; e.g. 3990 for a shelf label like $3.990; use null if unknown), "
-    '"format" (string: presentation: size, units, e.g. "1 L", "6 x 330 ml", "500 g"; empty if unknown), '
-    '"emoji" (string: one Unicode emoji best matching product type or category, e.g. 🥛 for milk, 🍚 for rice; '
-    'empty string "" if unsure). '
-    'Use empty string "" for unknown string fields. Use JSON null for unknown price (legacy 0 is treated as unknown). '
-    "Include at most one primary product row per distinct ingredient line. "
-    "Do not repeat the same merchant SKU or identical display_name twice."
 )
 
 _MERCHANT_PRODUCT_JSON_KEYS_SINGLE = (
@@ -174,20 +152,18 @@ def merchant_product_find_system_instruction(
     )
 
 
-def recipe_ingredient_product_find_system_instruction(
-    *,
-    preferred: Sequence[PreferredMerchantContext] | None = None,
-) -> str:
-    """System instruction: recipe → JSON array of ingredient-labeled merchant rows."""
-    head = _merchant_scope_paragraph(preferred=preferred, multi_query=True)
-    return (
-        f"{head}"
-        "The user named a dish or recipe to cook — not a single product query. "
-        "Infer typical grocery ingredients (proteins, produce, pantry, dairy, etc.) for that dish in a Chile home kitchen. "
-        f"Respond with a single JSON array only — no markdown, no code fences, no text before or after. "
-        f"The array must have at most {RECIPE_INGREDIENT_FINDS_MAX} elements. Each element is one JSON object with the "
-        f"{_RECIPE_INGREDIENT_PRODUCT_JSON_KEYS}"
-    )
+RECIPE_CHILE_INGREDIENT_LIST_SYSTEM_INSTRUCTION = (
+    "You help a grocery shopper in Chile. The user named a dish or recipe they want to cook.\n"
+    "List typical grocery-store ingredients needed to cook that dish in a Chile home kitchen "
+    "(proteins, produce, pantry, dairy, condiments — what one buys at Lider/Jumbo style supermarkets). "
+    "Use short Spanish Chile phrases (e.g. \"Pasta seca\", \"Crema para cocinar\", \"Queso parmesano rallado\"). "
+    "Do not list full recipes or cooking steps. Do not include brand names unless they are the usual way "
+    "the product is sold (e.g. \"Merkén\" is fine). "
+    f"Respond with a single JSON array only — no markdown, no code fences, no text before or after. "
+    f"At most {RECIPE_INGREDIENT_LIST_MAX} elements. "
+    'Each element is either a JSON string (the ingredient name) or a JSON object with one key "ingredient" '
+    'whose value is that string. No duplicate ingredients. Order from most central to the dish to supporting items.'
+)
 
 
 def merchant_product_single_system_instruction(
@@ -477,39 +453,67 @@ def fetch_merchant_product_candidates(
     return _parse_merchant_product_list_payload(response.text, max_items=lim)
 
 
-def fetch_recipe_ingredient_product_candidates(
+def _parse_recipe_ingredient_string_list(
+    raw: str | None,
+    *,
+    max_items: int,
+) -> list[str]:
+    """Parse JSON array of strings or ``{{\"ingredient\": \"...\"}}`` objects; dedupe; cap *max_items*."""
+    if not raw or max_items < 1:
+        return []
+    blob = _extract_json_array(raw)
+    if not blob:
+        return []
+    try:
+        data = json.loads(blob)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in data:
+        if len(out) >= max_items:
+            break
+        text = ""
+        if isinstance(item, str):
+            text = item.strip()
+        elif isinstance(item, dict):
+            text = str(item.get("ingredient") or item.get("name") or "").strip()
+        if not text:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+    return out
+
+
+def fetch_recipe_common_ingredients_chile(
     *,
     recipe_query: str,
-    max_products: int = RECIPE_INGREDIENT_FINDS_MAX,
-    preferred_merchants: Sequence[PreferredMerchantContext] | None = None,
-) -> list[MerchantProductInfo]:
-    """Ask Gemini for merchant product rows keyed by inferred recipe ingredients."""
+    max_ingredients: int = RECIPE_INGREDIENT_LIST_MAX,
+) -> list[str]:
+    """Ask Gemini for typical grocery ingredients for *recipe_query* in Chile (no product/merchant rows)."""
     name = (recipe_query or "").strip()
     if not name:
         return []
-    lim = max(1, min(max_products, RECIPE_INGREDIENT_FINDS_MAX))
-
+    lim = max(1, min(max_ingredients, RECIPE_INGREDIENT_LIST_MAX))
     prompt = (
-        f"Recipe or dish the shopper wants to cook (as entered): {name!r}\n\n"
-        f"Use Google Search on the merchant Chile site(s). For each important grocery ingredient for this recipe, "
-        f"return one representative purchasable product as the JSON array described in the system instruction. "
-        f"Return at most {lim} elements total."
+        f"Dish or recipe the shopper wants to cook (as entered): {name!r}\n\n"
+        f"Return at most {lim} ingredient lines as the JSON array described in the system instruction."
     )
-
     client = _get_client()
-    grounding = types.Tool(google_search=types.GoogleSearch())
     response = client.models.generate_content(
         model=GEMINI_FIND_PRODUCTS_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
-            system_instruction=recipe_ingredient_product_find_system_instruction(
-                preferred=preferred_merchants,
-            ),
+            system_instruction=RECIPE_CHILE_INGREDIENT_LIST_SYSTEM_INSTRUCTION,
             temperature=0.25,
-            tools=[grounding],
         ),
     )
-    return _parse_merchant_product_list_payload(response.text, max_items=lim)
+    return _parse_recipe_ingredient_string_list(response.text, max_items=lim)
 
 
 def _parse_search_query_kind_payload(raw: str | None) -> str:
