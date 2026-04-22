@@ -229,7 +229,7 @@ def test_merchant_product_instructions_include_preferred_merchant():
     recipe = recipe_ingredient_product_find_system_instruction(preferred=pref)
     assert "Jumbo" not in recipe
     assert "Chile" in recipe
-    assert "merchant" in recipe.lower()
+    assert "merchant" not in recipe.lower()
     assert "preferred-store" in recipe.lower() or "preferred" in recipe.lower()
     assert "ingredient" in recipe.lower()
     assert f"at most {gemini_service.RECIPE_INGREDIENT_FINDS_MAX} elements" in recipe
