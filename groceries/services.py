@@ -24,6 +24,7 @@ from groceries.models import (
     Merchant,
     Product,
     Search,
+    SearchQueryKind,
     SearchStatus,
     Whiteboard,
 )
@@ -102,7 +103,11 @@ def find_product_candidates(
     query: str,
     user_id: int,
 ) -> list[MerchantProductInfo]:
-    """Return up to 20 Gemini merchant product rows for *query*; no DB writes."""
+    """Return Gemini merchant product rows for *query*; no DB writes.
+
+    When query classifies as recipe, returns per-ingredient product finds instead of
+    treating the whole string as one product search.
+    """
     normalized = query.strip()
     if not normalized:
         msg = "Query must not be empty."
@@ -110,10 +115,28 @@ def find_product_candidates(
     page_context: str | None = None
     if is_http_https_url(normalized):
         page_context = fetch_page_text_for_product_context(normalized)
+    kind_val = ""
     try:
+        kind_val = gemini_service.classify_search_query_kind(query=normalized)
+    except RuntimeError:
+        logger.warning(
+            "Skipped Gemini query kind for find_product_candidates: GEMINI_API_KEY not set.",
+        )
+    except Exception:
+        logger.exception(
+            "Gemini classify query kind failed for find_product_candidates query=%r",
+            normalized,
+        )
+    preferred = _preferred_merchant_context_for_user(user_id)
+    try:
+        if kind_val == SearchQueryKind.RECIPE.value:
+            return gemini_service.fetch_recipe_ingredient_product_candidates(
+                recipe_query=normalized,
+                preferred_merchants=preferred,
+            )
         return gemini_service.fetch_merchant_product_candidates(
             query=normalized,
-            preferred_merchants=_preferred_merchant_context_for_user(user_id),
+            preferred_merchants=preferred,
             page_context=page_context,
         )
     except RuntimeError:
@@ -846,6 +869,7 @@ def _search_candidate_dict(p: MerchantProductInfo) -> dict[str, Any]:
         "format": p.format,
         "emoji": p.emoji,
         "merchant": p.merchant,
+        "ingredient": p.ingredient,
     }
 
 
@@ -905,6 +929,7 @@ def search_result_candidates_as_product_schemas(
         fmt = str(d.get("format") or "").strip()
         emoji = str(d.get("emoji") or "").strip()
         merchant = str(d.get("merchant") or "").strip()
+        ing = str(d.get("ingredient") or "").strip()
         price_out: Decimal | None = None
         pr = d.get("price")
         if pr is not None and pr != "":
@@ -921,6 +946,7 @@ def search_result_candidates_as_product_schemas(
                 format=fmt,
                 emoji=emoji,
                 merchant=merchant,
+                ingredient=ing,
             ),
         )
     return out
@@ -958,12 +984,19 @@ def run_product_search_job(*, search_id: int) -> None:
     page_context: str | None = None
     if is_http_https_url(q):
         page_context = fetch_page_text_for_product_context(q)
+    preferred = _preferred_merchant_context_for_user(user_id)
     try:
-        items = gemini_service.fetch_merchant_product_candidates(
-            query=q,
-            preferred_merchants=_preferred_merchant_context_for_user(user_id),
-            page_context=page_context,
-        )
+        if kind_val == SearchQueryKind.RECIPE.value:
+            items = gemini_service.fetch_recipe_ingredient_product_candidates(
+                recipe_query=q,
+                preferred_merchants=preferred,
+            )
+        else:
+            items = gemini_service.fetch_merchant_product_candidates(
+                query=q,
+                preferred_merchants=preferred,
+                page_context=page_context,
+            )
         search.result_candidates = _search_candidates_as_json(items)
         search.status = SearchStatus.COMPLETED
         search.completed_at = timezone.now()

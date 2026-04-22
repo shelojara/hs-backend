@@ -103,6 +103,41 @@ def test_find_product_candidates_rejects_blank_query():
 
 @pytest.mark.django_db
 @patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+@patch(
+    "groceries.services.gemini_service.fetch_recipe_ingredient_product_candidates",
+    return_value=[
+        MerchantProductInfo(
+            display_name="Huevos docena",
+            standard_name="Huevos",
+            brand="",
+            price=Decimal("2500"),
+            format="12 u",
+            emoji="🥚",
+            merchant="Lider",
+            ingredient="Huevos",
+        ),
+    ],
+)
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="recipe",
+)
+def test_find_product_candidates_recipe_uses_ingredient_fetch(
+    _mock_kind,
+    mock_recipe_fetch,
+    mock_plain_fetch,
+):
+    u = _user(username="find_recipe")
+    rows = find_product_candidates(query="carbonara", user_id=u.pk)
+    assert len(rows) == 1
+    assert rows[0].ingredient == "Huevos"
+    mock_recipe_fetch.assert_called_once()
+    assert mock_recipe_fetch.call_args.kwargs["recipe_query"] == "carbonara"
+    mock_plain_fetch.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
 def test_find_product_candidates_passes_preferred_merchants(mock_fetch):
     u = _user(username="find_pref")
     Merchant.objects.create(
