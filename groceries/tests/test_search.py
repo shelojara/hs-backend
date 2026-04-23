@@ -9,7 +9,6 @@ from django.utils import timezone
 from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Product, Search, SearchStatus
 from groceries.services import (
-    catalog_contains_product_like,
     create_search,
     delete_search,
     get_search,
@@ -17,7 +16,6 @@ from groceries.services import (
     list_direct_child_searches,
     list_searches,
     load_user_catalog_in_catalog_bundles,
-    load_user_catalog_normalized_field_sets,
     run_ingredient_product_search_job,
     run_product_search_job,
     search_result_candidates_as_product_schemas,
@@ -481,33 +479,7 @@ def test_search_result_candidates_as_product_schemas_in_catalog_when_checker_tru
 
 
 @pytest.mark.django_db
-def test_catalog_contains_product_like_matches_same_gate_as_list_search():
-    u = User.objects.create_user(username="cat1", password="pw")
-    Product.objects.create(
-        user_id=u.pk,
-        name="Leche entera 1 L",
-        standard_name="Leche entera",
-        brand="Colún",
-        format="1 L",
-        emoji="🥛",
-    )
-    field_sets = load_user_catalog_normalized_field_sets(user_id=u.pk)
-    assert catalog_contains_product_like(
-        name="Leche 1 L",
-        standard_name="Leche entera",
-        brand="Colún",
-        normalized_field_sets=field_sets,
-    )
-    assert not catalog_contains_product_like(
-        name="Arroz",
-        standard_name="",
-        brand="",
-        normalized_field_sets=field_sets,
-    )
-
-
-@pytest.mark.django_db
-def test_in_catalog_haystacks_contain_stricter_than_catalog_contains():
+def test_in_catalog_haystacks_contain_against_user_catalog():
     u = User.objects.create_user(username="icat1", password="pw")
     Product.objects.create(
         user_id=u.pk,
@@ -518,18 +490,16 @@ def test_in_catalog_haystacks_contain_stricter_than_catalog_contains():
         emoji="🥛",
     )
     bundles = load_user_catalog_in_catalog_bundles(user_id=u.pk)
-    field_sets = load_user_catalog_normalized_field_sets(user_id=u.pk)
-    name, std, brand = "Leche 1 L", "Leche entera", "Colún"
-    assert catalog_contains_product_like(
-        name=name,
-        standard_name=std,
-        brand=brand,
-        normalized_field_sets=field_sets,
-    )
     assert in_catalog_haystacks_contain(
-        name=name,
-        standard_name=std,
-        brand=brand,
+        name="Leche 1 L",
+        standard_name="Leche entera",
+        brand="Colún",
+        in_catalog_bundles=bundles,
+    )
+    assert not in_catalog_haystacks_contain(
+        name="Arroz",
+        standard_name="",
+        brand="",
         in_catalog_bundles=bundles,
     )
 

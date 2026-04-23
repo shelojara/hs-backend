@@ -393,35 +393,6 @@ _MIN_IN_CATALOG_HAYSTACK_PARTIAL_RATIO = 65
 _CatalogInCatalogRow: TypeAlias = tuple[tuple[str, ...], str]
 
 
-def load_user_catalog_normalized_field_sets(*, user_id: int) -> list[tuple[str, ...]]:
-    """Active catalog rows as tuples of normalized per-field search strings (deduped per product).
-
-    One DB query; pre-normalize so *catalog_contains_product_like* avoids repeated work.
-    """
-    out: list[tuple[str, ...]] = []
-    qs = Product.objects.filter(user_id=user_id).values_list(
-        "name",
-        "standard_name",
-        "brand",
-    )
-    for name, standard_name, brand in qs.iterator(chunk_size=500):
-        field_strings = _product_search_field_strings(
-            str(name or ""),
-            str(standard_name or ""),
-            str(brand or ""),
-        )
-        if not field_strings:
-            continue
-        normalized = tuple(
-            nf
-            for f in field_strings
-            if (nf := _normalize_for_product_search(f))
-        )
-        if normalized:
-            out.append(normalized)
-    return out
-
-
 def load_user_catalog_in_catalog_bundles(*, user_id: int) -> list[_CatalogInCatalogRow]:
     """For GetSearch *in_catalog* only: per-row field tuples + haystack (name+std+brand, ``list_products``-style)."""
     out: list[_CatalogInCatalogRow] = []
@@ -446,33 +417,6 @@ def load_user_catalog_in_catalog_bundles(*, user_id: int) -> list[_CatalogInCata
         if normalized:
             out.append((normalized, haystack))
     return out
-
-
-def catalog_contains_product_like(
-    *,
-    name: str,
-    standard_name: str,
-    brand: str,
-    normalized_field_sets: list[tuple[str, ...]],
-) -> bool:
-    """Same fuzzy gate as ``_ingredient_string_matches_user_catalog`` / ``list_products`` search (field-only)."""
-    candidate_fields = _product_search_field_strings(name, standard_name, brand)
-    query_norms = [
-        qn
-        for cf in candidate_fields
-        if (qn := _normalize_for_product_search(cf))
-    ]
-    if not query_norms or not normalized_field_sets:
-        return False
-    for cat_fields in normalized_field_sets:
-        for qn in query_norms:
-            for cat_f in cat_fields:
-                if (
-                    _field_fuzzy_gate_score(qn, cat_f)
-                    >= _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO
-                ):
-                    return True
-    return False
 
 
 def in_catalog_haystacks_contain(
