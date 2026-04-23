@@ -51,7 +51,7 @@ class ProductCandidateSchema(Schema):
 
 
 class SearchResultCandidateSchema(ProductCandidateSchema):
-    """Search job candidate plus ``in_catalog`` (populated on *GetSearch*; default False elsewhere)."""
+    """Search job candidate plus ``in_catalog`` when API passes catalog checker; else default False."""
 
     in_catalog: bool = False
 

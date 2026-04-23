@@ -17,6 +17,7 @@ from groceries.services import (
     list_direct_child_searches,
     list_searches,
     load_user_catalog_standard_names_normalized,
+    make_user_catalog_in_catalog_check,
     run_ingredient_product_search_job,
     run_product_search_job,
     search_result_candidates_as_product_schemas,
@@ -541,6 +542,48 @@ def test_search_result_candidates_as_product_schemas_in_catalog_when_checker_tru
     )
     assert len(rows) == 1
     assert rows[0].in_catalog is True
+
+
+@pytest.mark.django_db
+def test_make_user_catalog_in_catalog_check_aligns_with_catalog_products():
+    u = User.objects.create_user(username="mkchk", password="pw")
+    Product.objects.create(
+        user_id=u.pk,
+        name="Leche entera 1 L",
+        standard_name="Leche entera",
+        brand="Colún",
+        format="1 L",
+        emoji="🥛",
+    )
+    check = make_user_catalog_in_catalog_check(user_id=u.pk)
+    hit = search_result_candidates_as_product_schemas(
+        [
+            {
+                "display_name": "x",
+                "standard_name": "Leche entera",
+                "brand": "",
+                "format": "",
+                "emoji": "",
+            },
+        ],
+        fallback_name="q",
+        in_catalog_check=check,
+    )
+    miss = search_result_candidates_as_product_schemas(
+        [
+            {
+                "display_name": "Arroz",
+                "standard_name": "",
+                "brand": "",
+                "format": "",
+                "emoji": "",
+            },
+        ],
+        fallback_name="q",
+        in_catalog_check=check,
+    )
+    assert hit[0].in_catalog is True
+    assert miss[0].in_catalog is False
 
 
 @pytest.mark.django_db

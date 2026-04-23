@@ -114,8 +114,11 @@ def create_search(request, payload: CreateSearchRequest):
 @router.post("/v1.Groceries.ListSearches", response=ListSearchesResponse)
 def list_searches(request, payload: ListSearchesRequest):
     rows = services.list_searches(user_id=request.auth.pk)
+    in_catalog_check = services.make_user_catalog_in_catalog_check(
+        user_id=request.auth.pk,
+    )
     return ListSearchesResponse(
-        searches=[_search_schema(s) for s in rows],
+        searches=[_search_schema(s, in_catalog_check=in_catalog_check) for s in rows],
     )
 
 
@@ -126,17 +129,9 @@ def get_search(request, payload: GetSearchRequest):
     except Search.DoesNotExist as exc:
         raise HttpError(404, "Search not found.") from exc
     children = services.list_direct_child_searches(s.pk, user_id=request.auth.pk)
-    catalog_standard_names = services.load_user_catalog_standard_names_normalized(
+    in_catalog_check = services.make_user_catalog_in_catalog_check(
         user_id=request.auth.pk,
     )
-
-    def in_catalog_check(name: str, standard_name: str, brand: str) -> bool:
-        return services.candidate_in_user_catalog_by_standard_name(
-            name=name,
-            standard_name=standard_name,
-            brand=brand,
-            catalog_standard_names=catalog_standard_names,
-        )
 
     return GetSearchResponse(
         search=_search_schema(s, in_catalog_check=in_catalog_check),

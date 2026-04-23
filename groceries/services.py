@@ -372,7 +372,7 @@ _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO = 65
 
 
 def load_user_catalog_standard_names_normalized(*, user_id: int) -> frozenset[str]:
-    """Normalized ``standard_name`` values (non-blank after strip) for *GetSearch* ``in_catalog``."""
+    """Normalized ``standard_name`` values (non-blank after strip) for search candidate ``in_catalog``."""
     out: set[str] = set()
     for std in Product.objects.filter(user_id=user_id).values_list(
         "standard_name",
@@ -401,6 +401,21 @@ def candidate_in_user_catalog_by_standard_name(
         if (n := _normalize_for_product_search(raw)) and n in catalog_standard_names:
             return True
     return False
+
+
+def make_user_catalog_in_catalog_check(*, user_id: int) -> CatalogInCatalogCheck:
+    """Single catalog load; same rule as *GetSearch* / *ListSearches* ``in_catalog``."""
+    catalog_standard_names = load_user_catalog_standard_names_normalized(user_id=user_id)
+
+    def check(name: str, standard_name: str, brand: str) -> bool:
+        return candidate_in_user_catalog_by_standard_name(
+            name=name,
+            standard_name=standard_name,
+            brand=brand,
+            catalog_standard_names=catalog_standard_names,
+        )
+
+    return check
 
 
 def _ingredient_string_matches_user_catalog(
