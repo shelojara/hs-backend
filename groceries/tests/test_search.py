@@ -13,8 +13,10 @@ from groceries.services import (
     create_search,
     delete_search,
     get_search,
+    in_catalog_haystacks_contain,
     list_direct_child_searches,
     list_searches,
+    load_user_catalog_in_catalog_bundles,
     load_user_catalog_normalized_field_sets,
     run_ingredient_product_search_job,
     run_product_search_job,
@@ -504,14 +506,41 @@ def test_catalog_contains_product_like_matches_same_gate_as_list_search():
     )
 
 
-def test_catalog_contains_product_like_requires_haystack_alignment():
-    """Stricter than field-only: *in_catalog* also needs partial_ratio vs full name+std+brand."""
-    # Per-field score can pass while query is unrelated to that row's combined string.
-    assert not catalog_contains_product_like(
+@pytest.mark.django_db
+def test_in_catalog_haystacks_contain_stricter_than_catalog_contains():
+    u = User.objects.create_user(username="icat1", password="pw")
+    Product.objects.create(
+        user_id=u.pk,
+        name="Leche entera 1 L",
+        standard_name="Leche entera",
+        brand="Colún",
+        format="1 L",
+        emoji="🥛",
+    )
+    bundles = load_user_catalog_in_catalog_bundles(user_id=u.pk)
+    field_sets = load_user_catalog_normalized_field_sets(user_id=u.pk)
+    name, std, brand = "Leche 1 L", "Leche entera", "Colún"
+    assert catalog_contains_product_like(
+        name=name,
+        standard_name=std,
+        brand=brand,
+        normalized_field_sets=field_sets,
+    )
+    assert in_catalog_haystacks_contain(
+        name=name,
+        standard_name=std,
+        brand=brand,
+        in_catalog_bundles=bundles,
+    )
+
+
+def test_in_catalog_haystacks_contain_rejects_when_haystack_misaligned():
+    # Per-field fuzzy can pass; combined haystack must still align.
+    assert not in_catalog_haystacks_contain(
         name="match",
         standard_name="",
         brand="",
-        normalized_field_sets=[
+        in_catalog_bundles=[
             (("matchme",), "zzzzzzzz"),
         ],
     )
