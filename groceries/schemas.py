@@ -37,10 +37,6 @@ def _strip_nonempty_website(v: str) -> str:
     return s
 
 
-class FindProductCandidatesRequest(Schema):
-    query: Annotated[str, AfterValidator(_strip_nonempty_query)]
-
-
 class ProductCandidateSchema(Schema):
     """Fields from Gemini; not yet persisted."""
 
@@ -58,10 +54,6 @@ class SearchResultCandidateSchema(ProductCandidateSchema):
     """Search job candidate plus ``in_catalog`` (populated on *GetSearch*; default False elsewhere)."""
 
     in_catalog: bool = False
-
-
-class FindProductCandidatesResponse(Schema):
-    products: list[ProductCandidateSchema]
 
 
 class CreateSearchRequest(Schema):

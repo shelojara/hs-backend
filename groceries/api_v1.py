@@ -22,8 +22,6 @@ from groceries.schemas import (
     DeleteProductFromBasketResponse,
     CreateProductFromCandidateRequest,
     CreateProductFromCandidateResponse,
-    FindProductCandidatesRequest,
-    FindProductCandidatesResponse,
     GetCurrentBasketRequest,
     GetCurrentBasketResponse,
     GetSearchRequest,
@@ -39,7 +37,6 @@ from groceries.schemas import (
     ListSearchesRequest,
     ListSearchesResponse,
     MerchantSchema,
-    ProductCandidateSchema,
     ProductSchema,
     SearchSchema,
     PurchaseBasketRequest,
@@ -159,34 +156,6 @@ def delete_search(request, payload: DeleteSearchRequest):
     except Search.DoesNotExist as exc:
         raise HttpError(404, "Search not found.") from exc
     return DeleteSearchResponse()
-
-
-@router.post(
-    "/v1.Groceries.FindProductCandidates", response=FindProductCandidatesResponse
-)
-def find_product_candidates(request, payload: FindProductCandidatesRequest):
-    try:
-        items = services.find_product_candidates(
-            query=payload.query,
-            user_id=request.auth.pk,
-        )
-    except ValueError as exc:
-        raise HttpError(400, str(exc)) from exc
-    return FindProductCandidatesResponse(
-        products=[
-            ProductCandidateSchema(
-                name=(p.display_name or payload.query.strip()).strip(),
-                standard_name=p.standard_name,
-                brand=p.brand,
-                price=p.price,
-                format=p.format,
-                emoji=p.emoji,
-                merchant=p.merchant,
-                ingredient=p.ingredient,
-            )
-            for p in items
-        ],
-    )
 
 
 @router.post(
