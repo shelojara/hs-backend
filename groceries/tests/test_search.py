@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
@@ -272,6 +273,47 @@ def test_run_product_search_job_marks_failed_when_query_is_question(
     assert row.completed_at is not None
     assert row.result_candidates == []
     _mock_fetch.assert_not_called()
+
+
+@pytest.mark.django_db
+@override_settings(
+    FLAGS={
+        "SKIP_SEARCH_QUERY_CLASSIFICATION": [
+            {"condition": "boolean", "value": True},
+        ],
+    },
+)
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="question",
+)
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    return_value=[
+        MerchantProductInfo(
+            display_name="Leche 1 L",
+            standard_name="Leche entera",
+            brand="Colún",
+            price=Decimal("1990"),
+            format="1 L",
+            emoji="🥛",
+            merchant="Lider",
+        ),
+    ],
+)
+def test_run_product_search_job_skip_classification_forces_product(
+    _mock_fetch,
+    _mock_kind,
+):
+    u = User.objects.create_user(username="s_skip_cls", password="pw")
+    row = Search.objects.create(user_id=u.pk, query="is oat milk healthy")
+    run_product_search_job(search_id=row.pk)
+    row.refresh_from_db()
+    assert row.status == SearchStatus.COMPLETED
+    assert row.kind == "product"
+    assert row.result_candidates
+    _mock_kind.assert_not_called()
+    _mock_fetch.assert_called_once()
 
 
 @pytest.mark.django_db
