@@ -256,24 +256,98 @@ def test_recipe_root_enqueues_only_ingredients_not_in_catalog(
 
 
 @pytest.mark.django_db
+@patch("groceries.services.async_task")
 @patch(
     "groceries.services.gemini_service.classify_search_query_kind",
     return_value="question",
 )
+@patch(
+    "groceries.services.gemini_service.fetch_question_related_grocery_products_chile",
+    return_value=["Leche sin lactosa"],
+)
 @patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
-def test_run_product_search_job_marks_failed_when_query_is_question(
-    _mock_fetch,
+def test_question_search_enqueues_child_product_jobs(
+    mock_fetch,
+    _mock_related,
     _mock_kind,
+    mock_async,
 ):
     u = User.objects.create_user(username="skind2", password="pw")
     row = Search.objects.create(user_id=u.pk, query="is oat milk healthy")
     run_product_search_job(search_id=row.pk)
     row.refresh_from_db()
+    assert row.kind == "question"
+    assert row.status == SearchStatus.COMPLETED
+    assert row.result_candidates == []
+    assert row.completed_at is not None
+    _mock_related.assert_called_once_with(question="is oat milk healthy")
+    children = list(Search.all_objects.filter(parent_id=row.pk).order_by("pk"))
+    assert len(children) == 1
+    assert children[0].query == "Leche sin lactosa"
+    assert children[0].status == SearchStatus.PENDING
+    mock_async.assert_called_once_with(
+        "groceries.scheduled_tasks.run_ingredient_product_search_job",
+        children[0].pk,
+        task_name=f"groceries_ingredient_search:{children[0].pk}",
+    )
+    mock_fetch.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="question",
+)
+@patch(
+    "groceries.services.gemini_service.fetch_question_related_grocery_products_chile",
+    return_value=[],
+)
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+def test_question_search_marks_failed_when_no_related_products(
+    _mock_fetch,
+    _mock_related,
+    _mock_kind,
+):
+    u = User.objects.create_user(username="sq_empty", password="pw")
+    row = Search.objects.create(user_id=u.pk, query="why sky blue")
+    run_product_search_job(search_id=row.pk)
+    row.refresh_from_db()
     assert row.status == SearchStatus.FAILED
     assert row.kind == "question"
-    assert row.completed_at is not None
     assert row.result_candidates == []
     _mock_fetch.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("groceries.services.async_task")
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="question",
+)
+@patch(
+    "groceries.services.gemini_service.fetch_question_related_grocery_products_chile",
+    return_value=["Leche sin lactosa", "Avena"],
+)
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+def test_question_root_enqueues_only_products_not_in_catalog(
+    mock_fetch,
+    _mock_related,
+    _mock_kind,
+    mock_async,
+):
+    u = User.objects.create_user(username="sq_cat", password="pw")
+    Product.objects.create(
+        user_id=u.pk,
+        name="Avena hojuelas",
+        standard_name="Avena",
+    )
+    root = Search.objects.create(user_id=u.pk, query="desayuno saludable?")
+    run_product_search_job(search_id=root.pk)
+    children = list(Search.all_objects.filter(parent_id=root.pk).order_by("pk"))
+    assert len(children) == 1
+    assert children[0].query == "Leche sin lactosa"
+    mock_async.assert_called_once()
+    mock_fetch.assert_not_called()
 
 
 @pytest.mark.django_db

@@ -1090,9 +1090,76 @@ def run_product_search_job(*, search_id: int) -> None:
             )
     search.kind = kind_val
     if kind_val == SearchQueryKind.QUESTION.value:
-        search.status = SearchStatus.FAILED
-        search.completed_at = timezone.now()
-        search.save(update_fields=["kind", "status", "completed_at"])
+        try:
+            related = gemini_service.fetch_question_related_grocery_products_chile(
+                question=q,
+            )
+            if not related:
+                search.status = SearchStatus.FAILED
+                search.completed_at = timezone.now()
+                search.save(update_fields=["kind", "status", "completed_at"])
+                return
+            catalog_names = load_user_catalog_standard_names_normalized(user_id=user_id)
+            to_enqueue = [
+                line
+                for line in related
+                if not _ingredient_string_matches_user_catalog(
+                    line, catalog_standard_names=catalog_names
+                )
+            ]
+            if not to_enqueue:
+                now = timezone.now()
+                search.result_candidates = []
+                search.status = SearchStatus.COMPLETED
+                search.completed_at = now
+                search.save(
+                    update_fields=[
+                        "kind",
+                        "result_candidates",
+                        "status",
+                        "completed_at",
+                    ],
+                )
+                return
+            for line in to_enqueue:
+                child = Search.objects.create(
+                    user_id=user_id,
+                    parent_id=search.pk,
+                    query=line,
+                )
+                async_task(
+                    "groceries.scheduled_tasks.run_ingredient_product_search_job",
+                    child.pk,
+                    task_name=f"groceries_ingredient_search:{child.pk}",
+                )
+            now = timezone.now()
+            search.result_candidates = []
+            search.status = SearchStatus.COMPLETED
+            search.completed_at = now
+            search.save(
+                update_fields=[
+                    "kind",
+                    "result_candidates",
+                    "status",
+                    "completed_at",
+                ],
+            )
+        except RuntimeError:
+            logger.warning(
+                "run_product_search_job: GEMINI_API_KEY unset (question search id=%s).",
+                search_id,
+            )
+            search.status = SearchStatus.FAILED
+            search.completed_at = timezone.now()
+            search.save(update_fields=["kind", "status", "completed_at"])
+        except Exception:
+            logger.exception(
+                "run_product_search_job: question-related products failed (search id=%s)",
+                search_id,
+            )
+            search.status = SearchStatus.FAILED
+            search.completed_at = timezone.now()
+            search.save(update_fields=["kind", "status", "completed_at"])
         return
     if search.parent_id is not None:
         logger.warning(

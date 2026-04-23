@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 FIND_PRODUCTS_MAX = 10
 # Recipe flow: cap how many common ingredients we ask Gemini to list (Chile).
 RECIPE_INGREDIENT_LIST_MAX = 20
+# Question flow: cap related grocery product search strings (Chile).
+QUESTION_RELATED_PRODUCTS_MAX = 5
 
 # All Gemini calls use gemini-2.5-flash.
 GEMINI_FIND_PRODUCTS_MODEL = "gemini-2.5-flash"
@@ -168,6 +170,20 @@ RECIPE_CHILE_INGREDIENT_LIST_SYSTEM_INSTRUCTION = (
     f"At most {RECIPE_INGREDIENT_LIST_MAX} elements. "
     'Each element is either a JSON string (the ingredient name) or a JSON object with one key "ingredient" '
     'whose value is that string. No duplicate ingredients. Order from most central to the dish to supporting items.'
+)
+
+QUESTION_CHILE_RELATED_PRODUCTS_SYSTEM_INSTRUCTION = (
+    "You help a grocery shopper in Chile. The user asked a question (nutrition, comparison, how-to, or other) "
+    "that is not itself a product search.\n"
+    "Suggest up to five distinct grocery products they might want to buy that are relevant to the topic — "
+    "short Spanish Chile shelf-style phrases (e.g. \"Leche sin lactosa\", \"Avena en hojuelas\", \"Aceite de oliva\"). "
+    "Prefer concrete product types, not vague categories like \"comida saludable\". No brand names unless usual "
+    "for that item in Chile. No duplicate lines.\n"
+    f"Respond with a single JSON array only — no markdown, no code fences, no text before or after. "
+    f"At most {QUESTION_RELATED_PRODUCTS_MAX} elements. "
+    'Each element is either a JSON string (product line) or a JSON object with one key "product" '
+    'whose value is that string (alternatively \"ingredient\" or \"name\" as the only key). '
+    "Order from most relevant to less central."
 )
 
 
@@ -495,12 +511,13 @@ def fetch_merchant_product_candidates(
     return _parse_merchant_product_list_payload(response.text, max_items=lim)
 
 
-def _parse_recipe_ingredient_string_list(
+def _parse_json_string_list(
     raw: str | None,
     *,
     max_items: int,
+    dict_text_keys: tuple[str, ...],
 ) -> list[str]:
-    """Parse JSON array of strings or ``{{\"ingredient\": \"...\"}}`` objects; dedupe; cap *max_items*."""
+    """Parse JSON array of strings or single-key dicts; dedupe casefold; cap *max_items*."""
     if not raw or max_items < 1:
         return []
     blob = _extract_json_array(raw)
@@ -521,7 +538,10 @@ def _parse_recipe_ingredient_string_list(
         if isinstance(item, str):
             text = item.strip()
         elif isinstance(item, dict):
-            text = str(item.get("ingredient") or item.get("name") or "").strip()
+            for k in dict_text_keys:
+                text = str(item.get(k) or "").strip()
+                if text:
+                    break
         if not text:
             continue
         key = text.casefold()
@@ -530,6 +550,19 @@ def _parse_recipe_ingredient_string_list(
         seen.add(key)
         out.append(text)
     return out
+
+
+def _parse_recipe_ingredient_string_list(
+    raw: str | None,
+    *,
+    max_items: int,
+) -> list[str]:
+    """Parse JSON array of strings or ``{{\"ingredient\": \"...\"}}`` objects; dedupe; cap *max_items*."""
+    return _parse_json_string_list(
+        raw,
+        max_items=max_items,
+        dict_text_keys=("ingredient", "name"),
+    )
 
 
 def fetch_recipe_common_ingredients_chile(
@@ -556,6 +589,36 @@ def fetch_recipe_common_ingredients_chile(
         ),
     )
     return _parse_recipe_ingredient_string_list(response.text, max_items=lim)
+
+
+def fetch_question_related_grocery_products_chile(
+    *,
+    question: str,
+    max_products: int = QUESTION_RELATED_PRODUCTS_MAX,
+) -> list[str]:
+    """Ask Gemini for up to *max_products* grocery product search strings relevant to *question* (Chile)."""
+    q = (question or "").strip()
+    if not q:
+        return []
+    lim = max(1, min(max_products, QUESTION_RELATED_PRODUCTS_MAX))
+    prompt = (
+        f"Shopper question (as entered): {q!r}\n\n"
+        f"Return at most {lim} related grocery product lines as the JSON array described in the system instruction."
+    )
+    client = _get_client()
+    response = client.models.generate_content(
+        model=GEMINI_FIND_PRODUCTS_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=QUESTION_CHILE_RELATED_PRODUCTS_SYSTEM_INSTRUCTION,
+            temperature=0.25,
+        ),
+    )
+    return _parse_json_string_list(
+        response.text,
+        max_items=lim,
+        dict_text_keys=("product", "ingredient", "name"),
+    )
 
 
 def _parse_search_query_kind_payload(raw: str | None) -> str:

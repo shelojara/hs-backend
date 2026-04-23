@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from groceries import gemini_service
 from groceries.gemini_service import (
+    QUESTION_CHILE_RELATED_PRODUCTS_SYSTEM_INSTRUCTION,
     MerchantProductInfo,
     PreferredMerchantContext,
     RunningLowSuggestion,
@@ -263,6 +264,31 @@ def test_parse_recipe_ingredient_string_list_strings_and_objects():
     raw = '["Pasta", {"ingredient": "Huevos"}, "Pasta", "  "]'
     out = _parse_recipe_ingredient_string_list(raw, max_items=10)
     assert out == ["Pasta", "Huevos"]
+
+
+def test_question_related_products_system_instruction_caps_at_five():
+    assert str(gemini_service.QUESTION_RELATED_PRODUCTS_MAX) in (
+        QUESTION_CHILE_RELATED_PRODUCTS_SYSTEM_INSTRUCTION
+    )
+
+
+@patch("groceries.gemini_service._get_client")
+def test_fetch_question_related_grocery_products_chile(mock_get_client):
+    mock_response = MagicMock()
+    mock_response.text = '["Leche sin lactosa", {"product": "Avena en hojuelas"}]'
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    out = gemini_service.fetch_question_related_grocery_products_chile(
+        question="  is oat milk good for breakfast  ",
+    )
+    assert out == ["Leche sin lactosa", "Avena en hojuelas"]
+    contents = mock_client.models.generate_content.call_args.kwargs["contents"]
+    assert "oat milk" in contents.lower()
+    cfg = mock_client.models.generate_content.call_args.kwargs["config"]
+    assert "question" in (cfg.system_instruction or "").lower()
+    assert cfg.tools is None
 
 
 @patch("groceries.gemini_service._get_client")
