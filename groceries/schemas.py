@@ -83,6 +83,7 @@ class SearchSchema(Schema):
     status: str
     completed_at: datetime | None
     parent_id: int | None = None
+    sub_search_count: int = 0
     result_candidates: list[SearchResultCandidateSchema]
 
 

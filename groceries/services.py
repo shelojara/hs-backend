@@ -10,7 +10,7 @@ from typing import Any, TypeAlias
 from dateutil.relativedelta import relativedelta
 
 from django.db import transaction
-from django.db.models import F, Max, Prefetch, Q, QuerySet
+from django.db.models import Count, F, Max, Prefetch, Q, QuerySet
 from django.utils import timezone
 from django_q.tasks import async_task
 from rapidfuzz import fuzz
@@ -1002,12 +1002,20 @@ def create_search(*, query: str, user_id: int) -> int:
 
 
 def list_searches(*, user_id: int) -> list[Search]:
-    """Latest 10 root ``Search`` rows (*parent* unset) for *user_id*, newest first."""
+    """Latest 10 root ``Search`` rows (*parent* unset) for *user_id*, newest first.
+
+    Each row has ``sub_search_count`` annotation: number of direct child
+    ``Search`` rows with ``deleted_at`` unset, same user.
+    """
     return list(
-        Search.objects.filter(user_id=user_id, parent_id__isnull=True).order_by(
-            "-created_at",
-            "-pk",
-        )[:10],
+        Search.objects.filter(user_id=user_id, parent_id__isnull=True)
+        .annotate(
+            sub_search_count=Count(
+                "child_searches",
+                filter=Q(child_searches__deleted_at__isnull=True),
+            ),
+        )
+        .order_by("-created_at", "-pk")[:10],
     )
 
 
