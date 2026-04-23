@@ -129,16 +129,16 @@ def get_search(request, payload: GetSearchRequest):
     except Search.DoesNotExist as exc:
         raise HttpError(404, "Search not found.") from exc
     children = services.list_direct_child_searches(s.pk, user_id=request.auth.pk)
-    catalog_field_sets = services.load_user_catalog_normalized_field_sets(
+    in_catalog_bundles = services.load_user_catalog_in_catalog_bundles(
         user_id=request.auth.pk,
     )
 
     def in_catalog_check(name: str, standard_name: str, brand: str) -> bool:
-        return services.catalog_contains_product_like(
+        return services.in_catalog_haystacks_contain(
             name=name,
             standard_name=standard_name,
             brand=brand,
-            normalized_field_sets=catalog_field_sets,
+            in_catalog_bundles=in_catalog_bundles,
         )
 
     return GetSearchResponse(

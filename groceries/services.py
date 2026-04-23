@@ -386,26 +386,28 @@ def _field_fuzzy_gate_score(query_normalized: str, field_normalized: str) -> int
 
 # Best per-field gate score below this → skip row.
 _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO = 65
+# GetSearch *in_catalog* only: stricter (also requires haystack *partial_ratio*).
+_MIN_IN_CATALOG_HAYSTACK_PARTIAL_RATIO = 65
+
+# (per-field normalized strings, full haystack) for *in_catalog_haystacks_contain* only.
+_CatalogInCatalogRow: TypeAlias = tuple[tuple[str, ...], str]
 
 
-def load_user_catalog_normalized_field_sets(*, user_id: int) -> list[tuple[str, ...]]:
-    """Active catalog rows as tuples of normalized per-field search strings (deduped per product).
-
-    One DB query; pre-normalize so *catalog_contains_product_like* avoids repeated work.
-    """
-    out: list[tuple[str, ...]] = []
+def load_user_catalog_in_catalog_bundles(*, user_id: int) -> list[_CatalogInCatalogRow]:
+    """For GetSearch *in_catalog* only: per-row field tuples + haystack (name+std+brand, ``list_products``-style)."""
+    out: list[_CatalogInCatalogRow] = []
     qs = Product.objects.filter(user_id=user_id).values_list(
         "name",
         "standard_name",
         "brand",
     )
     for name, standard_name, brand in qs.iterator(chunk_size=500):
-        field_strings = _product_search_field_strings(
-            str(name or ""),
-            str(standard_name or ""),
-            str(brand or ""),
-        )
+        name_s, std_s, brand_s = str(name or ""), str(standard_name or ""), str(brand or "")
+        field_strings = _product_search_field_strings(name_s, std_s, brand_s)
         if not field_strings:
+            continue
+        haystack = _product_search_haystack(name_s, std_s, brand_s)
+        if not haystack:
             continue
         normalized = tuple(
             nf
@@ -413,28 +415,30 @@ def load_user_catalog_normalized_field_sets(*, user_id: int) -> list[tuple[str, 
             if (nf := _normalize_for_product_search(f))
         )
         if normalized:
-            out.append(normalized)
+            out.append((normalized, haystack))
     return out
 
 
-def catalog_contains_product_like(
+def in_catalog_haystacks_contain(
     *,
     name: str,
     standard_name: str,
     brand: str,
-    normalized_field_sets: list[tuple[str, ...]],
+    in_catalog_bundles: list[_CatalogInCatalogRow],
 ) -> bool:
-    """Same fuzzy gate as ``_ingredient_string_matches_user_catalog`` / ``list_products`` search."""
+    """Stricter *in_catalog* check: per-field gate **and** query vs full haystack *partial_ratio*."""
     candidate_fields = _product_search_field_strings(name, standard_name, brand)
     query_norms = [
         qn
         for cf in candidate_fields
         if (qn := _normalize_for_product_search(cf))
     ]
-    if not query_norms or not normalized_field_sets:
+    if not query_norms or not in_catalog_bundles:
         return False
-    for cat_fields in normalized_field_sets:
+    for cat_fields, cat_haystack in in_catalog_bundles:
         for qn in query_norms:
+            if int(fuzz.partial_ratio(qn, cat_haystack)) < _MIN_IN_CATALOG_HAYSTACK_PARTIAL_RATIO:
+                continue
             for cat_f in cat_fields:
                 if (
                     _field_fuzzy_gate_score(qn, cat_f)
