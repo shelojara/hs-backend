@@ -66,7 +66,11 @@ from groceries.services import (
 router = Router(auth=protected_api_auth, tags=["Groceries"])
 
 
-def _search_schema(s: Search) -> SearchSchema:
+def _search_schema(
+    s: Search,
+    *,
+    in_catalog_check: services.CatalogInCatalogCheck | None = None,
+) -> SearchSchema:
     return SearchSchema(
         search_id=s.pk,
         created_at=s.created_at,
@@ -77,6 +81,7 @@ def _search_schema(s: Search) -> SearchSchema:
         result_candidates=services.search_result_candidates_as_product_schemas(
             s.result_candidates,
             fallback_name=s.query,
+            in_catalog_check=in_catalog_check,
         ),
     )
 
@@ -123,9 +128,23 @@ def get_search(request, payload: GetSearchRequest):
     except Search.DoesNotExist as exc:
         raise HttpError(404, "Search not found.") from exc
     children = services.list_direct_child_searches(s.pk, user_id=request.auth.pk)
+    catalog_field_sets = services.load_user_catalog_normalized_field_sets(
+        user_id=request.auth.pk,
+    )
+
+    def in_catalog_check(name: str, standard_name: str, brand: str) -> bool:
+        return services.catalog_contains_product_like(
+            name=name,
+            standard_name=standard_name,
+            brand=brand,
+            normalized_field_sets=catalog_field_sets,
+        )
+
     return GetSearchResponse(
-        search=_search_schema(s),
-        child_searches=[_search_schema(c) for c in children],
+        search=_search_schema(s, in_catalog_check=in_catalog_check),
+        child_searches=[
+            _search_schema(c, in_catalog_check=in_catalog_check) for c in children
+        ],
     )
 
 

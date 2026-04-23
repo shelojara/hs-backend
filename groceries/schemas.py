@@ -54,6 +54,12 @@ class ProductCandidateSchema(Schema):
     ingredient: str = ""
 
 
+class SearchResultCandidateSchema(ProductCandidateSchema):
+    """Search job candidate plus ``in_catalog`` (populated on *GetSearch*; default False elsewhere)."""
+
+    in_catalog: bool = False
+
+
 class FindProductCandidatesResponse(Schema):
     products: list[ProductCandidateSchema]
 
@@ -77,7 +83,7 @@ class SearchSchema(Schema):
     status: str
     completed_at: datetime | None
     parent_id: int | None = None
-    result_candidates: list[ProductCandidateSchema]
+    result_candidates: list[SearchResultCandidateSchema]
 
 
 class ListSearchesResponse(Schema):

@@ -4,7 +4,8 @@ import logging
 import unicodedata
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypeAlias
 
 from dateutil.relativedelta import relativedelta
 
@@ -28,9 +29,11 @@ from groceries.models import (
     SearchStatus,
     Whiteboard,
 )
-from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
+from groceries.schemas import ProductCandidateSchema, SearchResultCandidateSchema, WhiteboardLineSchema
 
 logger = logging.getLogger(__name__)
+
+CatalogInCatalogCheck: TypeAlias = Callable[[str, str, str], bool]
 
 
 def _preferred_merchant_context_for_user(user_id: int) -> list[PreferredMerchantContext]:
@@ -383,6 +386,62 @@ def _field_fuzzy_gate_score(query_normalized: str, field_normalized: str) -> int
 
 # Best per-field gate score below this → skip row.
 _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO = 65
+
+
+def load_user_catalog_normalized_field_sets(*, user_id: int) -> list[tuple[str, ...]]:
+    """Active catalog rows as tuples of normalized per-field search strings (deduped per product).
+
+    One DB query; pre-normalize so *catalog_contains_product_like* avoids repeated work.
+    """
+    out: list[tuple[str, ...]] = []
+    qs = Product.objects.filter(user_id=user_id).values_list(
+        "name",
+        "standard_name",
+        "brand",
+    )
+    for name, standard_name, brand in qs.iterator(chunk_size=500):
+        field_strings = _product_search_field_strings(
+            str(name or ""),
+            str(standard_name or ""),
+            str(brand or ""),
+        )
+        if not field_strings:
+            continue
+        normalized = tuple(
+            nf
+            for f in field_strings
+            if (nf := _normalize_for_product_search(f))
+        )
+        if normalized:
+            out.append(normalized)
+    return out
+
+
+def catalog_contains_product_like(
+    *,
+    name: str,
+    standard_name: str,
+    brand: str,
+    normalized_field_sets: list[tuple[str, ...]],
+) -> bool:
+    """Same fuzzy gate as ``_ingredient_string_matches_user_catalog`` / ``list_products`` search."""
+    candidate_fields = _product_search_field_strings(name, standard_name, brand)
+    query_norms = [
+        qn
+        for cf in candidate_fields
+        if (qn := _normalize_for_product_search(cf))
+    ]
+    if not query_norms or not normalized_field_sets:
+        return False
+    for cat_fields in normalized_field_sets:
+        for qn in query_norms:
+            for cat_f in cat_fields:
+                if (
+                    _field_fuzzy_gate_score(qn, cat_f)
+                    >= _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO
+                ):
+                    return True
+    return False
 
 
 def _ingredient_string_matches_user_catalog(ingredient: str, *, user_id: int) -> bool:
@@ -979,10 +1038,11 @@ def search_result_candidates_as_product_schemas(
     raw: list[Any],
     *,
     fallback_name: str,
-) -> list[ProductCandidateSchema]:
-    """Map persisted ``Search.result_candidates`` JSON to ``ProductCandidateSchema`` rows."""
+    in_catalog_check: CatalogInCatalogCheck | None = None,
+) -> list[SearchResultCandidateSchema]:
+    """Map persisted ``Search.result_candidates`` JSON to rows (optional *in_catalog_check* per candidate)."""
     q = (fallback_name or "").strip()
-    out: list[ProductCandidateSchema] = []
+    out: list[SearchResultCandidateSchema] = []
     for item in raw:
         if not isinstance(item, dict):
             continue
@@ -1002,8 +1062,13 @@ def search_result_candidates_as_product_schemas(
                 price_out = Decimal(str(pr))
             except (ArithmeticError, ValueError, TypeError):
                 price_out = None
+        in_cat = (
+            bool(in_catalog_check(label, std, brand))
+            if in_catalog_check is not None
+            else False
+        )
         out.append(
-            ProductCandidateSchema(
+            SearchResultCandidateSchema(
                 name=label,
                 standard_name=std,
                 brand=brand,
@@ -1012,6 +1077,7 @@ def search_result_candidates_as_product_schemas(
                 emoji=emoji,
                 merchant=merchant,
                 ingredient=ing,
+                in_catalog=in_cat,
             ),
         )
     return out
