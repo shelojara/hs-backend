@@ -174,13 +174,36 @@ def update_product(
     price: Decimal | None,
     emoji: str,
 ) -> Product:
-    """Update persisted merchant fields; no Gemini call."""
+    """Update persisted merchant fields.
+
+    Blank emoji may call Gemini for a suggested emoji.
+    """
     product = Product.objects.get(pk=product_id, user_id=user_id)
+    br = (brand or "").strip()
+    em = (emoji or "").strip()
+    if not em:
+        try:
+            em = gemini_service.suggest_product_emoji(
+                name=product.name,
+                standard_name=standard_name,
+                brand=br,
+                format=format,
+            )
+        except RuntimeError:
+            logger.warning(
+                "Skipped Gemini product emoji: GEMINI_API_KEY not set (update product id=%s).",
+                product_id,
+            )
+        except Exception:
+            logger.exception(
+                "Gemini product emoji failed on update for product id=%s",
+                product_id,
+            )
     product.standard_name = standard_name
-    product.brand = (brand or "").strip()
+    product.brand = br
     product.format = format
     product.price = price
-    product.emoji = emoji
+    product.emoji = em
     product.save(
         update_fields=["standard_name", "brand", "format", "price", "emoji"],
     )
