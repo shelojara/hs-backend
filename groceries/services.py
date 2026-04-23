@@ -1008,6 +1008,47 @@ def delete_search(*, search_id: int, user_id: int) -> None:
     row.save(update_fields=["deleted_at"])
 
 
+def retry_empty_completed_search(*, search_id: int, user_id: int) -> None:
+    """Re-queue Gemini worker for *completed* row with empty ``result_candidates``.
+
+    Refuses recipe/question *root* rows while any active child search still exists
+    (avoids duplicate ingredient trees). Ingredient child rows always eligible when
+    completed and empty.
+    """
+    row = Search.objects.get(pk=search_id, user_id=user_id)
+    if row.status != SearchStatus.COMPLETED:
+        msg = "Search is not completed; only completed empty-result searches can be retried."
+        raise ValueError(msg)
+    if row.result_candidates:
+        msg = "Search already has result candidates; retry is not allowed."
+        raise ValueError(msg)
+    if row.parent_id is None and row.kind in (
+        SearchQueryKind.RECIPE.value,
+        SearchQueryKind.QUESTION.value,
+    ):
+        if Search.objects.filter(parent_id=row.pk).exists():
+            msg = (
+                "Cannot retry this recipe or question search while sub-searches "
+                "still exist; retry a sub-search or delete sub-searches first."
+            )
+            raise ValueError(msg)
+    row.status = SearchStatus.PENDING
+    row.completed_at = None
+    row.save(update_fields=["status", "completed_at"])
+    if row.parent_id is None:
+        async_task(
+            "groceries.scheduled_tasks.run_product_search_job",
+            row.pk,
+            task_name=f"groceries_product_search:{row.pk}",
+        )
+    else:
+        async_task(
+            "groceries.scheduled_tasks.run_ingredient_product_search_job",
+            row.pk,
+            task_name=f"groceries_ingredient_search:{row.pk}",
+        )
+
+
 def search_result_candidates_as_product_schemas(
     raw: list[Any],
     *,

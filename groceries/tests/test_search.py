@@ -18,6 +18,7 @@ from groceries.services import (
     list_searches,
     load_user_catalog_standard_names_normalized,
     make_user_catalog_in_catalog_check,
+    retry_empty_completed_search,
     run_ingredient_product_search_job,
     run_product_search_job,
     search_result_candidates_as_product_schemas,
@@ -526,6 +527,111 @@ def test_delete_search_wrong_user_raises():
     with pytest.raises(Search.DoesNotExist):
         delete_search(search_id=row.pk, user_id=other.pk)
     assert Search.objects.filter(pk=row.pk).exists()
+
+
+@pytest.mark.django_db
+@patch("groceries.services.async_task")
+def test_retry_empty_completed_search_root_enqueues_product_worker(mock_async):
+    u = User.objects.create_user(username="retry1", password="pw")
+    row = Search.objects.create(
+        user_id=u.pk,
+        query="xyz",
+        status=SearchStatus.COMPLETED,
+        result_candidates=[],
+        completed_at=timezone.now(),
+        kind="product",
+    )
+    retry_empty_completed_search(search_id=row.pk, user_id=u.pk)
+    row.refresh_from_db()
+    assert row.status == SearchStatus.PENDING
+    assert row.completed_at is None
+    mock_async.assert_called_once_with(
+        "groceries.scheduled_tasks.run_product_search_job",
+        row.pk,
+        task_name=f"groceries_product_search:{row.pk}",
+    )
+
+
+@pytest.mark.django_db
+@patch("groceries.services.async_task")
+def test_retry_empty_completed_search_child_enqueues_ingredient_worker(mock_async):
+    u = User.objects.create_user(username="retry2", password="pw")
+    root = Search.objects.create(user_id=u.pk, query="root")
+    child = Search.objects.create(
+        user_id=u.pk,
+        query="ing",
+        parent_id=root.pk,
+        status=SearchStatus.COMPLETED,
+        result_candidates=[],
+        completed_at=timezone.now(),
+    )
+    retry_empty_completed_search(search_id=child.pk, user_id=u.pk)
+    child.refresh_from_db()
+    assert child.status == SearchStatus.PENDING
+    assert child.completed_at is None
+    mock_async.assert_called_once_with(
+        "groceries.scheduled_tasks.run_ingredient_product_search_job",
+        child.pk,
+        task_name=f"groceries_ingredient_search:{child.pk}",
+    )
+
+
+@pytest.mark.django_db
+def test_retry_empty_completed_search_rejects_non_completed():
+    u = User.objects.create_user(username="retry3", password="pw")
+    row = Search.objects.create(
+        user_id=u.pk,
+        query="q",
+        status=SearchStatus.PENDING,
+        result_candidates=[],
+    )
+    with pytest.raises(ValueError, match="not completed"):
+        retry_empty_completed_search(search_id=row.pk, user_id=u.pk)
+
+
+@pytest.mark.django_db
+def test_retry_empty_completed_search_rejects_when_candidates_present():
+    u = User.objects.create_user(username="retry4", password="pw")
+    row = Search.objects.create(
+        user_id=u.pk,
+        query="q",
+        status=SearchStatus.COMPLETED,
+        result_candidates=[{"display_name": "A", "standard_name": "", "brand": "", "format": "", "emoji": ""}],
+        completed_at=timezone.now(),
+    )
+    with pytest.raises(ValueError, match="already has result"):
+        retry_empty_completed_search(search_id=row.pk, user_id=u.pk)
+
+
+@pytest.mark.django_db
+def test_retry_empty_completed_search_recipe_root_blocks_while_children_exist():
+    u = User.objects.create_user(username="retry5", password="pw")
+    root = Search.objects.create(
+        user_id=u.pk,
+        query="carbonara",
+        kind="recipe",
+        status=SearchStatus.COMPLETED,
+        result_candidates=[],
+        completed_at=timezone.now(),
+    )
+    Search.objects.create(user_id=u.pk, query="Pasta", parent_id=root.pk)
+    with pytest.raises(ValueError, match="sub-searches"):
+        retry_empty_completed_search(search_id=root.pk, user_id=u.pk)
+
+
+@pytest.mark.django_db
+def test_retry_empty_completed_search_wrong_user_raises():
+    u = User.objects.create_user(username="retry6", password="pw")
+    other = User.objects.create_user(username="retry7", password="pw")
+    row = Search.objects.create(
+        user_id=u.pk,
+        query="q",
+        status=SearchStatus.COMPLETED,
+        result_candidates=[],
+        completed_at=timezone.now(),
+    )
+    with pytest.raises(Search.DoesNotExist):
+        retry_empty_completed_search(search_id=row.pk, user_id=other.pk)
 
 
 @pytest.mark.django_db
