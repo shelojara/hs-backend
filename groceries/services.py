@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any, TypeAlias
 
 from dateutil.relativedelta import relativedelta
+from flags.state import flag_enabled
 
 from django.db import transaction
 from django.db.models import Count, F, Max, Prefetch, Q, QuerySet
@@ -139,17 +140,20 @@ def find_product_candidates(
     if is_http_https_url(normalized):
         page_context = fetch_page_text_for_product_context(normalized)
     kind_val = ""
-    try:
-        kind_val = gemini_service.classify_search_query_kind(query=normalized)
-    except RuntimeError:
-        logger.warning(
-            "Skipped Gemini query kind for find_product_candidates: GEMINI_API_KEY not set.",
-        )
-    except Exception:
-        logger.exception(
-            "Gemini classify query kind failed for find_product_candidates query=%r",
-            normalized,
-        )
+    if flag_enabled("SKIP_SEARCH_QUERY_CLASSIFICATION"):
+        kind_val = SearchQueryKind.PRODUCT.value
+    else:
+        try:
+            kind_val = gemini_service.classify_search_query_kind(query=normalized)
+        except RuntimeError:
+            logger.warning(
+                "Skipped Gemini query kind for find_product_candidates: GEMINI_API_KEY not set.",
+            )
+        except Exception:
+            logger.exception(
+                "Gemini classify query kind failed for find_product_candidates query=%r",
+                normalized,
+            )
     preferred = _preferred_merchant_context_for_user(user_id)
     try:
         if kind_val == SearchQueryKind.RECIPE.value:
@@ -1078,18 +1082,21 @@ def run_product_search_job(*, search_id: int) -> None:
     user_id = search.user_id
     q = search.query.strip()
     kind_val = ""
-    try:
-        kind_val = gemini_service.classify_search_query_kind(query=q)
-    except RuntimeError:
-        logger.warning(
-            "run_product_search_job: skip query kind (GEMINI unset) (search id=%s).",
-            search_id,
-        )
-    except Exception:
-        logger.exception(
-            "run_product_search_job: classify query kind failed (search id=%s)",
-            search_id,
-        )
+    if flag_enabled("SKIP_SEARCH_QUERY_CLASSIFICATION"):
+        kind_val = SearchQueryKind.PRODUCT.value
+    else:
+        try:
+            kind_val = gemini_service.classify_search_query_kind(query=q)
+        except RuntimeError:
+            logger.warning(
+                "run_product_search_job: skip query kind (GEMINI unset) (search id=%s).",
+                search_id,
+            )
+        except Exception:
+            logger.exception(
+                "run_product_search_job: classify query kind failed (search id=%s)",
+                search_id,
+            )
     search.kind = kind_val
     if kind_val == SearchQueryKind.QUESTION.value:
         search.status = SearchStatus.FAILED
