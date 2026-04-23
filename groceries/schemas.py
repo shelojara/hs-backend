@@ -100,6 +100,14 @@ class DeleteSearchResponse(Schema):
     pass
 
 
+class RetryEmptyCompletedSearchRequest(Schema):
+    search_id: int
+
+
+class RetryEmptyCompletedSearchResponse(Schema):
+    pass
+
+
 class CreateProductFromCandidateRequest(Schema):
     canditate: ProductCandidateSchema
     is_custom: bool = False
