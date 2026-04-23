@@ -206,7 +206,7 @@ def test_find_product_candidates_recipe_skips_ingredients_when_standard_name_in_
 @override_settings(
     FLAGS={
         "GROCERIES_RECIPE_SEARCH": [
-            {"condition": "boolean", "value": False},
+            {"condition": "boolean", "value": True},
         ],
     },
 )
@@ -218,12 +218,12 @@ def test_find_product_candidates_recipe_skips_ingredients_when_standard_name_in_
     "groceries.services.gemini_service.classify_search_query_kind",
     return_value="recipe",
 )
-def test_find_product_candidates_recipe_flag_off_uses_single_product_fetch(
-    _mock_kind,
+def test_find_product_candidates_recipe_flag_on_skips_classify_uses_product_fetch(
+    mock_kind,
     mock_ingredients,
     mock_fetch,
 ):
-    u = _user(username="find_recipe_flag_off")
+    u = _user(username="find_recipe_flag_on")
     mock_fetch.return_value = [
         MerchantProductInfo(
             display_name="Kit carbonara",
@@ -236,6 +236,7 @@ def test_find_product_candidates_recipe_flag_off_uses_single_product_fetch(
         ),
     ]
     rows = find_product_candidates(query="carbonara", user_id=u.pk)
+    mock_kind.assert_not_called()
     mock_ingredients.assert_not_called()
     mock_fetch.assert_called_once()
     assert mock_fetch.call_args.kwargs["query"] == "carbonara"

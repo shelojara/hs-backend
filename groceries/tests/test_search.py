@@ -258,7 +258,7 @@ def test_recipe_root_enqueues_only_ingredients_not_in_catalog(
 @override_settings(
     FLAGS={
         "GROCERIES_RECIPE_SEARCH": [
-            {"condition": "boolean", "value": False},
+            {"condition": "boolean", "value": True},
         ],
     },
 )
@@ -284,17 +284,18 @@ def test_recipe_root_enqueues_only_ingredients_not_in_catalog(
         ),
     ],
 )
-def test_run_product_search_job_recipe_flag_off_single_fetch(
+def test_run_product_search_job_recipe_flag_on_skips_classify_single_fetch(
     _mock_fetch,
     mock_ingredients,
-    _mock_kind,
+    mock_kind,
     mock_async,
 ):
-    u = User.objects.create_user(username="s_recipe_off", password="pw")
+    u = User.objects.create_user(username="s_recipe_on", password="pw")
     row = Search.objects.create(user_id=u.pk, query="carbonara")
     run_product_search_job(search_id=row.pk)
     row.refresh_from_db()
-    assert row.kind == "recipe"
+    assert row.kind == "product"
+    mock_kind.assert_not_called()
     assert row.status == SearchStatus.COMPLETED
     mock_ingredients.assert_not_called()
     mock_async.assert_not_called()

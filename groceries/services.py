@@ -129,8 +129,9 @@ def find_product_candidates(
 ) -> list[MerchantProductInfo]:
     """Return Gemini merchant product rows for *query*; no DB writes.
 
-    When query classifies as recipe, returns per-ingredient product finds instead of
-    treating the whole string as one product search.
+    When query classifies as recipe (and ``GROCERIES_RECIPE_SEARCH`` flag is not enabled),
+    returns per-ingredient product finds instead of treating the whole string as one
+    product search.
     """
     normalized = query.strip()
     if not normalized:
@@ -140,23 +141,23 @@ def find_product_candidates(
     if is_http_https_url(normalized):
         page_context = fetch_page_text_for_product_context(normalized)
     kind_val = ""
-    try:
-        kind_val = gemini_service.classify_search_query_kind(query=normalized)
-    except RuntimeError:
-        logger.warning(
-            "Skipped Gemini query kind for find_product_candidates: GEMINI_API_KEY not set.",
-        )
-    except Exception:
-        logger.exception(
-            "Gemini classify query kind failed for find_product_candidates query=%r",
-            normalized,
-        )
+    if flag_enabled("GROCERIES_RECIPE_SEARCH"):
+        kind_val = SearchQueryKind.PRODUCT.value
+    else:
+        try:
+            kind_val = gemini_service.classify_search_query_kind(query=normalized)
+        except RuntimeError:
+            logger.warning(
+                "Skipped Gemini query kind for find_product_candidates: GEMINI_API_KEY not set.",
+            )
+        except Exception:
+            logger.exception(
+                "Gemini classify query kind failed for find_product_candidates query=%r",
+                normalized,
+            )
     preferred = _preferred_merchant_context_for_user(user_id)
     try:
-        if (
-            kind_val == SearchQueryKind.RECIPE.value
-            and flag_enabled("GROCERIES_RECIPE_SEARCH")
-        ):
+        if kind_val == SearchQueryKind.RECIPE.value:
             ingredients = gemini_service.fetch_recipe_common_ingredients_chile(
                 recipe_query=normalized,
             )
@@ -1082,18 +1083,21 @@ def run_product_search_job(*, search_id: int) -> None:
     user_id = search.user_id
     q = search.query.strip()
     kind_val = ""
-    try:
-        kind_val = gemini_service.classify_search_query_kind(query=q)
-    except RuntimeError:
-        logger.warning(
-            "run_product_search_job: skip query kind (GEMINI unset) (search id=%s).",
-            search_id,
-        )
-    except Exception:
-        logger.exception(
-            "run_product_search_job: classify query kind failed (search id=%s)",
-            search_id,
-        )
+    if flag_enabled("GROCERIES_RECIPE_SEARCH"):
+        kind_val = SearchQueryKind.PRODUCT.value
+    else:
+        try:
+            kind_val = gemini_service.classify_search_query_kind(query=q)
+        except RuntimeError:
+            logger.warning(
+                "run_product_search_job: skip query kind (GEMINI unset) (search id=%s).",
+                search_id,
+            )
+        except Exception:
+            logger.exception(
+                "run_product_search_job: classify query kind failed (search id=%s)",
+                search_id,
+            )
     search.kind = kind_val
     if kind_val == SearchQueryKind.QUESTION.value:
         search.status = SearchStatus.FAILED
@@ -1111,10 +1115,7 @@ def run_product_search_job(*, search_id: int) -> None:
         page_context = fetch_page_text_for_product_context(q)
     preferred = _preferred_merchant_context_for_user(user_id)
     try:
-        if (
-            kind_val == SearchQueryKind.RECIPE.value
-            and flag_enabled("GROCERIES_RECIPE_SEARCH")
-        ):
+        if kind_val == SearchQueryKind.RECIPE.value:
             ingredients = gemini_service.fetch_recipe_common_ingredients_chile(
                 recipe_query=q,
             )
