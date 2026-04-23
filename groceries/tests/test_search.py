@@ -502,3 +502,16 @@ def test_catalog_contains_product_like_matches_same_gate_as_list_search():
         brand="",
         normalized_field_sets=field_sets,
     )
+
+
+def test_catalog_contains_product_like_requires_haystack_alignment():
+    """Stricter than field-only: *in_catalog* also needs partial_ratio vs full name+std+brand."""
+    # Per-field score can pass while query is unrelated to that row's combined string.
+    assert not catalog_contains_product_like(
+        name="match",
+        standard_name="",
+        brand="",
+        normalized_field_sets=[
+            (("matchme",), "zzzzzzzz"),
+        ],
+    )
