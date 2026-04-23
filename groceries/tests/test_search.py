@@ -9,11 +9,13 @@ from django.utils import timezone
 from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Product, Search, SearchStatus
 from groceries.services import (
+    catalog_contains_product_like,
     create_search,
     delete_search,
     get_search,
     list_direct_child_searches,
     list_searches,
+    load_user_catalog_normalized_field_sets,
     run_ingredient_product_search_job,
     run_product_search_job,
     search_result_candidates_as_product_schemas,
@@ -415,6 +417,7 @@ def test_search_result_candidates_as_product_schemas_null_brand_becomes_empty():
     )
     assert len(rows) == 1
     assert rows[0].brand == ""
+    assert rows[0].in_catalog is False
 
 
 def test_search_result_candidates_as_product_schemas_maps_stored_json():
@@ -443,6 +446,7 @@ def test_search_result_candidates_as_product_schemas_maps_stored_json():
     assert c.emoji == "🥛"
     assert c.merchant == "Lider"
     assert c.ingredient == "Leche"
+    assert c.in_catalog is False
 
 
 def test_search_result_candidates_as_product_schemas_skips_non_dict_entries():
@@ -461,3 +465,40 @@ def test_search_result_candidates_as_product_schemas_uses_fallback_name_when_mis
     )
     assert len(rows) == 1
     assert rows[0].name == "milk"
+    assert rows[0].in_catalog is False
+
+
+def test_search_result_candidates_as_product_schemas_in_catalog_when_checker_true():
+    rows = search_result_candidates_as_product_schemas(
+        [{"display_name": "A", "standard_name": "", "brand": "", "format": "", "emoji": ""}],
+        fallback_name="q",
+        in_catalog_check=lambda n, s, b: n == "A",
+    )
+    assert len(rows) == 1
+    assert rows[0].in_catalog is True
+
+
+@pytest.mark.django_db
+def test_catalog_contains_product_like_matches_same_gate_as_list_search():
+    u = User.objects.create_user(username="cat1", password="pw")
+    Product.objects.create(
+        user_id=u.pk,
+        name="Leche entera 1 L",
+        standard_name="Leche entera",
+        brand="Colún",
+        format="1 L",
+        emoji="🥛",
+    )
+    field_sets = load_user_catalog_normalized_field_sets(user_id=u.pk)
+    assert catalog_contains_product_like(
+        name="Leche 1 L",
+        standard_name="Leche entera",
+        brand="Colún",
+        normalized_field_sets=field_sets,
+    )
+    assert not catalog_contains_product_like(
+        name="Arroz",
+        standard_name="",
+        brand="",
+        normalized_field_sets=field_sets,
+    )
