@@ -176,12 +176,12 @@ def update_product(
 ) -> Product:
     """Update persisted merchant fields.
 
-    Custom products with blank emoji may call Gemini for a suggested emoji.
+    Blank emoji may call Gemini for a suggested emoji.
     """
     product = Product.objects.get(pk=product_id, user_id=user_id)
     br = (brand or "").strip()
     em = (emoji or "").strip()
-    if product.is_custom and not em:
+    if not em:
         try:
             em = gemini_service.suggest_product_emoji(
                 name=product.name,

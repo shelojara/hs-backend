@@ -381,15 +381,15 @@ def test_update_product_custom_nonempty_emoji_skips_gemini(mock_emoji):
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.suggest_product_emoji")
-def test_update_product_non_custom_blank_emoji_skips_gemini(mock_emoji):
+@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="🌾")
+def test_update_product_non_custom_blank_emoji_uses_gemini(mock_emoji):
     u = _user()
     p = Product.objects.create(
-        name="Item",
+        name="Arroz",
         standard_name="Std",
         brand="",
         price=Decimal("1.00"),
-        format="1",
+        format="1 kg",
         emoji="🥛",
         is_custom=False,
         user=u,
@@ -399,21 +399,27 @@ def test_update_product_non_custom_blank_emoji_skips_gemini(mock_emoji):
         user_id=u.pk,
         standard_name="Std",
         brand="",
-        format="1",
+        format="1 kg",
         price=Decimal("1.00"),
         emoji="",
     )
     p.refresh_from_db()
-    assert p.emoji == ""
-    mock_emoji.assert_not_called()
+    assert p.emoji == "🌾"
+    mock_emoji.assert_called_once_with(
+        name="Arroz",
+        standard_name="Std",
+        brand="",
+        format="1 kg",
+    )
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("is_custom", [True, False])
 @patch(
     "groceries.services.gemini_service.suggest_product_emoji",
     side_effect=RuntimeError("no key"),
 )
-def test_update_product_custom_blank_emoji_gemini_unconfigured_empty(_mock_emoji):
+def test_update_product_blank_emoji_gemini_unconfigured_empty(_mock_emoji, is_custom):
     u = _user()
     p = Product.objects.create(
         name="Item",
@@ -422,7 +428,7 @@ def test_update_product_custom_blank_emoji_gemini_unconfigured_empty(_mock_emoji
         price=Decimal("1.00"),
         format="1",
         emoji="🥛",
-        is_custom=True,
+        is_custom=is_custom,
         user=u,
     )
     update_product(
