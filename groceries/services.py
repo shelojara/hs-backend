@@ -128,14 +128,36 @@ def create_product_from_candidate(
     user_id: int,
     is_custom: bool = False,
 ) -> int:
-    """Persist product from merchant candidate fields (no Gemini call)."""
+    """Persist product from merchant candidate fields.
+
+    Custom products with blank emoji may call Gemini for a suggested emoji.
+    """
+    emoji = (candidate.emoji or "").strip()
+    if is_custom and not emoji:
+        try:
+            emoji = gemini_service.suggest_product_emoji(
+                name=candidate.name,
+                standard_name=candidate.standard_name,
+                brand=candidate.brand,
+                format=candidate.format,
+            )
+        except RuntimeError:
+            logger.warning(
+                "Skipped Gemini product emoji: GEMINI_API_KEY not set (custom product name=%r).",
+                candidate.name[:80],
+            )
+        except Exception:
+            logger.exception(
+                "Gemini product emoji failed for custom product name=%r",
+                candidate.name[:80],
+            )
     product = Product.objects.create(
         name=candidate.name,
         standard_name=candidate.standard_name,
         brand=(candidate.brand or "").strip(),
         price=candidate.price,
         format=candidate.format,
-        emoji=candidate.emoji,
+        emoji=emoji,
         is_custom=is_custom,
         user_id=user_id,
     )
