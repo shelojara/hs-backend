@@ -78,6 +78,7 @@ def _search_schema(
         status=s.status,
         completed_at=s.completed_at,
         parent_id=s.parent_id,
+        sub_search_count=getattr(s, "sub_search_count", 0),
         result_candidates=services.search_result_candidates_as_product_schemas(
             s.result_candidates,
             fallback_name=s.query,

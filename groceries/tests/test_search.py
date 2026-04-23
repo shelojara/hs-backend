@@ -331,6 +331,29 @@ def test_list_searches_excludes_child_searches():
 
 
 @pytest.mark.django_db
+def test_list_searches_annotates_sub_search_count():
+    u = User.objects.create_user(username="ls_subcnt", password="pw")
+    root = Search.objects.create(user_id=u.pk, query="root")
+    Search.objects.create(user_id=u.pk, query="c1", parent_id=root.pk)
+    Search.objects.create(user_id=u.pk, query="c2", parent_id=root.pk)
+    rows = list_searches(user_id=u.pk)
+    assert len(rows) == 1
+    assert rows[0].sub_search_count == 2
+
+
+@pytest.mark.django_db
+def test_list_searches_sub_search_count_excludes_soft_deleted_children():
+    u = User.objects.create_user(username="ls_subdel", password="pw")
+    root = Search.objects.create(user_id=u.pk, query="root")
+    alive = Search.objects.create(user_id=u.pk, query="alive", parent_id=root.pk)
+    gone = Search.objects.create(user_id=u.pk, query="gone", parent_id=root.pk)
+    delete_search(search_id=gone.pk, user_id=u.pk)
+    rows = list_searches(user_id=u.pk)
+    assert rows[0].sub_search_count == 1
+    assert alive.pk in {c.pk for c in Search.objects.filter(parent_id=root.pk)}
+
+
+@pytest.mark.django_db
 def test_get_search_returns_row_for_owner():
     u = User.objects.create_user(username="gs1", password="pw")
     row = Search.objects.create(user_id=u.pk, query="milk")
