@@ -320,6 +320,125 @@ def test_update_product_null_price_clears_price():
 
 
 @pytest.mark.django_db
+@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="🌿")
+def test_update_product_custom_blank_emoji_uses_gemini(mock_emoji):
+    u = _user()
+    p = Product.objects.create(
+        name="Herb mix",
+        standard_name="Std",
+        brand="",
+        price=Decimal("1.00"),
+        format="100 g",
+        emoji="🥛",
+        is_custom=True,
+        user=u,
+    )
+    update_product(
+        product_id=p.pk,
+        user_id=u.pk,
+        standard_name="Std",
+        brand="",
+        format="100 g",
+        price=Decimal("1.00"),
+        emoji="",
+    )
+    p.refresh_from_db()
+    assert p.emoji == "🌿"
+    mock_emoji.assert_called_once_with(
+        name="Herb mix",
+        standard_name="Std",
+        brand="",
+        format="100 g",
+    )
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.suggest_product_emoji")
+def test_update_product_custom_nonempty_emoji_skips_gemini(mock_emoji):
+    u = _user()
+    p = Product.objects.create(
+        name="Item",
+        standard_name="Std",
+        brand="",
+        price=Decimal("1.00"),
+        format="1",
+        emoji="🥛",
+        is_custom=True,
+        user=u,
+    )
+    update_product(
+        product_id=p.pk,
+        user_id=u.pk,
+        standard_name="Std",
+        brand="",
+        format="1",
+        price=Decimal("1.00"),
+        emoji="🧀",
+    )
+    p.refresh_from_db()
+    assert p.emoji == "🧀"
+    mock_emoji.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.suggest_product_emoji")
+def test_update_product_non_custom_blank_emoji_skips_gemini(mock_emoji):
+    u = _user()
+    p = Product.objects.create(
+        name="Item",
+        standard_name="Std",
+        brand="",
+        price=Decimal("1.00"),
+        format="1",
+        emoji="🥛",
+        is_custom=False,
+        user=u,
+    )
+    update_product(
+        product_id=p.pk,
+        user_id=u.pk,
+        standard_name="Std",
+        brand="",
+        format="1",
+        price=Decimal("1.00"),
+        emoji="",
+    )
+    p.refresh_from_db()
+    assert p.emoji == ""
+    mock_emoji.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.suggest_product_emoji",
+    side_effect=RuntimeError("no key"),
+)
+def test_update_product_custom_blank_emoji_gemini_unconfigured_empty(_mock_emoji):
+    u = _user()
+    p = Product.objects.create(
+        name="Item",
+        standard_name="Std",
+        brand="",
+        price=Decimal("1.00"),
+        format="1",
+        emoji="🥛",
+        is_custom=True,
+        user=u,
+    )
+    update_product(
+        product_id=p.pk,
+        user_id=u.pk,
+        standard_name="Std",
+        brand="",
+        format="1",
+        price=Decimal("1.00"),
+        emoji="",
+    )
+    p.refresh_from_db()
+    assert p.emoji == ""
+
+
+@pytest.mark.django_db
 def test_update_product_raises_when_wrong_user():
     u1 = _user(username="a")
     u2 = _user(username="b")
