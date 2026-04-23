@@ -21,6 +21,11 @@ RECIPE_INGREDIENT_LIST_MAX = 20
 # All Gemini calls use gemini-2.5-flash.
 GEMINI_FIND_PRODUCTS_MODEL = "gemini-2.5-flash"
 
+PRODUCT_EMOJI_SYSTEM_INSTRUCTION = (
+    "You pick one Unicode emoji that best represents a grocery product for a shopping list. "
+    "Reply with exactly one emoji and no other text."
+)
+
 _SEARCH_QUERY_KIND_OK = frozenset({c.value for c in SearchQueryKind})
 
 SEARCH_QUERY_KIND_SYSTEM_INSTRUCTION = (
@@ -208,6 +213,43 @@ def _get_client() -> genai.Client:
         )
         raise RuntimeError(msg)
     return genai.Client(api_key=api_key)
+
+
+def suggest_product_emoji(
+    *,
+    name: str,
+    standard_name: str = "",
+    brand: str = "",
+    format: str = "",
+) -> str:
+    """Ask Gemini for one emoji for *name* plus optional catalog fields."""
+    lines = [f"Product name: {name.strip()!r}"]
+    sn = (standard_name or "").strip()
+    if sn:
+        lines.append(f"Generic type (standard name): {sn!r}")
+    br = (brand or "").strip()
+    if br:
+        lines.append(f"Brand: {br!r}")
+    fmt = (format or "").strip()
+    if fmt:
+        lines.append(f"Format / size: {fmt!r}")
+    lines.append("\nSuggest one emoji for this product.")
+    prompt = "\n".join(lines)
+
+    client = _get_client()
+    response = client.models.generate_content(
+        model=GEMINI_FIND_PRODUCTS_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=PRODUCT_EMOJI_SYSTEM_INSTRUCTION,
+            temperature=0.35,
+        ),
+    )
+    text = (response.text or "").strip().strip("\"'")
+    if not text:
+        logger.warning("Gemini returned empty emoji for product %r", name)
+        return "📦"
+    return _normalize_field(text, 64)
 
 
 def _clip(s: str, max_len: int) -> str:

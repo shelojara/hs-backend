@@ -82,7 +82,8 @@ def test_create_product_from_candidate_persists_without_gemini():
 
 
 @pytest.mark.django_db
-def test_create_product_from_candidate_sets_is_custom():
+@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="")
+def test_create_product_from_candidate_sets_is_custom(_mock_emoji):
     u = _user()
     pid = create_product_from_candidate(
         candidate=ProductCandidateSchema(
@@ -132,6 +133,95 @@ def test_create_product_from_candidate_assigns_user():
     )
     row = Product.objects.get(pk=pid)
     assert row.user_id == u.pk
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="🌿")
+def test_create_product_from_candidate_custom_blank_emoji_uses_gemini(mock_emoji):
+    u = _user()
+    pid = create_product_from_candidate(
+        candidate=ProductCandidateSchema(
+            name="Albahaca fresca",
+            standard_name="Hierbas aromáticas",
+            brand="",
+            price=None,
+            format="100 g",
+            emoji="",
+        ),
+        user_id=u.pk,
+        is_custom=True,
+    )
+    row = Product.objects.get(pk=pid)
+    assert row.emoji == "🌿"
+    mock_emoji.assert_called_once_with(
+        name="Albahaca fresca",
+        standard_name="Hierbas aromáticas",
+        brand="",
+        format="100 g",
+    )
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.suggest_product_emoji")
+def test_create_product_from_candidate_custom_nonempty_emoji_skips_gemini(mock_emoji):
+    u = _user()
+    pid = create_product_from_candidate(
+        candidate=ProductCandidateSchema(
+            name="Custom",
+            standard_name="",
+            brand="",
+            price=None,
+            format="",
+            emoji="🧀",
+        ),
+        user_id=u.pk,
+        is_custom=True,
+    )
+    assert Product.objects.get(pk=pid).emoji == "🧀"
+    mock_emoji.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.suggest_product_emoji",
+    side_effect=RuntimeError("no key"),
+)
+def test_create_product_from_candidate_custom_blank_emoji_gemini_unconfigured_empty(
+    _mock_emoji,
+):
+    u = _user()
+    pid = create_product_from_candidate(
+        candidate=ProductCandidateSchema(
+            name="X",
+            standard_name="",
+            brand="",
+            price=None,
+            format="",
+            emoji="",
+        ),
+        user_id=u.pk,
+        is_custom=True,
+    )
+    assert Product.objects.get(pk=pid).emoji == ""
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.suggest_product_emoji")
+def test_create_product_from_candidate_non_custom_blank_emoji_skips_gemini(mock_emoji):
+    u = _user()
+    create_product_from_candidate(
+        candidate=ProductCandidateSchema(
+            name="Listed",
+            standard_name="s",
+            brand="",
+            price=None,
+            format="",
+            emoji="",
+        ),
+        user_id=u.pk,
+        is_custom=False,
+    )
+    mock_emoji.assert_not_called()
 
 
 def test_product_candidate_schema_null_brand_coerces_to_empty_string():

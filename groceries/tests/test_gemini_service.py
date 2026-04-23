@@ -17,6 +17,36 @@ from groceries.gemini_service import (
 
 
 @patch("groceries.gemini_service._get_client")
+def test_suggest_product_emoji_strips_and_truncates(mock_get_client):
+    mock_response = MagicMock()
+    mock_response.text = "  🥛  "
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    assert (
+        gemini_service.suggest_product_emoji(
+            name="Leche entera",
+            standard_name="Leche entera",
+            brand="Colún",
+            format="1 L",
+        )
+        == "🥛"
+    )
+
+
+@patch("groceries.gemini_service._get_client")
+def test_suggest_product_emoji_empty_response_uses_fallback(mock_get_client):
+    mock_response = MagicMock()
+    mock_response.text = ""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    assert gemini_service.suggest_product_emoji(name="Misc item") == "📦"
+
+
+@patch("groceries.gemini_service._get_client")
 def test_fetch_merchant_product_info_by_identity_empty_standard_name_returns_none(
     mock_get_client,
 ):
