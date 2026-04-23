@@ -13,6 +13,7 @@ from django.db import transaction
 from django.db.models import Count, F, Max, Prefetch, Q, QuerySet
 from django.utils import timezone
 from django_q.tasks import async_task
+from flags.state import flag_enabled
 from rapidfuzz import fuzz
 
 from groceries import gemini_service
@@ -152,7 +153,10 @@ def find_product_candidates(
         )
     preferred = _preferred_merchant_context_for_user(user_id)
     try:
-        if kind_val == SearchQueryKind.RECIPE.value:
+        if (
+            kind_val == SearchQueryKind.RECIPE.value
+            and flag_enabled("GROCERIES_RECIPE_SEARCH")
+        ):
             ingredients = gemini_service.fetch_recipe_common_ingredients_chile(
                 recipe_query=normalized,
             )
@@ -1107,7 +1111,10 @@ def run_product_search_job(*, search_id: int) -> None:
         page_context = fetch_page_text_for_product_context(q)
     preferred = _preferred_merchant_context_for_user(user_id)
     try:
-        if kind_val == SearchQueryKind.RECIPE.value:
+        if (
+            kind_val == SearchQueryKind.RECIPE.value
+            and flag_enabled("GROCERIES_RECIPE_SEARCH")
+        ):
             ingredients = gemini_service.fetch_recipe_common_ingredients_chile(
                 recipe_query=q,
             )

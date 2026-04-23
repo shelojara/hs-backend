@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo, RunningLowSuggestion
@@ -199,6 +200,47 @@ def test_find_product_candidates_recipe_skips_ingredients_when_standard_name_in_
     assert rows[0].ingredient == "Pasta"
     assert mock_plain_fetch.call_count == 1
     assert mock_plain_fetch.call_args.kwargs["query"] == "Pasta"
+
+
+@pytest.mark.django_db
+@override_settings(
+    FLAGS={
+        "GROCERIES_RECIPE_SEARCH": [
+            {"condition": "boolean", "value": False},
+        ],
+    },
+)
+@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
+@patch(
+    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
+)
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="recipe",
+)
+def test_find_product_candidates_recipe_flag_off_uses_single_product_fetch(
+    _mock_kind,
+    mock_ingredients,
+    mock_fetch,
+):
+    u = _user(username="find_recipe_flag_off")
+    mock_fetch.return_value = [
+        MerchantProductInfo(
+            display_name="Kit carbonara",
+            standard_name="Carbonara",
+            brand="",
+            price=None,
+            format="",
+            emoji="",
+            merchant="Lider",
+        ),
+    ]
+    rows = find_product_candidates(query="carbonara", user_id=u.pk)
+    mock_ingredients.assert_not_called()
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args.kwargs["query"] == "carbonara"
+    assert len(rows) == 1
+    assert rows[0].display_name == "Kit carbonara"
 
 
 @pytest.mark.django_db

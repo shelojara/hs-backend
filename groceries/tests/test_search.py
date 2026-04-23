@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
@@ -251,6 +252,67 @@ def test_recipe_root_enqueues_only_ingredients_not_in_catalog(
     run_ingredient_product_search_job(search_id=children[0].pk)
     assert mock_fetch.call_count == 1
     assert mock_fetch.call_args.kwargs["query"] == "Leche"
+
+
+@pytest.mark.django_db
+@override_settings(
+    FLAGS={
+        "GROCERIES_RECIPE_SEARCH": [
+            {"condition": "boolean", "value": False},
+        ],
+    },
+)
+@patch("groceries.services.async_task")
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="recipe",
+)
+@patch(
+    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
+)
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    return_value=[
+        MerchantProductInfo(
+            display_name="Kit carbonara",
+            standard_name="Carbonara",
+            brand="",
+            price=None,
+            format="",
+            emoji="",
+            merchant="Lider",
+        ),
+    ],
+)
+def test_run_product_search_job_recipe_flag_off_single_fetch(
+    _mock_fetch,
+    mock_ingredients,
+    _mock_kind,
+    mock_async,
+):
+    u = User.objects.create_user(username="s_recipe_off", password="pw")
+    row = Search.objects.create(user_id=u.pk, query="carbonara")
+    run_product_search_job(search_id=row.pk)
+    row.refresh_from_db()
+    assert row.kind == "recipe"
+    assert row.status == SearchStatus.COMPLETED
+    mock_ingredients.assert_not_called()
+    mock_async.assert_not_called()
+    assert not Search.all_objects.filter(parent_id=row.pk).exists()
+    _mock_fetch.assert_called_once()
+    assert _mock_fetch.call_args.kwargs["query"] == "carbonara"
+    assert row.result_candidates == [
+        {
+            "display_name": "Kit carbonara",
+            "standard_name": "Carbonara",
+            "brand": "",
+            "price": None,
+            "format": "",
+            "emoji": "",
+            "merchant": "Lider",
+            "ingredient": "",
+        },
+    ]
 
 
 @pytest.mark.django_db
