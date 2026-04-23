@@ -386,65 +386,37 @@ def _field_fuzzy_gate_score(query_normalized: str, field_normalized: str) -> int
 
 # Best per-field gate score below this → skip row.
 _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO = 65
-# GetSearch *in_catalog* only: stricter (also requires haystack *partial_ratio*).
-_MIN_IN_CATALOG_HAYSTACK_PARTIAL_RATIO = 65
-
-# (per-field normalized strings, full haystack) for *in_catalog_haystacks_contain* only.
-_CatalogInCatalogRow: TypeAlias = tuple[tuple[str, ...], str]
 
 
-def load_user_catalog_in_catalog_bundles(*, user_id: int) -> list[_CatalogInCatalogRow]:
-    """For GetSearch *in_catalog* only: per-row field tuples + haystack (name+std+brand, ``list_products``-style)."""
-    out: list[_CatalogInCatalogRow] = []
-    qs = Product.objects.filter(user_id=user_id).values_list(
-        "name",
+def load_user_catalog_standard_names_normalized(*, user_id: int) -> frozenset[str]:
+    """Normalized ``standard_name`` values (non-blank after strip) for *GetSearch* ``in_catalog``."""
+    out: set[str] = set()
+    for std in Product.objects.filter(user_id=user_id).values_list(
         "standard_name",
-        "brand",
-    )
-    for name, standard_name, brand in qs.iterator(chunk_size=500):
-        name_s, std_s, brand_s = str(name or ""), str(standard_name or ""), str(brand or "")
-        field_strings = _product_search_field_strings(name_s, std_s, brand_s)
-        if not field_strings:
+        flat=True,
+    ).iterator(chunk_size=500):
+        s = str(std or "").strip()
+        if not s:
             continue
-        haystack = _product_search_haystack(name_s, std_s, brand_s)
-        if not haystack:
-            continue
-        normalized = tuple(
-            nf
-            for f in field_strings
-            if (nf := _normalize_for_product_search(f))
-        )
-        if normalized:
-            out.append((normalized, haystack))
-    return out
+        if (n := _normalize_for_product_search(s)):
+            out.add(n)
+    return frozenset(out)
 
 
-def in_catalog_haystacks_contain(
+def candidate_in_user_catalog_by_standard_name(
     *,
     name: str,
     standard_name: str,
     brand: str,
-    in_catalog_bundles: list[_CatalogInCatalogRow],
+    catalog_standard_names: frozenset[str],
 ) -> bool:
-    """Stricter *in_catalog* check: per-field gate **and** query vs full haystack *partial_ratio*."""
-    candidate_fields = _product_search_field_strings(name, standard_name, brand)
-    query_norms = [
-        qn
-        for cf in candidate_fields
-        if (qn := _normalize_for_product_search(cf))
-    ]
-    if not query_norms or not in_catalog_bundles:
-        return False
-    for cat_fields, cat_haystack in in_catalog_bundles:
-        for qn in query_norms:
-            if int(fuzz.partial_ratio(qn, cat_haystack)) < _MIN_IN_CATALOG_HAYSTACK_PARTIAL_RATIO:
-                continue
-            for cat_f in cat_fields:
-                if (
-                    _field_fuzzy_gate_score(qn, cat_f)
-                    >= _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO
-                ):
-                    return True
+    """True when candidate ``standard_name`` or display ``name`` equals some catalog ``standard_name`` (folded)."""
+    _ = brand
+    for raw in (standard_name.strip(), name.strip()):
+        if not raw:
+            continue
+        if (n := _normalize_for_product_search(raw)) and n in catalog_standard_names:
+            return True
     return False
 
 

@@ -9,13 +9,13 @@ from django.utils import timezone
 from groceries.gemini_service import MerchantProductInfo
 from groceries.models import Product, Search, SearchStatus
 from groceries.services import (
+    candidate_in_user_catalog_by_standard_name,
     create_search,
     delete_search,
     get_search,
-    in_catalog_haystacks_contain,
     list_direct_child_searches,
     list_searches,
-    load_user_catalog_in_catalog_bundles,
+    load_user_catalog_standard_names_normalized,
     run_ingredient_product_search_job,
     run_product_search_job,
     search_result_candidates_as_product_schemas,
@@ -502,7 +502,7 @@ def test_search_result_candidates_as_product_schemas_in_catalog_when_checker_tru
 
 
 @pytest.mark.django_db
-def test_in_catalog_haystacks_contain_against_user_catalog():
+def test_candidate_in_user_catalog_matches_standard_name_folded():
     u = User.objects.create_user(username="icat1", password="pw")
     Product.objects.create(
         user_id=u.pk,
@@ -512,28 +512,38 @@ def test_in_catalog_haystacks_contain_against_user_catalog():
         format="1 L",
         emoji="🥛",
     )
-    bundles = load_user_catalog_in_catalog_bundles(user_id=u.pk)
-    assert in_catalog_haystacks_contain(
+    catalog_std = load_user_catalog_standard_names_normalized(user_id=u.pk)
+    assert candidate_in_user_catalog_by_standard_name(
         name="Leche 1 L",
         standard_name="Leche entera",
         brand="Colún",
-        in_catalog_bundles=bundles,
+        catalog_standard_names=catalog_std,
     )
-    assert not in_catalog_haystacks_contain(
+    assert candidate_in_user_catalog_by_standard_name(
+        name="",
+        standard_name="LECHE ENTERA",
+        brand="",
+        catalog_standard_names=catalog_std,
+    )
+    assert candidate_in_user_catalog_by_standard_name(
+        name="",
+        standard_name="Leche entera\u0301",
+        brand="",
+        catalog_standard_names=catalog_std,
+    )
+    assert not candidate_in_user_catalog_by_standard_name(
         name="Arroz",
         standard_name="",
         brand="",
-        in_catalog_bundles=bundles,
+        catalog_standard_names=catalog_std,
     )
 
 
-def test_in_catalog_haystacks_contain_rejects_when_haystack_misaligned():
-    # Per-field fuzzy can pass; combined haystack must still align.
-    assert not in_catalog_haystacks_contain(
-        name="match",
-        standard_name="",
+def test_candidate_in_user_catalog_false_when_standard_name_differs():
+    catalog = frozenset({"leche entera"})
+    assert not candidate_in_user_catalog_by_standard_name(
+        name="Leche 1 L",
+        standard_name="Leche descremada",
         brand="",
-        in_catalog_bundles=[
-            (("matchme",), "zzzzzzzz"),
-        ],
+        catalog_standard_names=catalog,
     )
