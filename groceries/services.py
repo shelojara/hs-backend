@@ -156,9 +156,12 @@ def find_product_candidates(
             ingredients = gemini_service.fetch_recipe_common_ingredients_chile(
                 recipe_query=normalized,
             )
+            catalog_names = load_user_catalog_standard_names_normalized(user_id=user_id)
             out: list[MerchantProductInfo] = []
             for line in ingredients:
-                if _ingredient_string_matches_user_catalog(line, user_id=user_id):
+                if _ingredient_string_matches_user_catalog(
+                    line, catalog_standard_names=catalog_names
+                ):
                     continue
                 rows = gemini_service.fetch_merchant_product_candidates(
                     query=line,
@@ -420,24 +423,16 @@ def candidate_in_user_catalog_by_standard_name(
     return False
 
 
-def _ingredient_string_matches_user_catalog(ingredient: str, *, user_id: int) -> bool:
-    """True when *ingredient* would fuzzy-match a catalog row in ``list_products`` (same gate, no basket filter)."""
-    query_normalized = _normalize_for_product_search(ingredient.strip())
-    if not query_normalized:
-        return False
-    for product in Product.objects.filter(user_id=user_id).iterator(chunk_size=500):
-        field_strings = _product_search_field_strings(
-            product.name, product.standard_name, product.brand
-        )
-        if not field_strings:
-            continue
-        weighted_ratio = max(
-            _field_fuzzy_gate_score(query_normalized, field_text)
-            for field_text in field_strings
-        )
-        if weighted_ratio >= _MIN_PRODUCT_SEARCH_WEIGHTED_RATIO:
-            return True
-    return False
+def _ingredient_string_matches_user_catalog(
+    ingredient: str, *, catalog_standard_names: frozenset[str]
+) -> bool:
+    """True when *ingredient* matches *GetSearch* ``in_catalog`` rule (folded name/standard_name vs catalog ``standard_name``)."""
+    return candidate_in_user_catalog_by_standard_name(
+        name=ingredient,
+        standard_name=ingredient,
+        brand="",
+        catalog_standard_names=catalog_standard_names,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1121,10 +1116,13 @@ def run_product_search_job(*, search_id: int) -> None:
                 search.completed_at = timezone.now()
                 search.save(update_fields=["kind", "status", "completed_at"])
                 return
+            catalog_names = load_user_catalog_standard_names_normalized(user_id=user_id)
             to_enqueue = [
                 line
                 for line in ingredients
-                if not _ingredient_string_matches_user_catalog(line, user_id=user_id)
+                if not _ingredient_string_matches_user_catalog(
+                    line, catalog_standard_names=catalog_names
+                )
             ]
             if not to_enqueue:
                 now = timezone.now()

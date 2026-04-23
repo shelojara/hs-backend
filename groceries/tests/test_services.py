@@ -166,7 +166,7 @@ def test_find_product_candidates_recipe_lists_ingredients_then_product_fetch_per
     "groceries.services.gemini_service.classify_search_query_kind",
     return_value="recipe",
 )
-def test_find_product_candidates_recipe_skips_ingredients_already_in_catalog(
+def test_find_product_candidates_recipe_skips_ingredients_when_standard_name_in_catalog(
     _mock_kind,
     _mock_ingredients,
     mock_plain_fetch,
@@ -174,8 +174,8 @@ def test_find_product_candidates_recipe_skips_ingredients_already_in_catalog(
     u = _user(username="find_recipe_skip")
     Product.objects.create(
         user_id=u.pk,
-        name="Huevos",
-        standard_name="Huevos de gallina",
+        name="Docena",
+        standard_name="Huevos",
     )
 
     def _fake_fetch(*, query, **kwargs):
