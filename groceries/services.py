@@ -1416,3 +1416,11 @@ def create_recipe_from_title_and_notes(
             ],
         )
     return recipe
+
+
+def get_recipe(*, recipe_id: int, user_id: int) -> Recipe:
+    """Return user's recipe with ingredients and steps prefetched."""
+    return Recipe.objects.prefetch_related("ingredients", "steps").get(
+        pk=recipe_id,
+        user_id=user_id,
+    )

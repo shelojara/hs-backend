@@ -25,6 +25,7 @@ from groceries.services import (
     basket_product_lines,
     create_product_from_candidate,
     create_recipe_from_title_and_notes,
+    get_recipe,
     delete_product,
     delete_product_from_basket,
     get_current_basket,
@@ -1449,3 +1450,20 @@ def test_create_recipe_from_title_and_notes_empty_title_raises():
     u = _user()
     with pytest.raises(ValueError, match="title"):
         create_recipe_from_title_and_notes(title="   ", notes="", user_id=u.pk)
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_recipe_full_chile")
+def test_get_recipe_returns_row_for_owner(mock_fetch):
+    u = _user(username="chef2")
+    u2 = _user(username="other")
+    mock_fetch.return_value = RecipeFullFromGemini(
+        ingredients=(RecipeIngredientLine(name="Ajo", amount="2 dientes"),),
+        steps=("Picar.",),
+    )
+    r = create_recipe_from_title_and_notes(title="Salsa", notes="", user_id=u.pk)
+    out = get_recipe(recipe_id=r.pk, user_id=u.pk)
+    assert out.pk == r.pk
+    assert list(out.ingredients.values_list("name", flat=True)) == ["Ajo"]
+    with pytest.raises(Recipe.DoesNotExist):
+        get_recipe(recipe_id=r.pk, user_id=u2.pk)

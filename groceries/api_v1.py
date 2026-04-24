@@ -26,6 +26,8 @@ from groceries.schemas import (
     CreateProductFromCandidateResponse,
     GetCurrentBasketRequest,
     GetCurrentBasketResponse,
+    GetRecipeRequest,
+    GetRecipeResponse,
     GetSearchRequest,
     GetSearchResponse,
     GetWhiteboardRequest,
@@ -482,9 +484,19 @@ def create_recipe_from_gemini(request, payload: CreateRecipeFromGeminiRequest):
         raise HttpError(400, str(exc)) from exc
     except RecipeGenerationFailedError as exc:
         raise HttpError(502, str(exc)) from exc
+    return CreateRecipeFromGeminiResponse(recipe_id=recipe.pk)
 
-    recipe = Recipe.objects.prefetch_related("ingredients", "steps").get(pk=recipe.pk)
-    return CreateRecipeFromGeminiResponse(
+
+@router.post("/v1.Groceries.GetRecipe", response=GetRecipeResponse)
+def get_recipe(request, payload: GetRecipeRequest):
+    try:
+        recipe = services.get_recipe(
+            recipe_id=payload.recipe_id,
+            user_id=request.auth.pk,
+        )
+    except Recipe.DoesNotExist as exc:
+        raise HttpError(404, "Recipe not found.") from exc
+    return GetRecipeResponse(
         recipe_id=recipe.pk,
         title=recipe.title,
         notes=recipe.notes,

@@ -331,6 +331,14 @@ class CreateRecipeFromGeminiRequest(Schema):
 
 class CreateRecipeFromGeminiResponse(Schema):
     recipe_id: int
+
+
+class GetRecipeRequest(Schema):
+    recipe_id: int
+
+
+class GetRecipeResponse(Schema):
+    recipe_id: int
     title: str
     notes: str
     ingredients: list[RecipeIngredientLineSchema]
