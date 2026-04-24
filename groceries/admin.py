@@ -77,7 +77,6 @@ class ProductAdmin(admin.ModelAdmin):
         "deleted_at",
     )
     list_filter = (("deleted_at", admin.EmptyFieldListFilter),)
-    search_fields = ("name", "standard_name", "brand")
     show_full_result_count = False
 
     def get_queryset(self, request):
@@ -134,8 +133,7 @@ class SearchAdmin(admin.ModelAdmin):
 class RecipeIngredientInline(admin.TabularInline):
     model = RecipeIngredient
     extra = 0
-    fields = ("order", "name", "amount", "product")
-    autocomplete_fields = ("product",)
+    fields = ("order", "name", "amount")
 
 
 class RecipeStepInline(admin.TabularInline):
@@ -147,7 +145,7 @@ class RecipeStepInline(admin.TabularInline):
 @admin.register(Recipe)
 class RecipeAdmin(admin.ModelAdmin):
     list_display = ("id", "title", "user", "updated_at")
-    search_fields = ("title", "body")
+    search_fields = ("title",)
     list_filter = ("user",)
     inlines = (RecipeIngredientInline, RecipeStepInline)
 

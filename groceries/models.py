@@ -169,10 +169,7 @@ class Whiteboard(models.Model):
 
 
 class Recipe(models.Model):
-    """User-owned saved recipe (title, notes, optional source link).
-
-    Ingredients and cooking steps live in ``RecipeIngredient`` and ``RecipeStep``.
-    """
+    """User-owned saved recipe; ingredients and steps in related tables."""
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -180,8 +177,6 @@ class Recipe(models.Model):
         related_name="recipes",
     )
     title = models.CharField(max_length=255)
-    body = models.TextField(blank=True, default="")
-    source_url = models.URLField(max_length=2048, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -207,13 +202,6 @@ class RecipeIngredient(models.Model):
         blank=True,
         default="",
         help_text="Optional quantity or measure (e.g. 2 cups, 1 tbsp).",
-    )
-    product = models.ForeignKey(
-        "Product",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="recipe_ingredient_lines",
     )
 
     class Meta:
