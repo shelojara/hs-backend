@@ -347,3 +347,13 @@ class GetRecipeRequest(Schema):
 
 class GetRecipeResponse(Schema):
     recipe: RecipeSchema
+
+
+class ListUserRecipesRequest(Schema):
+    limit: int = 50
+    cursor: str | None = None
+
+
+class ListUserRecipesResponse(Schema):
+    recipes: list[RecipeSchema]
+    next_cursor: str | None = None

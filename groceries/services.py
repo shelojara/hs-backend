@@ -13,6 +13,7 @@ from flags.state import flag_enabled
 from django.db import transaction
 from django.db.models import Count, F, Max, Prefetch, Q, QuerySet
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django_q.tasks import async_task
 from rapidfuzz import fuzz
 
@@ -87,6 +88,13 @@ class NoOpenBasketError(Exception):
 
 class RecipeGenerationFailedError(Exception):
     """Gemini returned no usable full recipe (parse empty or API error)."""
+
+
+class InvalidRecipeListCursorError(Exception):
+    """Cursor token invalid or used with wrong user."""
+
+    def __init__(self, message: str = "Invalid cursor.") -> None:
+        super().__init__(message)
 
 
 DEFAULT_LIST_LIMIT = 50
@@ -291,6 +299,46 @@ _LIST_PRODUCTS_CURSOR_PURCHASE_COUNT = "c"
 _LIST_PRODUCTS_CURSOR_NAME = "n"
 _LIST_PRODUCTS_CURSOR_PRODUCT_ID = "i"
 _LIST_PRODUCTS_CURSOR_USER_ID = "u"
+
+
+def _encode_list_user_recipes_cursor(payload: dict[str, Any]) -> str:
+    return _encode_bytes_as_url_safe_base64_without_padding(
+        json.dumps(payload, separators=(",", ":")).encode()
+    )
+
+
+def _decode_list_user_recipes_cursor(token: str) -> dict[str, Any]:
+    try:
+        raw_json = _decode_url_safe_base64_without_padding_to_bytes(token).decode()
+        return json.loads(raw_json)
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise InvalidRecipeListCursorError() from exc
+
+
+_LIST_USER_RECIPES_CURSOR_USER_ID = "u"
+_LIST_USER_RECIPES_CURSOR_UPDATED_AT = "t"
+_LIST_USER_RECIPES_CURSOR_RECIPE_ID = "i"
+
+
+def _parse_list_user_recipes_cursor_payload(
+    cursor_payload: dict[str, Any],
+    *,
+    expected_user_id: int,
+) -> tuple[str, int]:
+    """Return (``updated_at`` ISO string from token, recipe_id) after validating user."""
+    try:
+        cursor_user_id = cursor_payload[_LIST_USER_RECIPES_CURSOR_USER_ID]
+        updated_at_iso = cursor_payload[_LIST_USER_RECIPES_CURSOR_UPDATED_AT]
+        recipe_id = int(cursor_payload[_LIST_USER_RECIPES_CURSOR_RECIPE_ID])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise InvalidRecipeListCursorError() from exc
+    if cursor_user_id != expected_user_id:
+        raise InvalidRecipeListCursorError(
+            "Cursor does not match request parameters.",
+        )
+    if not isinstance(updated_at_iso, str):
+        raise InvalidRecipeListCursorError()
+    return updated_at_iso, recipe_id
 
 
 def _parse_list_products_cursor_payload(
@@ -1424,3 +1472,47 @@ def get_recipe(*, recipe_id: int, user_id: int) -> Recipe:
         pk=recipe_id,
         user_id=user_id,
     )
+
+
+def list_user_recipes(
+    *,
+    user_id: int,
+    limit: int = DEFAULT_LIST_LIMIT,
+    cursor: str | None = None,
+) -> tuple[list[Recipe], str | None]:
+    """List recipes for *user_id* with cursor pagination (newest ``updated_at`` first).
+
+    Does not prefetch ingredients or steps. Caller should not load those for list views.
+    """
+    page_size = _clamp_limit(limit)
+    qs = Recipe.objects.filter(user_id=user_id).order_by("-updated_at", "-pk")
+
+    if cursor:
+        cursor_payload = _decode_list_user_recipes_cursor(cursor)
+        updated_at_iso, cursor_recipe_id = _parse_list_user_recipes_cursor_payload(
+            cursor_payload,
+            expected_user_id=user_id,
+        )
+        cursor_updated_at = parse_datetime(updated_at_iso)
+        if cursor_updated_at is None:
+            raise InvalidRecipeListCursorError()
+        qs = qs.filter(
+            Q(updated_at__lt=cursor_updated_at)
+            | Q(updated_at=cursor_updated_at, pk__lt=cursor_recipe_id),
+        )
+
+    rows = list(qs[: page_size + 1])
+    has_next_page = len(rows) > page_size
+    page_recipes = rows[:page_size]
+
+    next_cursor = None
+    if has_next_page and page_recipes:
+        last = page_recipes[-1]
+        next_cursor = _encode_list_user_recipes_cursor(
+            {
+                _LIST_USER_RECIPES_CURSOR_USER_ID: user_id,
+                _LIST_USER_RECIPES_CURSOR_UPDATED_AT: last.updated_at.isoformat(),
+                _LIST_USER_RECIPES_CURSOR_RECIPE_ID: last.pk,
+            },
+        )
+    return page_recipes, next_cursor
