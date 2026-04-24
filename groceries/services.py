@@ -33,9 +33,8 @@ from groceries.models import (
     Search,
     SearchQueryKind,
     SearchStatus,
-    Whiteboard,
 )
-from groceries.schemas import ProductCandidateSchema, SearchResultCandidateSchema, WhiteboardLineSchema
+from groceries.schemas import ProductCandidateSchema, SearchResultCandidateSchema
 
 logger = logging.getLogger(__name__)
 
@@ -933,24 +932,6 @@ def running_low_sync_user_ids() -> list[int]:
         .values_list("user_id", flat=True)
         .distinct(),
     )
-
-
-def save_whiteboard(*, user_id: int, lines: list[WhiteboardLineSchema]) -> None:
-    """Upsert single whiteboard JSON for user."""
-    payload = [line.model_dump() for line in lines]
-    Whiteboard.objects.update_or_create(
-        user_id=user_id,
-        defaults={"data": payload},
-    )
-
-
-def get_whiteboard(*, user_id: int) -> list[WhiteboardLineSchema]:
-    """Return persisted lines, or empty list if never saved."""
-    try:
-        row = Whiteboard.objects.get(user_id=user_id)
-    except Whiteboard.DoesNotExist:
-        return []
-    return [WhiteboardLineSchema.model_validate(item) for item in row.data]
 
 
 def list_user_merchants(*, user_id: int) -> list[Merchant]:

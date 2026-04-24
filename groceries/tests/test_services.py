@@ -25,7 +25,7 @@ from groceries.models import (
     RecipeIngredient,
     RecipeStep,
 )
-from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
+from groceries.schemas import ProductCandidateSchema
 from groceries.services import (
     InvalidProductListCursorError,
     InvalidRecipeListCursorError,
@@ -43,7 +43,6 @@ from groceries.services import (
     delete_product_from_basket,
     get_current_basket,
     get_current_basket_with_products,
-    get_whiteboard,
     list_products,
     list_user_recipes,
     list_purchased_baskets,
@@ -53,7 +52,6 @@ from groceries.services import (
     purchase_single_product,
     set_product_purchase_in_open_basket,
     recheck_product_price,
-    save_whiteboard,
     running_low_sync_user_ids,
     sync_running_low_flags_for_user,
     update_product,
@@ -1391,35 +1389,6 @@ def test_running_low_sync_user_ids_distinct_owners():
     _catalog_product("q", owner=b)
     uids = running_low_sync_user_ids()
     assert sorted(uids) == sorted([a.pk, b.pk])
-
-
-@pytest.mark.django_db
-def test_get_whiteboard_empty_when_never_saved():
-    user = _user(username="wb_empty")
-    assert get_whiteboard(user_id=user.pk) == []
-
-
-@pytest.mark.django_db
-def test_save_whiteboard_round_trip_and_replace():
-    user = _user(username="wb1")
-    lines = [
-        WhiteboardLineSchema(tool="pen", points=[0.0, 1.0, 2.5], color="#000"),
-        WhiteboardLineSchema(tool="erase", points=[3.0], color="#fff"),
-    ]
-    save_whiteboard(user_id=user.pk, lines=lines)
-    out = get_whiteboard(user_id=user.pk)
-    assert len(out) == 2
-    assert out[0].tool == "pen"
-    assert out[0].points == [0.0, 1.0, 2.5]
-    assert out[0].color == "#000"
-
-    save_whiteboard(
-        user_id=user.pk,
-        lines=[WhiteboardLineSchema(tool="line", points=[], color="red")],
-    )
-    out2 = get_whiteboard(user_id=user.pk)
-    assert len(out2) == 1
-    assert out2[0].tool == "line"
 
 
 @pytest.mark.django_db
