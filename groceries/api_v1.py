@@ -41,8 +41,9 @@ from groceries.schemas import (
     ListSearchesRequest,
     ListSearchesResponse,
     MerchantSchema,
-    RecipeIngredientLineSchema,
-    RecipeStepLineSchema,
+    RecipeIngredientSchema,
+    RecipeSchema,
+    RecipeStepSchema,
     RetryEmptyCompletedSearchRequest,
     RetryEmptyCompletedSearchResponse,
     ProductSchema,
@@ -497,19 +498,21 @@ def get_recipe(request, payload: GetRecipeRequest):
     except Recipe.DoesNotExist as exc:
         raise HttpError(404, "Recipe not found.") from exc
     return GetRecipeResponse(
-        recipe_id=recipe.pk,
-        title=recipe.title,
-        notes=recipe.notes,
-        ingredients=[
-            RecipeIngredientLineSchema(
-                order=ing.order,
-                name=ing.name,
-                amount=ing.amount,
-            )
-            for ing in recipe.ingredients.all()
-        ],
-        steps=[
-            RecipeStepLineSchema(order=st.order, text=st.text)
-            for st in recipe.steps.all()
-        ],
+        recipe=RecipeSchema(
+            recipe_id=recipe.pk,
+            title=recipe.title,
+            notes=recipe.notes,
+            ingredients=[
+                RecipeIngredientSchema(
+                    order=ing.order,
+                    name=ing.name,
+                    amount=ing.amount,
+                )
+                for ing in recipe.ingredients.all()
+            ],
+            steps=[
+                RecipeStepSchema(order=st.order, text=st.text)
+                for st in recipe.steps.all()
+            ],
+        ),
     )

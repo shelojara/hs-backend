@@ -313,15 +313,23 @@ class DeleteMerchantResponse(Schema):
     pass
 
 
-class RecipeIngredientLineSchema(Schema):
+class RecipeIngredientSchema(Schema):
     order: int
     name: str
     amount: str
 
 
-class RecipeStepLineSchema(Schema):
+class RecipeStepSchema(Schema):
     order: int
     text: str
+
+
+class RecipeSchema(Schema):
+    recipe_id: int
+    title: str
+    notes: str
+    ingredients: list[RecipeIngredientSchema]
+    steps: list[RecipeStepSchema]
 
 
 class CreateRecipeFromGeminiRequest(Schema):
@@ -338,8 +346,4 @@ class GetRecipeRequest(Schema):
 
 
 class GetRecipeResponse(Schema):
-    recipe_id: int
-    title: str
-    notes: str
-    ingredients: list[RecipeIngredientLineSchema]
-    steps: list[RecipeStepLineSchema]
+    recipe: RecipeSchema
