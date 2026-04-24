@@ -579,22 +579,4 @@ def update_recipe(request, payload: UpdateRecipeRequest):
         raise HttpError(404, "Recipe not found.") from exc
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    return UpdateRecipeResponse(
-        recipe=RecipeSchema(
-            recipe_id=recipe.pk,
-            title=recipe.title,
-            notes=recipe.notes,
-            ingredients=[
-                RecipeIngredientSchema(
-                    order=ing.order,
-                    name=ing.name,
-                    amount=ing.amount,
-                )
-                for ing in recipe.ingredients.all()
-            ],
-            steps=[
-                RecipeStepSchema(order=st.order, text=st.text)
-                for st in recipe.steps.all()
-            ],
-        ),
-    )
+    return UpdateRecipeResponse(recipe_id=recipe.pk)

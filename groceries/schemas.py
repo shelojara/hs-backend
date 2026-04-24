@@ -368,7 +368,7 @@ class UpdateRecipeRequest(Schema):
 
 
 class UpdateRecipeResponse(Schema):
-    recipe: RecipeSchema
+    recipe_id: int
 
 
 class ListRecipesRequest(Schema):
