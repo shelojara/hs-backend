@@ -22,6 +22,7 @@ from groceries.favicon_service import fetch_favicon_url, normalize_website_url
 from groceries.gemini_service import MerchantProductInfo, PreferredMerchantContext
 from groceries.url_page_context import fetch_page_text_for_product_context, is_http_https_url
 from groceries.models import (
+    SEARCH_DEFAULT_EMOJI,
     Basket,
     BasketProduct,
     Merchant,
@@ -1007,6 +1008,15 @@ def _search_candidates_as_json(items: list[MerchantProductInfo]) -> list[dict[st
     return [_search_candidate_dict(p) for p in items]
 
 
+def _search_emoji_from_first_result_candidate(rows: list[dict[str, Any]]) -> str:
+    """Persisted ``Search.emoji`` follows first row's ``emoji``; blank → magnifying glass default."""
+    if rows and isinstance(rows[0], dict):
+        raw = rows[0].get("emoji")
+        if (s := str(raw or "").strip()):
+            return s
+    return SEARCH_DEFAULT_EMOJI
+
+
 def create_search(*, query: str, user_id: int) -> int:
     """Create pending root ``Search`` and enqueue Gemini worker; returns primary key."""
     normalized = query.strip()
@@ -1328,11 +1338,19 @@ def run_product_search_job(*, search_id: int) -> None:
             preferred_merchants=preferred,
             page_context=page_context,
         )
-        search.result_candidates = _search_candidates_as_json(items)
+        candidates_json = _search_candidates_as_json(items)
+        search.result_candidates = candidates_json
+        search.emoji = _search_emoji_from_first_result_candidate(candidates_json)
         search.status = SearchStatus.COMPLETED
         search.completed_at = timezone.now()
         search.save(
-            update_fields=["kind", "result_candidates", "status", "completed_at"],
+            update_fields=[
+                "kind",
+                "result_candidates",
+                "status",
+                "completed_at",
+                "emoji",
+            ],
         )
     except RuntimeError:
         logger.warning(
@@ -1386,11 +1404,18 @@ def run_ingredient_product_search_job(*, search_id: int) -> None:
                 preferred_merchants=preferred,
             )
             tagged = _candidates_tagged_with_ingredient(items, ing)
-            search.result_candidates = _search_candidates_as_json(tagged)
+            candidates_json = _search_candidates_as_json(tagged)
+            search.result_candidates = candidates_json
+            search.emoji = _search_emoji_from_first_result_candidate(candidates_json)
             search.status = SearchStatus.COMPLETED
             search.completed_at = timezone.now()
             search.save(
-                update_fields=["result_candidates", "status", "completed_at"],
+                update_fields=[
+                    "result_candidates",
+                    "status",
+                    "completed_at",
+                    "emoji",
+                ],
             )
     except RuntimeError:
         logger.warning(

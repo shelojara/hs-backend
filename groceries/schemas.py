@@ -80,6 +80,7 @@ class SearchSchema(Schema):
     search_id: int
     created_at: datetime
     query: str
+    emoji: str
     status: str
     completed_at: datetime | None
     parent_id: int | None = None
