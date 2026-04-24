@@ -359,6 +359,18 @@ class GetRecipeResponse(Schema):
     recipe: RecipeSchema
 
 
+class UpdateRecipeRequest(Schema):
+    recipe_id: int
+    title: Annotated[str, AfterValidator(_strip_nonempty_recipe_title)]
+    notes: Annotated[str, BeforeValidator(_null_str_field_to_empty)] = ""
+    ingredients: list[RecipeIngredientSchema]
+    steps: list[RecipeStepSchema]
+
+
+class UpdateRecipeResponse(Schema):
+    recipe: RecipeSchema
+
+
 class ListUserRecipesRequest(Schema):
     limit: int = 50
     cursor: str | None = None

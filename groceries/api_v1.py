@@ -65,6 +65,8 @@ from groceries.schemas import (
     UpdateMerchantResponse,
     UpdateProductRequest,
     UpdateProductResponse,
+    UpdateRecipeRequest,
+    UpdateRecipeResponse,
 )
 from groceries.models import Merchant, Product, Recipe, Search
 from groceries.services import (
@@ -528,6 +530,56 @@ def get_recipe(request, payload: GetRecipeRequest):
     except Recipe.DoesNotExist as exc:
         raise HttpError(404, "Recipe not found.") from exc
     return GetRecipeResponse(
+        recipe=RecipeSchema(
+            recipe_id=recipe.pk,
+            title=recipe.title,
+            notes=recipe.notes,
+            ingredients=[
+                RecipeIngredientSchema(
+                    order=ing.order,
+                    name=ing.name,
+                    amount=ing.amount,
+                )
+                for ing in recipe.ingredients.all()
+            ],
+            steps=[
+                RecipeStepSchema(order=st.order, text=st.text)
+                for st in recipe.steps.all()
+            ],
+        ),
+    )
+
+
+@router.post("/v1.Groceries.UpdateRecipe", response=UpdateRecipeResponse)
+def update_recipe(request, payload: UpdateRecipeRequest):
+    ing_lines = [
+        row
+        for _, row in sorted(
+            enumerate(payload.ingredients),
+            key=lambda e: (e[1].order, e[0]),
+        )
+    ]
+    step_rows = [
+        row
+        for _, row in sorted(
+            enumerate(payload.steps),
+            key=lambda e: (e[1].order, e[0]),
+        )
+    ]
+    try:
+        recipe = services.update_recipe(
+            recipe_id=payload.recipe_id,
+            user_id=request.auth.pk,
+            title=payload.title,
+            notes=payload.notes,
+            ingredient_lines=[(ing.name, ing.amount) for ing in ing_lines],
+            step_texts=[st.text for st in step_rows],
+        )
+    except Recipe.DoesNotExist as exc:
+        raise HttpError(404, "Recipe not found.") from exc
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return UpdateRecipeResponse(
         recipe=RecipeSchema(
             recipe_id=recipe.pk,
             title=recipe.title,

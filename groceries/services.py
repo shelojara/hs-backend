@@ -1474,6 +1474,76 @@ def get_recipe(*, recipe_id: int, user_id: int) -> Recipe:
     )
 
 
+def update_recipe(
+    *,
+    recipe_id: int,
+    user_id: int,
+    title: str,
+    notes: str,
+    ingredient_lines: list[tuple[str, str]],
+    step_texts: list[str],
+) -> Recipe:
+    """Replace recipe metadata, ingredients, and steps for owner's row.
+
+    *ingredient_lines* are ``(name, amount)`` pairs in display order.
+    *step_texts* are ordered cooking steps. Raises ``ValueError`` when
+    title is blank, lists empty, or any ingredient name / step text blank
+    after strip. Raises ``Recipe.DoesNotExist`` when not owned by *user_id*.
+    """
+    t = (title or "").strip()
+    if not t:
+        msg = "Recipe title must not be empty."
+        raise ValueError(msg)
+    note_clean = (notes or "").strip()
+    cleaned_ingredients: list[tuple[str, str]] = []
+    for raw_name, raw_amount in ingredient_lines:
+        name = (raw_name or "").strip()
+        if not name:
+            msg = "Each ingredient must have a non-empty name."
+            raise ValueError(msg)
+        amount = (raw_amount or "").strip()
+        cleaned_ingredients.append((name[:255], amount[:255]))
+    cleaned_steps: list[str] = []
+    for raw_text in step_texts:
+        text = (raw_text or "").strip()
+        if not text:
+            msg = "Each step must have non-empty text."
+            raise ValueError(msg)
+        cleaned_steps.append(text)
+    if not cleaned_ingredients:
+        msg = "Recipe must have at least one ingredient."
+        raise ValueError(msg)
+    if not cleaned_steps:
+        msg = "Recipe must have at least one step."
+        raise ValueError(msg)
+
+    with transaction.atomic():
+        recipe = Recipe.objects.select_for_update().get(pk=recipe_id, user_id=user_id)
+        recipe.title = t[:255]
+        recipe.notes = note_clean
+        recipe.save(update_fields=["title", "notes", "updated_at"])
+        recipe.ingredients.all().delete()
+        recipe.steps.all().delete()
+        RecipeIngredient.objects.bulk_create(
+            [
+                RecipeIngredient(
+                    recipe=recipe,
+                    order=i,
+                    name=name,
+                    amount=amount,
+                )
+                for i, (name, amount) in enumerate(cleaned_ingredients)
+            ],
+        )
+        RecipeStep.objects.bulk_create(
+            [
+                RecipeStep(recipe=recipe, order=i, text=text)
+                for i, text in enumerate(cleaned_steps)
+            ],
+        )
+    return get_recipe(recipe_id=recipe.pk, user_id=user_id)
+
+
 def list_user_recipes(
     *,
     user_id: int,

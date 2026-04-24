@@ -16,7 +16,15 @@ from groceries.gemini_service import (
     RecipeIngredientLine,
     RunningLowSuggestion,
 )
-from groceries.models import Basket, BasketProduct, Merchant, Product, Recipe
+from groceries.models import (
+    Basket,
+    BasketProduct,
+    Merchant,
+    Product,
+    Recipe,
+    RecipeIngredient,
+    RecipeStep,
+)
 from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 from groceries.services import (
     InvalidProductListCursorError,
@@ -29,6 +37,7 @@ from groceries.services import (
     create_product_from_candidate,
     create_recipe_from_title_and_notes,
     get_recipe,
+    update_recipe,
     delete_product,
     delete_product_from_basket,
     get_current_basket,
@@ -1471,6 +1480,104 @@ def test_get_recipe_returns_row_for_owner(mock_fetch):
     assert list(out.ingredients.values_list("name", flat=True)) == ["Ajo"]
     with pytest.raises(Recipe.DoesNotExist):
         get_recipe(recipe_id=r.pk, user_id=u2.pk)
+
+
+@pytest.mark.django_db
+def test_update_recipe_replaces_metadata_ingredients_and_steps():
+    u = _user(username="chef_edit")
+    r = Recipe.objects.create(user=u, title="Old title", notes="old notes")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="Salt", amount="pinch")
+    RecipeStep.objects.create(recipe=r, order=0, text="Old step.")
+
+    out = update_recipe(
+        recipe_id=r.pk,
+        user_id=u.pk,
+        title="  New title  ",
+        notes="  new notes  ",
+        ingredient_lines=[
+            ("Tomate", "2"),
+            ("Cebolla", "1"),
+        ],
+        step_texts=["Picar.", "Sofreír."],
+    )
+    assert out.title == "New title"
+    assert out.notes == "new notes"
+    names = list(out.ingredients.order_by("order").values_list("name", flat=True))
+    assert names == ["Tomate", "Cebolla"]
+    texts = list(out.steps.order_by("order").values_list("text", flat=True))
+    assert texts == ["Picar.", "Sofreír."]
+    assert list(out.ingredients.order_by("order").values_list("order", flat=True)) == [0, 1]
+    assert list(out.steps.order_by("order").values_list("order", flat=True)) == [0, 1]
+
+
+@pytest.mark.django_db
+def test_update_recipe_wrong_user_raises():
+    u = _user(username="owner_r")
+    other = _user(username="intruder_r")
+    r = Recipe.objects.create(user=u, title="Mine", notes="")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="X", amount="")
+    RecipeStep.objects.create(recipe=r, order=0, text="Do.")
+    with pytest.raises(Recipe.DoesNotExist):
+        update_recipe(
+            recipe_id=r.pk,
+            user_id=other.pk,
+            title="Stolen",
+            notes="",
+            ingredient_lines=[("Y", "")],
+            step_texts=["Go."],
+        )
+
+
+@pytest.mark.django_db
+def test_update_recipe_requires_nonempty_lists():
+    u = _user()
+    r = Recipe.objects.create(user=u, title="T", notes="")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="A", amount="")
+    RecipeStep.objects.create(recipe=r, order=0, text="S")
+    with pytest.raises(ValueError, match="ingredient"):
+        update_recipe(
+            recipe_id=r.pk,
+            user_id=u.pk,
+            title="T",
+            notes="",
+            ingredient_lines=[],
+            step_texts=["One"],
+        )
+    with pytest.raises(ValueError, match="step"):
+        update_recipe(
+            recipe_id=r.pk,
+            user_id=u.pk,
+            title="T",
+            notes="",
+            ingredient_lines=[("A", "")],
+            step_texts=[],
+        )
+
+
+@pytest.mark.django_db
+def test_update_recipe_rejects_blank_ingredient_name_or_step_text():
+    u = _user()
+    r = Recipe.objects.create(user=u, title="T", notes="")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="A", amount="")
+    RecipeStep.objects.create(recipe=r, order=0, text="S")
+    with pytest.raises(ValueError, match="name"):
+        update_recipe(
+            recipe_id=r.pk,
+            user_id=u.pk,
+            title="T",
+            notes="",
+            ingredient_lines=[("  ", "1")],
+            step_texts=["Ok"],
+        )
+    with pytest.raises(ValueError, match="step"):
+        update_recipe(
+            recipe_id=r.pk,
+            user_id=u.pk,
+            title="T",
+            notes="",
+            ingredient_lines=[("Ok", "")],
+            step_texts=["   "],
+        )
 
 
 @pytest.mark.django_db
