@@ -26,6 +26,7 @@ from groceries.services import (
     create_product_from_candidate,
     create_recipe_from_title_and_notes,
     get_recipe,
+    list_user_recipes,
     delete_product,
     delete_product_from_basket,
     get_current_basket,
@@ -1467,3 +1468,22 @@ def test_get_recipe_returns_row_for_owner(mock_fetch):
     assert list(out.ingredients.values_list("name", flat=True)) == ["Ajo"]
     with pytest.raises(Recipe.DoesNotExist):
         get_recipe(recipe_id=r.pk, user_id=u2.pk)
+
+
+@pytest.mark.django_db
+def test_list_user_recipes_empty():
+    u = _user()
+    assert list_user_recipes(user_id=u.pk) == []
+
+
+@pytest.mark.django_db
+def test_list_user_recipes_returns_only_owner_ordered_newest_first():
+    u = _user(username="chef_list")
+    u2 = _user(username="other_list")
+    r1 = Recipe.objects.create(user=u, title="First", notes="")
+    r2 = Recipe.objects.create(user=u, title="Second", notes="")
+    Recipe.objects.create(user=u2, title="Alien", notes="")
+
+    out = list_user_recipes(user_id=u.pk)
+    assert [r.pk for r in out] == [r2.pk, r1.pk]
+    assert list_user_recipes(user_id=u2.pk)[0].title == "Alien"

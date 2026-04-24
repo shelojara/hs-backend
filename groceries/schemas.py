@@ -347,3 +347,11 @@ class GetRecipeRequest(Schema):
 
 class GetRecipeResponse(Schema):
     recipe: RecipeSchema
+
+
+class ListUserRecipesRequest(Schema):
+    """No fields; POST body may be `{}` for RPC transport."""
+
+
+class ListUserRecipesResponse(Schema):
+    recipes: list[RecipeSchema]

@@ -1424,3 +1424,13 @@ def get_recipe(*, recipe_id: int, user_id: int) -> Recipe:
         pk=recipe_id,
         user_id=user_id,
     )
+
+
+def list_user_recipes(*, user_id: int) -> list[Recipe]:
+    """Return all recipes for *user_id*, newest first (model Meta ordering)."""
+    return list(
+        Recipe.objects.filter(user_id=user_id).prefetch_related(
+            "ingredients",
+            "steps",
+        ),
+    )

@@ -40,6 +40,8 @@ from groceries.schemas import (
     ListPurchasedBasketsResponse,
     ListSearchesRequest,
     ListSearchesResponse,
+    ListUserRecipesRequest,
+    ListUserRecipesResponse,
     MerchantSchema,
     RecipeIngredientSchema,
     RecipeSchema,
@@ -106,6 +108,26 @@ def _product_schema(p: Product) -> ProductSchema:
         is_custom=p.is_custom,
         purchase_count=p.purchase_count,
         running_low=p.running_low,
+    )
+
+
+def _recipe_schema(recipe: Recipe) -> RecipeSchema:
+    return RecipeSchema(
+        recipe_id=recipe.pk,
+        title=recipe.title,
+        notes=recipe.notes,
+        ingredients=[
+            RecipeIngredientSchema(
+                order=ing.order,
+                name=ing.name,
+                amount=ing.amount,
+            )
+            for ing in recipe.ingredients.all()
+        ],
+        steps=[
+            RecipeStepSchema(order=st.order, text=st.text)
+            for st in recipe.steps.all()
+        ],
     )
 
 
@@ -488,6 +510,12 @@ def create_recipe_from_gemini(request, payload: CreateRecipeFromGeminiRequest):
     return CreateRecipeFromGeminiResponse(recipe_id=recipe.pk)
 
 
+@router.post("/v1.Groceries.ListUserRecipes", response=ListUserRecipesResponse)
+def list_user_recipes(request, payload: ListUserRecipesRequest):
+    rows = services.list_user_recipes(user_id=request.auth.pk)
+    return ListUserRecipesResponse(recipes=[_recipe_schema(r) for r in rows])
+
+
 @router.post("/v1.Groceries.GetRecipe", response=GetRecipeResponse)
 def get_recipe(request, payload: GetRecipeRequest):
     try:
@@ -497,22 +525,4 @@ def get_recipe(request, payload: GetRecipeRequest):
         )
     except Recipe.DoesNotExist as exc:
         raise HttpError(404, "Recipe not found.") from exc
-    return GetRecipeResponse(
-        recipe=RecipeSchema(
-            recipe_id=recipe.pk,
-            title=recipe.title,
-            notes=recipe.notes,
-            ingredients=[
-                RecipeIngredientSchema(
-                    order=ing.order,
-                    name=ing.name,
-                    amount=ing.amount,
-                )
-                for ing in recipe.ingredients.all()
-            ],
-            steps=[
-                RecipeStepSchema(order=st.order, text=st.text)
-                for st in recipe.steps.all()
-            ],
-        ),
-    )
+    return GetRecipeResponse(recipe=_recipe_schema(recipe))
