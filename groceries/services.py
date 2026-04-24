@@ -1474,6 +1474,15 @@ def get_recipe(*, recipe_id: int, user_id: int) -> Recipe:
     )
 
 
+def delete_recipe(*, recipe_id: int, user_id: int) -> None:
+    """Hard-delete recipe owned by *user_id* (ingredients and steps cascade).
+
+    Raises ``Recipe.DoesNotExist`` when no row matches *recipe_id* and *user_id*.
+    """
+    recipe = Recipe.objects.get(pk=recipe_id, user_id=user_id)
+    recipe.delete()
+
+
 def update_recipe(
     *,
     recipe_id: int,

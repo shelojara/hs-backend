@@ -22,6 +22,8 @@ from groceries.schemas import (
     DeleteProductResponse,
     DeleteProductFromBasketRequest,
     DeleteProductFromBasketResponse,
+    DeleteRecipeRequest,
+    DeleteRecipeResponse,
     CreateProductFromCandidateRequest,
     CreateProductFromCandidateResponse,
     GetCurrentBasketRequest,
@@ -580,3 +582,15 @@ def update_recipe(request, payload: UpdateRecipeRequest):
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     return UpdateRecipeResponse(recipe_id=recipe.pk)
+
+
+@router.post("/v1.Groceries.DeleteRecipe", response=DeleteRecipeResponse)
+def delete_recipe(request, payload: DeleteRecipeRequest):
+    try:
+        services.delete_recipe(
+            recipe_id=payload.recipe_id,
+            user_id=request.auth.pk,
+        )
+    except Recipe.DoesNotExist as exc:
+        raise HttpError(404, "Recipe not found.") from exc
+    return DeleteRecipeResponse()

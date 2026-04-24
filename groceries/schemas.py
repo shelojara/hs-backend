@@ -371,6 +371,14 @@ class UpdateRecipeResponse(Schema):
     recipe_id: int
 
 
+class DeleteRecipeRequest(Schema):
+    recipe_id: int
+
+
+class DeleteRecipeResponse(Schema):
+    pass
+
+
 class ListRecipesRequest(Schema):
     limit: int = 50
     cursor: str | None = None
