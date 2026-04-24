@@ -40,8 +40,8 @@ from groceries.schemas import (
     ListPurchasedBasketsResponse,
     ListSearchesRequest,
     ListSearchesResponse,
-    ListUserRecipesRequest,
-    ListUserRecipesResponse,
+    ListRecipesRequest,
+    ListRecipesResponse,
     MerchantSchema,
     RecipeIngredientSchema,
     RecipeSchema,
@@ -504,8 +504,8 @@ def create_recipe_from_gemini(request, payload: CreateRecipeFromGeminiRequest):
     return CreateRecipeFromGeminiResponse(recipe_id=recipe.pk)
 
 
-@router.post("/v1.Groceries.ListUserRecipes", response=ListUserRecipesResponse)
-def list_user_recipes(request, payload: ListUserRecipesRequest):
+@router.post("/v1.Groceries.ListRecipes", response=ListRecipesResponse)
+def list_recipes(request, payload: ListRecipesRequest):
     try:
         rows, next_cursor = services.list_user_recipes(
             user_id=request.auth.pk,
@@ -514,7 +514,7 @@ def list_user_recipes(request, payload: ListUserRecipesRequest):
         )
     except InvalidRecipeListCursorError as exc:
         raise HttpError(400, str(exc)) from exc
-    return ListUserRecipesResponse(
+    return ListRecipesResponse(
         recipes=[_recipe_summary_schema(r) for r in rows],
         next_cursor=next_cursor,
     )
