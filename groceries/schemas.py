@@ -359,11 +359,11 @@ class GetRecipeResponse(Schema):
     recipe: RecipeSchema
 
 
-class ListUserRecipesRequest(Schema):
+class ListRecipesRequest(Schema):
     limit: int = 50
     cursor: str | None = None
 
 
-class ListUserRecipesResponse(Schema):
+class ListRecipesResponse(Schema):
     recipes: list[RecipeSummarySchema]
     next_cursor: str | None = None
