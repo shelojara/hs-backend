@@ -532,6 +532,11 @@ def get_recipe(request, payload: GetRecipeRequest):
         )
     except Recipe.DoesNotExist as exc:
         raise HttpError(404, "Recipe not found.") from exc
+    ing_rows = list(recipe.ingredients.all())
+    catalog_flags = services.recipe_ingredient_in_catalog_flags(
+        user_id=request.auth.pk,
+        ingredient_names=[ing.name for ing in ing_rows],
+    )
     return GetRecipeResponse(
         recipe=RecipeSchema(
             recipe_id=recipe.pk,
@@ -542,8 +547,9 @@ def get_recipe(request, payload: GetRecipeRequest):
                     order=ing.order,
                     name=ing.name,
                     amount=ing.amount,
+                    in_catalog=catalog_flags.get((ing.name or "").strip(), False),
                 )
-                for ing in recipe.ingredients.all()
+                for ing in ing_rows
             ],
             steps=[
                 RecipeStepSchema(order=st.order, text=st.text)

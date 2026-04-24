@@ -48,6 +48,7 @@ from groceries.services import (
     list_user_recipes,
     list_purchased_baskets,
     list_purchased_baskets_for_running_low,
+    recipe_ingredient_in_catalog_flags,
     purchase_latest_open_basket,
     purchase_single_product,
     set_product_purchase_in_open_basket,
@@ -1481,6 +1482,26 @@ def test_get_recipe_returns_row_for_owner(mock_fetch):
     assert list(out.ingredients.values_list("name", flat=True)) == ["Ajo"]
     with pytest.raises(Recipe.DoesNotExist):
         get_recipe(recipe_id=r.pk, user_id=u2.pk)
+
+
+@pytest.mark.django_db
+def test_recipe_ingredient_in_catalog_flags_icontains_standard_name():
+    u = _user(username="chef_cat")
+    Product.objects.create(
+        user=u,
+        name="Leche Colún",
+        standard_name="Leche entera 1 L",
+        brand="Colún",
+        price=Decimal("1000"),
+        format="1 L",
+    )
+    flags = recipe_ingredient_in_catalog_flags(
+        user_id=u.pk,
+        ingredient_names=["Leche", "Huevos", "  leche  "],
+    )
+    assert flags["Leche"] is True
+    assert flags["Huevos"] is False
+    assert flags["leche"] is True
 
 
 @pytest.mark.django_db
