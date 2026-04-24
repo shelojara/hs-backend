@@ -332,6 +332,16 @@ class RecipeSchema(Schema):
     steps: list[RecipeStepSchema]
 
 
+class RecipeSummarySchema(Schema):
+    """List rows: identity and metadata only (no ingredients or steps)."""
+
+    recipe_id: int
+    title: str
+    notes: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class CreateRecipeFromGeminiRequest(Schema):
     name: Annotated[str, AfterValidator(_strip_nonempty_recipe_title)]
     notes: Annotated[str, BeforeValidator(_null_str_field_to_empty)] = ""
@@ -355,5 +365,5 @@ class ListUserRecipesRequest(Schema):
 
 
 class ListUserRecipesResponse(Schema):
-    recipes: list[RecipeSchema]
+    recipes: list[RecipeSummarySchema]
     next_cursor: str | None = None

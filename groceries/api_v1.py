@@ -45,6 +45,7 @@ from groceries.schemas import (
     MerchantSchema,
     RecipeIngredientSchema,
     RecipeSchema,
+    RecipeSummarySchema,
     RecipeStepSchema,
     RetryEmptyCompletedSearchRequest,
     RetryEmptyCompletedSearchResponse,
@@ -112,14 +113,13 @@ def _product_schema(p: Product) -> ProductSchema:
     )
 
 
-def _recipe_summary_schema(recipe: Recipe) -> RecipeSchema:
-    """List rows: no ingredients/steps (use GetRecipe for full body)."""
-    return RecipeSchema(
+def _recipe_summary_schema(recipe: Recipe) -> RecipeSummarySchema:
+    return RecipeSummarySchema(
         recipe_id=recipe.pk,
         title=recipe.title,
         notes=recipe.notes,
-        ingredients=[],
-        steps=[],
+        created_at=recipe.created_at,
+        updated_at=recipe.updated_at,
     )
 
 
