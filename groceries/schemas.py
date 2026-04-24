@@ -318,6 +318,7 @@ class RecipeIngredientSchema(Schema):
     order: int
     name: str
     amount: str
+    in_catalog: bool = False
 
 
 class RecipeStepSchema(Schema):

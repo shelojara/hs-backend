@@ -486,6 +486,25 @@ def _ingredient_string_matches_user_catalog(
     )
 
 
+def recipe_ingredient_in_catalog_flags(
+    *, user_id: int, ingredient_names: list[str]
+) -> dict[str, bool]:
+    """Per stripped *ingredient_names* key: any active catalog product has ``standard_name`` containing that string (case-insensitive)."""
+    out: dict[str, bool] = {}
+    for raw in ingredient_names:
+        n = (raw or "").strip()
+        if n in out:
+            continue
+        if not n:
+            out[n] = False
+            continue
+        out[n] = Product.objects.filter(
+            user_id=user_id,
+            standard_name__icontains=n,
+        ).exists()
+    return out
+
+
 @dataclass(frozen=True, slots=True)
 class _ProductFuzzySearchRank:
     """Sort descending on ratio fields and purchase count; ascending on name and id for stability."""
