@@ -197,3 +197,23 @@ class Merchant(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+
+class Note(models.Model):
+    """User-owned free-form note (Groceries app)."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="groceries_notes",
+    )
+    body = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+
+    def __str__(self) -> str:
+        preview = (self.body or "").strip()[:60]
+        suffix = "…" if len((self.body or "").strip()) > 60 else ""
+        return f"Note(user={self.user_id}, {preview!r}{suffix})"
