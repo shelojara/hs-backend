@@ -169,7 +169,10 @@ class Whiteboard(models.Model):
 
 
 class Recipe(models.Model):
-    """User-owned saved recipe (title, free-form body, optional source link)."""
+    """User-owned saved recipe (title, notes, optional source link).
+
+    Ingredients and cooking steps live in ``RecipeIngredient`` and ``RecipeStep``.
+    """
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -187,6 +190,55 @@ class Recipe(models.Model):
 
     def __str__(self) -> str:
         return self.title
+
+
+class RecipeIngredient(models.Model):
+    """One ingredient line for a recipe (ordered)."""
+
+    recipe = models.ForeignKey(
+        Recipe,
+        on_delete=models.CASCADE,
+        related_name="ingredients",
+    )
+    order = models.PositiveIntegerField(default=0)
+    name = models.CharField(max_length=255)
+    amount = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Optional quantity or measure (e.g. 2 cups, 1 tbsp).",
+    )
+    product = models.ForeignKey(
+        "Product",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="recipe_ingredient_lines",
+    )
+
+    class Meta:
+        ordering = ("recipe", "order", "id")
+
+    def __str__(self) -> str:
+        return f"{self.name} (recipe={self.recipe_id})"
+
+
+class RecipeStep(models.Model):
+    """One numbered cooking step for a recipe (ordered)."""
+
+    recipe = models.ForeignKey(
+        Recipe,
+        on_delete=models.CASCADE,
+        related_name="steps",
+    )
+    order = models.PositiveIntegerField(default=0)
+    text = models.TextField()
+
+    class Meta:
+        ordering = ("recipe", "order", "id")
+
+    def __str__(self) -> str:
+        return f"Step {self.order} (recipe={self.recipe_id})"
 
 
 class Merchant(models.Model):

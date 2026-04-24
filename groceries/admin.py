@@ -3,7 +3,17 @@ from django.contrib import messages
 from django.db import transaction
 from django.db.models import Count
 
-from groceries.models import Basket, BasketProduct, Merchant, Product, Recipe, Search, SearchQueryKind
+from groceries.models import (
+    Basket,
+    BasketProduct,
+    Merchant,
+    Product,
+    Recipe,
+    RecipeIngredient,
+    RecipeStep,
+    Search,
+    SearchQueryKind,
+)
 
 
 @admin.action(description="Merge selected baskets into one (same owner only)")
@@ -67,6 +77,7 @@ class ProductAdmin(admin.ModelAdmin):
         "deleted_at",
     )
     list_filter = (("deleted_at", admin.EmptyFieldListFilter),)
+    search_fields = ("name", "standard_name", "brand")
     show_full_result_count = False
 
     def get_queryset(self, request):
@@ -120,11 +131,25 @@ class SearchAdmin(admin.ModelAdmin):
         return q[:80] + ("…" if len(q) > 80 else "")
 
 
+class RecipeIngredientInline(admin.TabularInline):
+    model = RecipeIngredient
+    extra = 0
+    fields = ("order", "name", "amount", "product")
+    autocomplete_fields = ("product",)
+
+
+class RecipeStepInline(admin.TabularInline):
+    model = RecipeStep
+    extra = 0
+    fields = ("order", "text")
+
+
 @admin.register(Recipe)
 class RecipeAdmin(admin.ModelAdmin):
     list_display = ("id", "title", "user", "updated_at")
     search_fields = ("title", "body")
     list_filter = ("user",)
+    inlines = (RecipeIngredientInline, RecipeStepInline)
 
 
 @admin.register(Merchant)
