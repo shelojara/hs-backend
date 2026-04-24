@@ -10,6 +10,8 @@ from groceries.schemas import (
     BasketSchema,
     CreateMerchantRequest,
     CreateMerchantResponse,
+    CreateRecipeFromGeminiRequest,
+    CreateRecipeFromGeminiResponse,
     CreateSearchRequest,
     CreateSearchResponse,
     DeleteSearchRequest,
@@ -24,6 +26,8 @@ from groceries.schemas import (
     CreateProductFromCandidateResponse,
     GetCurrentBasketRequest,
     GetCurrentBasketResponse,
+    GetRecipeRequest,
+    GetRecipeResponse,
     GetSearchRequest,
     GetSearchResponse,
     GetWhiteboardRequest,
@@ -37,6 +41,9 @@ from groceries.schemas import (
     ListSearchesRequest,
     ListSearchesResponse,
     MerchantSchema,
+    RecipeIngredientSchema,
+    RecipeSchema,
+    RecipeStepSchema,
     RetryEmptyCompletedSearchRequest,
     RetryEmptyCompletedSearchResponse,
     ProductSchema,
@@ -56,10 +63,11 @@ from groceries.schemas import (
     UpdateProductRequest,
     UpdateProductResponse,
 )
-from groceries.models import Merchant, Product, Search
+from groceries.models import Merchant, Product, Recipe, Search
 from groceries.services import (
     InvalidProductListCursorError,
     NoOpenBasketError,
+    RecipeGenerationFailedError,
 )
 
 router = Router(auth=protected_api_auth, tags=["Groceries"])
@@ -460,3 +468,51 @@ def delete_merchant(request, payload: DeleteMerchantRequest):
     except Merchant.DoesNotExist as exc:
         raise HttpError(404, "Merchant not found.") from exc
     return DeleteMerchantResponse()
+
+
+@router.post(
+    "/v1.Groceries.CreateRecipeFromGemini",
+    response=CreateRecipeFromGeminiResponse,
+)
+def create_recipe_from_gemini(request, payload: CreateRecipeFromGeminiRequest):
+    try:
+        recipe = services.create_recipe_from_title_and_notes(
+            title=payload.name,
+            notes=payload.notes,
+            user_id=request.auth.pk,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    except RecipeGenerationFailedError as exc:
+        raise HttpError(502, str(exc)) from exc
+    return CreateRecipeFromGeminiResponse(recipe_id=recipe.pk)
+
+
+@router.post("/v1.Groceries.GetRecipe", response=GetRecipeResponse)
+def get_recipe(request, payload: GetRecipeRequest):
+    try:
+        recipe = services.get_recipe(
+            recipe_id=payload.recipe_id,
+            user_id=request.auth.pk,
+        )
+    except Recipe.DoesNotExist as exc:
+        raise HttpError(404, "Recipe not found.") from exc
+    return GetRecipeResponse(
+        recipe=RecipeSchema(
+            recipe_id=recipe.pk,
+            title=recipe.title,
+            notes=recipe.notes,
+            ingredients=[
+                RecipeIngredientSchema(
+                    order=ing.order,
+                    name=ing.name,
+                    amount=ing.amount,
+                )
+                for ing in recipe.ingredients.all()
+            ],
+            steps=[
+                RecipeStepSchema(order=st.order, text=st.text)
+                for st in recipe.steps.all()
+            ],
+        ),
+    )

@@ -25,6 +25,9 @@ from groceries.models import (
     BasketProduct,
     Merchant,
     Product,
+    Recipe,
+    RecipeIngredient,
+    RecipeStep,
     Search,
     SearchQueryKind,
     SearchStatus,
@@ -80,6 +83,10 @@ class NoOpenBasketError(Exception):
 
     def __init__(self, message: str = "No open basket.") -> None:
         super().__init__(message)
+
+
+class RecipeGenerationFailedError(Exception):
+    """Gemini returned no usable full recipe (parse empty or API error)."""
 
 
 DEFAULT_LIST_LIMIT = 50
@@ -1353,3 +1360,67 @@ def run_ingredient_product_search_job(*, search_id: int) -> None:
         search.status = SearchStatus.FAILED
         search.completed_at = timezone.now()
         search.save(update_fields=["status", "completed_at"])
+
+
+def create_recipe_from_title_and_notes(
+    *,
+    title: str,
+    notes: str,
+    user_id: int,
+) -> Recipe:
+    """Persist recipe; fill ingredients and steps from Gemini (Chile-focused)."""
+    t = (title or "").strip()
+    if not t:
+        msg = "Recipe title must not be empty."
+        raise ValueError(msg)
+    note_clean = (notes or "").strip()
+
+    try:
+        full = gemini_service.fetch_recipe_full_chile(title=t, notes=note_clean)
+    except RuntimeError as exc:
+        raise RecipeGenerationFailedError(
+            "Recipe generation is unavailable (missing API key).",
+        ) from exc
+    except Exception as exc:
+        logger.exception("create_recipe_from_title_and_notes: Gemini failed")
+        raise RecipeGenerationFailedError(
+            "Recipe generation failed. Try again later.",
+        ) from exc
+
+    if full is None:
+        raise RecipeGenerationFailedError(
+            "Could not obtain a valid recipe from the model. Try again.",
+        )
+
+    with transaction.atomic():
+        recipe = Recipe.objects.create(
+            user_id=user_id,
+            title=t[:255],
+            notes=note_clean,
+        )
+        RecipeIngredient.objects.bulk_create(
+            [
+                RecipeIngredient(
+                    recipe=recipe,
+                    order=i,
+                    name=line.name[:255],
+                    amount=(line.amount or "")[:255],
+                )
+                for i, line in enumerate(full.ingredients)
+            ],
+        )
+        RecipeStep.objects.bulk_create(
+            [
+                RecipeStep(recipe=recipe, order=i, text=text)
+                for i, text in enumerate(full.steps)
+            ],
+        )
+    return recipe
+
+
+def get_recipe(*, recipe_id: int, user_id: int) -> Recipe:
+    """Return user's recipe with ingredients and steps prefetched."""
+    return Recipe.objects.prefetch_related("ingredients", "steps").get(
+        pk=recipe_id,
+        user_id=user_id,
+    )

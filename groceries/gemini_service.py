@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 FIND_PRODUCTS_MAX = 10
 # Recipe flow: cap how many common ingredients we ask Gemini to list (Chile).
 RECIPE_INGREDIENT_LIST_MAX = 20
+# Full recipe (ingredients + steps) from title/notes.
+RECIPE_FULL_INGREDIENTS_MAX = 25
+RECIPE_FULL_STEPS_MAX = 35
 # Question flow: cap related grocery product search strings (Chile).
 QUESTION_RELATED_PRODUCTS_MAX = 5
 
@@ -186,6 +189,23 @@ QUESTION_CHILE_RELATED_PRODUCTS_SYSTEM_INSTRUCTION = (
     "Order from most relevant to less central."
 )
 
+RECIPE_FULL_CHILE_JSON_SYSTEM_INSTRUCTION = (
+    "You help a home cook in Chile. Given a dish name and optional cook notes, output a complete recipe "
+    "using ingredients and preparations typical in Chile (Lider/Jumbo style supermarkets; Spanish Chile; "
+    "common Chilean products: e.g. aceite maravilla, merkén, choclo, pebre-style ideas when relevant, "
+    "crema para cocinar, harina con polvos, etc.). Prefer Chilean dishes when the name fits; otherwise "
+    "adapt the dish to Chile-available ingredients.\n"
+    "Respond with a single JSON object only — no markdown, no code fences, no other text.\n"
+    "Required keys:\n"
+    f'- "ingredients": JSON array of at most {RECIPE_FULL_INGREDIENTS_MAX} objects. Each object has '
+    '"name" (string: ingredient in Spanish Chile, short shelf-style phrase) and '
+    '"amount" (string: quantity with unit, e.g. 500 g, 2 tazas, 1 cucharada; empty string if vague).\n'
+    f'- "steps": JSON array of at most {RECIPE_FULL_STEPS_MAX} strings — ordered cooking steps in Spanish '
+    "Chile, imperative or infinitive, one clear action per string.\n"
+    "No duplicate ingredient names. Order ingredients from main to supporting. Steps must be practical "
+    "and safe (cooking times, heat)."
+)
+
 
 def merchant_product_single_system_instruction(
     *,
@@ -210,6 +230,18 @@ class MerchantProductInfo:
     emoji: str
     merchant: str = ""
     ingredient: str = ""
+
+
+@dataclass(frozen=True)
+class RecipeIngredientLine:
+    name: str
+    amount: str
+
+
+@dataclass(frozen=True)
+class RecipeFullFromGemini:
+    ingredients: tuple[RecipeIngredientLine, ...]
+    steps: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -589,6 +621,121 @@ def fetch_recipe_common_ingredients_chile(
         ),
     )
     return _parse_recipe_ingredient_string_list(response.text, max_items=lim)
+
+
+def _parse_recipe_full_chile_payload(
+    raw: str | None,
+    *,
+    max_ingredients: int,
+    max_steps: int,
+) -> RecipeFullFromGemini | None:
+    """Parse ``ingredients`` + ``steps`` object from model output; ``None`` if unusable."""
+    if not raw or max_ingredients < 1 or max_steps < 1:
+        return None
+    blob = _extract_json_object(raw)
+    if not blob:
+        return None
+    try:
+        data = json.loads(blob)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    ing_raw = data.get("ingredients")
+    if not isinstance(ing_raw, list):
+        return None
+    lines: list[RecipeIngredientLine] = []
+    seen_names: set[str] = set()
+    for item in ing_raw:
+        if len(lines) >= max_ingredients:
+            break
+        name = ""
+        amount = ""
+        if isinstance(item, str):
+            name = item.strip()
+        elif isinstance(item, dict):
+            name = _normalize_field(
+                item.get("name") or item.get("ingredient") or item.get("item"),
+                255,
+            )
+            amount = _normalize_field(
+                item.get("amount")
+                or item.get("quantity")
+                or item.get("cantidad")
+                or item.get("q"),
+                255,
+            )
+        if not name:
+            continue
+        key = name.casefold()
+        if key in seen_names:
+            continue
+        seen_names.add(key)
+        lines.append(RecipeIngredientLine(name=name, amount=amount))
+
+    steps_raw = data.get("steps")
+    if not isinstance(steps_raw, list):
+        return None
+    steps_out: list[str] = []
+    for s in steps_raw:
+        if len(steps_out) >= max_steps:
+            break
+        if isinstance(s, str):
+            t = " ".join(s.split()).strip()
+            if t:
+                steps_out.append(_clip(t, 4000))
+        elif isinstance(s, dict):
+            t = _normalize_field(
+                s.get("text") or s.get("step") or s.get("instruction"),
+                4000,
+            )
+            if t:
+                steps_out.append(t)
+    if not lines or not steps_out:
+        return None
+    return RecipeFullFromGemini(
+        ingredients=tuple(lines),
+        steps=tuple(steps_out),
+    )
+
+
+def fetch_recipe_full_chile(
+    *,
+    title: str,
+    notes: str = "",
+    max_ingredients: int = RECIPE_FULL_INGREDIENTS_MAX,
+    max_steps: int = RECIPE_FULL_STEPS_MAX,
+) -> RecipeFullFromGemini | None:
+    """Ask Gemini for full recipe (ingredient names + amounts + steps) for Chile home kitchen."""
+    name = (title or "").strip()
+    if not name:
+        return None
+    n_ing = max(1, min(max_ingredients, RECIPE_FULL_INGREDIENTS_MAX))
+    n_st = max(1, min(max_steps, RECIPE_FULL_STEPS_MAX))
+    note_block = (notes or "").strip()
+    prompt_parts = [f"Dish name: {name!r}"]
+    if note_block:
+        prompt_parts.append(f"Cook notes / constraints from user:\n{note_block}")
+    prompt_parts.append(
+        f"Return the JSON object with ingredients (max {n_ing}) and steps (max {n_st}) "
+        "as described in the system instruction.",
+    )
+    prompt = "\n\n".join(prompt_parts)
+
+    client = _get_client()
+    response = client.models.generate_content(
+        model=GEMINI_FIND_PRODUCTS_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=RECIPE_FULL_CHILE_JSON_SYSTEM_INSTRUCTION,
+            temperature=0.3,
+        ),
+    )
+    return _parse_recipe_full_chile_payload(
+        response.text,
+        max_ingredients=n_ing,
+        max_steps=n_st,
+    )
 
 
 def fetch_question_related_grocery_products_chile(

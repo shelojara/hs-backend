@@ -6,9 +6,11 @@ from groceries.gemini_service import (
     QUESTION_CHILE_RELATED_PRODUCTS_SYSTEM_INSTRUCTION,
     MerchantProductInfo,
     PreferredMerchantContext,
+    RecipeIngredientLine,
     RunningLowSuggestion,
     _parse_merchant_product_list_payload,
     _parse_merchant_product_payload,
+    _parse_recipe_full_chile_payload,
     _parse_recipe_ingredient_string_list,
     _parse_running_low_suggestions,
     _parse_search_query_kind_payload,
@@ -264,6 +266,51 @@ def test_parse_recipe_ingredient_string_list_strings_and_objects():
     raw = '["Pasta", {"ingredient": "Huevos"}, "Pasta", "  "]'
     out = _parse_recipe_ingredient_string_list(raw, max_items=10)
     assert out == ["Pasta", "Huevos"]
+
+
+def test_parse_recipe_full_chile_payload_object_and_fenced():
+    inner = (
+        '{"ingredients": [{"name": "Arroz", "amount": "1 taza"}, '
+        '{"ingredient": "Agua", "cantidad": "2 tazas"}], '
+        '"steps": ["Lavar arroz.", {"text": "Hervir."}]}'
+    )
+    raw = f"```json\n{inner}\n```"
+    out = _parse_recipe_full_chile_payload(raw, max_ingredients=10, max_steps=10)
+    assert out is not None
+    assert out.ingredients == (
+        RecipeIngredientLine(name="Arroz", amount="1 taza"),
+        RecipeIngredientLine(name="Agua", amount="2 tazas"),
+    )
+    assert out.steps == ("Lavar arroz.", "Hervir.")
+
+
+def test_parse_recipe_full_chile_payload_rejects_duplicate_ingredient_names():
+    raw = (
+        '{"ingredients": [{"name": "Sal", "amount": "1 pizca"}, {"name": "sal", "amount": "2"}], '
+        '"steps": ["Mezclar."]}'
+    )
+    out = _parse_recipe_full_chile_payload(raw, max_ingredients=10, max_steps=10)
+    assert out is not None
+    assert len(out.ingredients) == 1
+
+
+def test_parse_recipe_full_chile_payload_requires_both_lists_nonempty():
+    assert (
+        _parse_recipe_full_chile_payload(
+            '{"ingredients": [], "steps": ["Solo paso"]}',
+            max_ingredients=10,
+            max_steps=10,
+        )
+        is None
+    )
+    assert (
+        _parse_recipe_full_chile_payload(
+            '{"ingredients": [{"name": "X", "amount": ""}], "steps": []}',
+            max_ingredients=10,
+            max_steps=10,
+        )
+        is None
+    )
 
 
 def test_question_related_products_system_instruction_caps_at_five():
