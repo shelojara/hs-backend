@@ -1008,24 +1008,13 @@ def _search_candidates_as_json(items: list[MerchantProductInfo]) -> list[dict[st
     return [_search_candidate_dict(p) for p in items]
 
 
-def _result_candidates_with_search_emoji_on_first(
-    rows: list[dict[str, Any]],
-    *,
-    search_emoji: str,
-) -> list[dict[str, Any]]:
-    """First candidate ``emoji`` matches *search_emoji* (search row is source of truth for that slot)."""
-    if not rows:
-        return rows
-    em = (search_emoji or "").strip() or SEARCH_DEFAULT_EMOJI
-    out: list[dict[str, Any]] = []
-    for i, row in enumerate(rows):
-        if i == 0 and isinstance(row, dict):
-            first = dict(row)
-            first["emoji"] = em
-            out.append(first)
-        else:
-            out.append(row)
-    return out
+def _search_emoji_from_first_result_candidate(rows: list[dict[str, Any]]) -> str:
+    """Persisted ``Search.emoji`` follows first row's ``emoji``; blank → magnifying glass default."""
+    if rows and isinstance(rows[0], dict):
+        raw = rows[0].get("emoji")
+        if (s := str(raw or "").strip()):
+            return s
+    return SEARCH_DEFAULT_EMOJI
 
 
 def create_search(*, query: str, user_id: int) -> int:
@@ -1349,14 +1338,19 @@ def run_product_search_job(*, search_id: int) -> None:
             preferred_merchants=preferred,
             page_context=page_context,
         )
-        search.result_candidates = _result_candidates_with_search_emoji_on_first(
-            _search_candidates_as_json(items),
-            search_emoji=search.emoji,
-        )
+        candidates_json = _search_candidates_as_json(items)
+        search.result_candidates = candidates_json
+        search.emoji = _search_emoji_from_first_result_candidate(candidates_json)
         search.status = SearchStatus.COMPLETED
         search.completed_at = timezone.now()
         search.save(
-            update_fields=["kind", "result_candidates", "status", "completed_at"],
+            update_fields=[
+                "kind",
+                "result_candidates",
+                "status",
+                "completed_at",
+                "emoji",
+            ],
         )
     except RuntimeError:
         logger.warning(
@@ -1410,14 +1404,18 @@ def run_ingredient_product_search_job(*, search_id: int) -> None:
                 preferred_merchants=preferred,
             )
             tagged = _candidates_tagged_with_ingredient(items, ing)
-            search.result_candidates = _result_candidates_with_search_emoji_on_first(
-                _search_candidates_as_json(tagged),
-                search_emoji=search.emoji,
-            )
+            candidates_json = _search_candidates_as_json(tagged)
+            search.result_candidates = candidates_json
+            search.emoji = _search_emoji_from_first_result_candidate(candidates_json)
             search.status = SearchStatus.COMPLETED
             search.completed_at = timezone.now()
             search.save(
-                update_fields=["result_candidates", "status", "completed_at"],
+                update_fields=[
+                    "result_candidates",
+                    "status",
+                    "completed_at",
+                    "emoji",
+                ],
             )
     except RuntimeError:
         logger.warning(

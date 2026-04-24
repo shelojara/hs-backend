@@ -71,11 +71,7 @@ def test_run_product_search_job_marks_completed_with_candidates(
     _mock_kind,
 ):
     u = User.objects.create_user(username="s2", password="pw")
-    row = Search.objects.create(
-        user_id=u.pk,
-        query="leche",
-        emoji="\N{TELEPHONE RECEIVER}",
-    )
+    row = Search.objects.create(user_id=u.pk, query="leche")
     run_product_search_job(search_id=row.pk)
     row.refresh_from_db()
     assert row.status == SearchStatus.COMPLETED
@@ -88,13 +84,55 @@ def test_run_product_search_job_marks_completed_with_candidates(
             "brand": "Colún",
             "price": "1990.00",
             "format": "1 L",
-            "emoji": "\N{TELEPHONE RECEIVER}",
+            "emoji": "🥛",
             "merchant": "Lider",
             "ingredient": "",
         },
     ]
-    assert row.emoji == "\N{TELEPHONE RECEIVER}"
+    assert row.emoji == "🥛"
     _mock_kind.assert_called_once_with(query="leche")
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.classify_search_query_kind",
+    return_value="",
+)
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    return_value=[
+        MerchantProductInfo(
+            display_name="A",
+            standard_name="",
+            brand="",
+            price=None,
+            format="",
+            emoji="",
+            merchant="",
+        ),
+        MerchantProductInfo(
+            display_name="B",
+            standard_name="",
+            brand="",
+            price=None,
+            format="",
+            emoji="🧀",
+            merchant="",
+        ),
+    ],
+)
+def test_run_product_search_job_search_emoji_defaults_when_first_candidate_blank(
+    _mock_gemini,
+    _mock_kind,
+):
+    u = User.objects.create_user(username="s2b", password="pw")
+    row = Search.objects.create(user_id=u.pk, query="q")
+    run_product_search_job(search_id=row.pk)
+    row.refresh_from_db()
+    assert row.status == SearchStatus.COMPLETED
+    assert row.emoji == SEARCH_DEFAULT_EMOJI
+    assert row.result_candidates[0]["emoji"] == ""
+    assert row.result_candidates[1]["emoji"] == "🧀"
 
 
 @pytest.mark.django_db
@@ -169,8 +207,6 @@ def test_recipe_search_enqueues_parallel_ingredient_jobs_then_child_completes_pa
         task_name=f"groceries_ingredient_search:{children[0].pk}",
     )
     _mock_fetch.assert_not_called()
-    Search.all_objects.filter(pk=children[0].pk).update(emoji="\N{BREAD}")
-    children[0].refresh_from_db()
     run_ingredient_product_search_job(search_id=children[0].pk)
     row.refresh_from_db()
     children[0].refresh_from_db()
@@ -187,11 +223,12 @@ def test_recipe_search_enqueues_parallel_ingredient_jobs_then_child_completes_pa
             "brand": "",
             "price": None,
             "format": "500 g",
-            "emoji": "\N{BREAD}",
+            "emoji": "🍝",
             "merchant": "Lider",
             "ingredient": "Pasta seca",
         },
     ]
+    assert children[0].emoji == "🍝"
 
 
 @pytest.mark.django_db
@@ -397,7 +434,8 @@ def test_run_product_search_job_skip_classification_forces_product(
     assert row.status == SearchStatus.COMPLETED
     assert row.kind == "product"
     assert row.result_candidates
-    assert row.result_candidates[0]["emoji"] == SEARCH_DEFAULT_EMOJI
+    assert row.result_candidates[0]["emoji"] == "🥛"
+    assert row.emoji == "🥛"
     _mock_kind.assert_not_called()
     _mock_fetch.assert_called_once()
 
