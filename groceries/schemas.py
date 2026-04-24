@@ -250,28 +250,6 @@ class ListPurchasedBasketsResponse(Schema):
     baskets: list[BasketSchema]
 
 
-class WhiteboardLineSchema(Schema):
-    tool: str
-    points: list[float]
-    color: str
-
-
-class SaveWhiteboardRequest(Schema):
-    data: list[WhiteboardLineSchema]
-
-
-class SaveWhiteboardResponse(Schema):
-    pass
-
-
-class GetWhiteboardRequest(Schema):
-    """No fields; POST body may be `{}` for RPC transport."""
-
-
-class GetWhiteboardResponse(Schema):
-    data: list[WhiteboardLineSchema]
-
-
 class MerchantSchema(Schema):
     merchant_id: int
     name: str

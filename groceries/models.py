@@ -158,24 +158,6 @@ class BasketProduct(models.Model):
         return f"BasketProduct(basket={self.basket_id}, product={self.product_id}, purchase={self.purchase})"
 
 
-class Whiteboard(models.Model):
-    """Single persisted drawing per user (Groceries app)."""
-
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="groceries_whiteboard",
-    )
-    data = models.JSONField(default=list)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        verbose_name = "whiteboard"
-
-    def __str__(self) -> str:
-        return f"Whiteboard(user={self.user_id})"
-
-
 class Recipe(models.Model):
     """User-owned saved recipe; ingredients and steps in related tables."""
 

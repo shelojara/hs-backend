@@ -32,8 +32,6 @@ from groceries.schemas import (
     GetRecipeResponse,
     GetSearchRequest,
     GetSearchResponse,
-    GetWhiteboardRequest,
-    GetWhiteboardResponse,
     ListMerchantsRequest,
     ListMerchantsResponse,
     ListProductsRequest,
@@ -61,8 +59,6 @@ from groceries.schemas import (
     SetProductPurchaseInBasketResponse,
     RecheckProductPriceRequest,
     RecheckProductPriceResponse,
-    SaveWhiteboardRequest,
-    SaveWhiteboardResponse,
     UpdateMerchantRequest,
     UpdateMerchantResponse,
     UpdateProductRequest,
@@ -418,18 +414,6 @@ def list_purchased_baskets(request, payload: ListPurchasedBasketsRequest):
             for basket in rows
         ],
     )
-
-
-@router.post("/v1.Groceries.SaveWhiteboard", response=SaveWhiteboardResponse)
-def save_whiteboard(request, payload: SaveWhiteboardRequest):
-    services.save_whiteboard(user_id=request.auth.pk, lines=payload.data)
-    return SaveWhiteboardResponse()
-
-
-@router.post("/v1.Groceries.GetWhiteboard", response=GetWhiteboardResponse)
-def get_whiteboard(request, payload: GetWhiteboardRequest):
-    lines = services.get_whiteboard(user_id=request.auth.pk)
-    return GetWhiteboardResponse(data=lines)
 
 
 @router.post("/v1.Groceries.ListMerchants", response=ListMerchantsResponse)
