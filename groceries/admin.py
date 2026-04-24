@@ -3,7 +3,17 @@ from django.contrib import messages
 from django.db import transaction
 from django.db.models import Count
 
-from groceries.models import Basket, BasketProduct, Merchant, Product, Search, SearchQueryKind
+from groceries.models import (
+    Basket,
+    BasketProduct,
+    Merchant,
+    Product,
+    Recipe,
+    RecipeIngredient,
+    RecipeStep,
+    Search,
+    SearchQueryKind,
+)
 
 
 @admin.action(description="Merge selected baskets into one (same owner only)")
@@ -118,6 +128,26 @@ class SearchAdmin(admin.ModelAdmin):
     def query_preview(self, obj: Search) -> str:
         q = (obj.query or "").strip()
         return q[:80] + ("…" if len(q) > 80 else "")
+
+
+class RecipeIngredientInline(admin.TabularInline):
+    model = RecipeIngredient
+    extra = 0
+    fields = ("order", "name", "amount")
+
+
+class RecipeStepInline(admin.TabularInline):
+    model = RecipeStep
+    extra = 0
+    fields = ("order", "text")
+
+
+@admin.register(Recipe)
+class RecipeAdmin(admin.ModelAdmin):
+    list_display = ("id", "title", "user", "updated_at")
+    search_fields = ("title",)
+    list_filter = ("user",)
+    inlines = (RecipeIngredientInline, RecipeStepInline)
 
 
 @admin.register(Merchant)

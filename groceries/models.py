@@ -168,6 +168,67 @@ class Whiteboard(models.Model):
         return f"Whiteboard(user={self.user_id})"
 
 
+class Recipe(models.Model):
+    """User-owned saved recipe; ingredients and steps in related tables."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="recipes",
+    )
+    title = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-updated_at", "-id")
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class RecipeIngredient(models.Model):
+    """One ingredient line for a recipe (ordered)."""
+
+    recipe = models.ForeignKey(
+        Recipe,
+        on_delete=models.CASCADE,
+        related_name="ingredients",
+    )
+    order = models.PositiveIntegerField(default=0)
+    name = models.CharField(max_length=255)
+    amount = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Optional quantity or measure (e.g. 2 cups, 1 tbsp).",
+    )
+
+    class Meta:
+        ordering = ("recipe", "order", "id")
+
+    def __str__(self) -> str:
+        return f"{self.name} (recipe={self.recipe_id})"
+
+
+class RecipeStep(models.Model):
+    """One numbered cooking step for a recipe (ordered)."""
+
+    recipe = models.ForeignKey(
+        Recipe,
+        on_delete=models.CASCADE,
+        related_name="steps",
+    )
+    order = models.PositiveIntegerField(default=0)
+    text = models.TextField()
+
+    class Meta:
+        ordering = ("recipe", "order", "id")
+
+    def __str__(self) -> str:
+        return f"Step {self.order} (recipe={self.recipe_id})"
+
+
 class Merchant(models.Model):
     """User-preferred merchant (store) with optional resolved favicon URL."""
 
