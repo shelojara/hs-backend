@@ -8,12 +8,9 @@ from collections.abc import Callable
 from typing import Any, TypeAlias
 
 from dateutil.relativedelta import relativedelta
-from flags.state import flag_enabled
-
 from django.db import transaction
-from django.db.models import Count, F, Max, Prefetch, Q, QuerySet
+from django.db.models import F, Max, Prefetch, Q, QuerySet
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 from django_q.tasks import async_task
 from rapidfuzz import fuzz
 
@@ -27,11 +24,7 @@ from groceries.models import (
     BasketProduct,
     Merchant,
     Product,
-    Recipe,
-    RecipeIngredient,
-    RecipeStep,
     Search,
-    SearchQueryKind,
     SearchStatus,
     Whiteboard,
 )
@@ -53,26 +46,6 @@ def _preferred_merchant_context_for_user(user_id: int) -> list[PreferredMerchant
     ]
 
 
-def _candidates_tagged_with_ingredient(
-    items: list[MerchantProductInfo],
-    ingredient: str,
-) -> list[MerchantProductInfo]:
-    tag = (ingredient or "").strip()
-    return [
-        MerchantProductInfo(
-            display_name=p.display_name,
-            standard_name=p.standard_name,
-            brand=p.brand,
-            price=p.price,
-            format=p.format,
-            emoji=p.emoji,
-            merchant=p.merchant,
-            ingredient=tag,
-        )
-        for p in items
-    ]
-
-
 class InvalidProductListCursorError(Exception):
     """Cursor token invalid or used with wrong parameters."""
 
@@ -84,17 +57,6 @@ class NoOpenBasketError(Exception):
     """No basket with purchased_at unset exists."""
 
     def __init__(self, message: str = "No open basket.") -> None:
-        super().__init__(message)
-
-
-class RecipeGenerationFailedError(Exception):
-    """Gemini returned no usable full recipe (parse empty or API error)."""
-
-
-class InvalidRecipeListCursorError(Exception):
-    """Cursor token invalid or used with wrong user."""
-
-    def __init__(self, message: str = "Invalid cursor.") -> None:
         super().__init__(message)
 
 
@@ -302,46 +264,6 @@ _LIST_PRODUCTS_CURSOR_PRODUCT_ID = "i"
 _LIST_PRODUCTS_CURSOR_USER_ID = "u"
 
 
-def _encode_list_user_recipes_cursor(payload: dict[str, Any]) -> str:
-    return _encode_bytes_as_url_safe_base64_without_padding(
-        json.dumps(payload, separators=(",", ":")).encode()
-    )
-
-
-def _decode_list_user_recipes_cursor(token: str) -> dict[str, Any]:
-    try:
-        raw_json = _decode_url_safe_base64_without_padding_to_bytes(token).decode()
-        return json.loads(raw_json)
-    except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise InvalidRecipeListCursorError() from exc
-
-
-_LIST_USER_RECIPES_CURSOR_USER_ID = "u"
-_LIST_USER_RECIPES_CURSOR_UPDATED_AT = "t"
-_LIST_USER_RECIPES_CURSOR_RECIPE_ID = "i"
-
-
-def _parse_list_user_recipes_cursor_payload(
-    cursor_payload: dict[str, Any],
-    *,
-    expected_user_id: int,
-) -> tuple[str, int]:
-    """Return (``updated_at`` ISO string from token, recipe_id) after validating user."""
-    try:
-        cursor_user_id = cursor_payload[_LIST_USER_RECIPES_CURSOR_USER_ID]
-        updated_at_iso = cursor_payload[_LIST_USER_RECIPES_CURSOR_UPDATED_AT]
-        recipe_id = int(cursor_payload[_LIST_USER_RECIPES_CURSOR_RECIPE_ID])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise InvalidRecipeListCursorError() from exc
-    if cursor_user_id != expected_user_id:
-        raise InvalidRecipeListCursorError(
-            "Cursor does not match request parameters.",
-        )
-    if not isinstance(updated_at_iso, str):
-        raise InvalidRecipeListCursorError()
-    return updated_at_iso, recipe_id
-
-
 def _parse_list_products_cursor_payload(
     cursor_payload: dict[str, Any],
     *,
@@ -472,18 +394,6 @@ def make_user_catalog_in_catalog_check(*, user_id: int) -> CatalogInCatalogCheck
         )
 
     return check
-
-
-def _ingredient_string_matches_user_catalog(
-    ingredient: str, *, catalog_standard_names: frozenset[str]
-) -> bool:
-    """True when *ingredient* matches *GetSearch* ``in_catalog`` rule (folded name/standard_name vs catalog ``standard_name``)."""
-    return candidate_in_user_catalog_by_standard_name(
-        name=ingredient,
-        standard_name=ingredient,
-        brand="",
-        catalog_standard_names=catalog_standard_names,
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1018,7 +928,7 @@ def _search_emoji_from_first_result_candidate(rows: list[dict[str, Any]]) -> str
 
 
 def create_search(*, query: str, user_id: int) -> int:
-    """Create pending root ``Search`` and enqueue Gemini worker; returns primary key."""
+    """Create pending ``Search`` and enqueue Gemini worker; returns primary key."""
     normalized = query.strip()
     if not normalized:
         msg = "Query must not be empty."
@@ -1033,36 +943,15 @@ def create_search(*, query: str, user_id: int) -> int:
 
 
 def list_searches(*, user_id: int) -> list[Search]:
-    """Latest 10 root ``Search`` rows (*parent* unset) for *user_id*, newest first.
-
-    Each row has ``sub_search_count`` annotation: number of direct child
-    ``Search`` rows with ``deleted_at`` unset, same user.
-    """
+    """Latest 10 ``Search`` rows for *user_id*, newest first."""
     return list(
-        Search.objects.filter(user_id=user_id, parent_id__isnull=True)
-        .annotate(
-            sub_search_count=Count(
-                "child_searches",
-                filter=Q(child_searches__deleted_at__isnull=True),
-            ),
-        )
-        .order_by("-created_at", "-pk")[:10],
+        Search.objects.filter(user_id=user_id).order_by("-created_at", "-pk")[:10],
     )
 
 
 def get_search(search_id: int, *, user_id: int) -> Search:
     """Return one ``Search`` row owned by *user_id*."""
     return Search.objects.get(pk=search_id, user_id=user_id)
-
-
-def list_direct_child_searches(parent_search_id: int, *, user_id: int) -> list[Search]:
-    """Direct child ``Search`` rows for *parent_search_id*, same user, newest first."""
-    return list(
-        Search.objects.filter(
-            parent_id=parent_search_id,
-            user_id=user_id,
-        ).order_by("-created_at", "-pk"),
-    )
 
 
 def delete_search(*, search_id: int, user_id: int) -> None:
@@ -1074,12 +963,7 @@ def delete_search(*, search_id: int, user_id: int) -> None:
 
 
 def retry_empty_completed_search(*, search_id: int, user_id: int) -> None:
-    """Re-queue Gemini worker for *completed* row with empty ``result_candidates``.
-
-    Refuses recipe/question *root* rows while any active child search still exists
-    (avoids duplicate ingredient trees). Ingredient child rows always eligible when
-    completed and empty.
-    """
+    """Re-queue Gemini worker for *completed* row with empty ``result_candidates``."""
     row = Search.objects.get(pk=search_id, user_id=user_id)
     if row.status != SearchStatus.COMPLETED:
         msg = "Search is not completed; only completed empty-result searches can be retried."
@@ -1087,31 +971,14 @@ def retry_empty_completed_search(*, search_id: int, user_id: int) -> None:
     if row.result_candidates:
         msg = "Search already has result candidates; retry is not allowed."
         raise ValueError(msg)
-    if row.parent_id is None and row.kind in (
-        SearchQueryKind.RECIPE.value,
-        SearchQueryKind.QUESTION.value,
-    ):
-        if Search.objects.filter(parent_id=row.pk).exists():
-            msg = (
-                "Cannot retry this recipe or question search while sub-searches "
-                "still exist; retry a sub-search or delete sub-searches first."
-            )
-            raise ValueError(msg)
     row.status = SearchStatus.PENDING
     row.completed_at = None
     row.save(update_fields=["status", "completed_at"])
-    if row.parent_id is None:
-        async_task(
-            "groceries.scheduled_tasks.run_product_search_job",
-            row.pk,
-            task_name=f"groceries_product_search:{row.pk}",
-        )
-    else:
-        async_task(
-            "groceries.scheduled_tasks.run_ingredient_product_search_job",
-            row.pk,
-            task_name=f"groceries_ingredient_search:{row.pk}",
-        )
+    async_task(
+        "groceries.scheduled_tasks.run_product_search_job",
+        row.pk,
+        task_name=f"groceries_product_search:{row.pk}",
+    )
 
 
 def search_result_candidates_as_product_schemas(
@@ -1178,161 +1045,11 @@ def run_product_search_job(*, search_id: int) -> None:
         return
     user_id = search.user_id
     q = search.query.strip()
-    kind_val = ""
-    if flag_enabled("SKIP_SEARCH_QUERY_CLASSIFICATION"):
-        kind_val = SearchQueryKind.PRODUCT.value
-    else:
-        try:
-            kind_val = gemini_service.classify_search_query_kind(query=q)
-        except RuntimeError:
-            logger.warning(
-                "run_product_search_job: skip query kind (GEMINI unset) (search id=%s).",
-                search_id,
-            )
-        except Exception:
-            logger.exception(
-                "run_product_search_job: classify query kind failed (search id=%s)",
-                search_id,
-            )
-    search.kind = kind_val
-    if kind_val == SearchQueryKind.QUESTION.value:
-        try:
-            related = gemini_service.fetch_question_related_grocery_products_chile(
-                question=q,
-            )
-            if not related:
-                search.status = SearchStatus.FAILED
-                search.completed_at = timezone.now()
-                search.save(update_fields=["kind", "status", "completed_at"])
-                return
-            catalog_names = load_user_catalog_standard_names_normalized(user_id=user_id)
-            to_enqueue = [
-                line
-                for line in related
-                if not _ingredient_string_matches_user_catalog(
-                    line, catalog_standard_names=catalog_names
-                )
-            ]
-            if not to_enqueue:
-                now = timezone.now()
-                search.result_candidates = []
-                search.status = SearchStatus.COMPLETED
-                search.completed_at = now
-                search.save(
-                    update_fields=[
-                        "kind",
-                        "result_candidates",
-                        "status",
-                        "completed_at",
-                    ],
-                )
-                return
-            for line in to_enqueue:
-                child = Search.objects.create(
-                    user_id=user_id,
-                    parent_id=search.pk,
-                    query=line,
-                )
-                async_task(
-                    "groceries.scheduled_tasks.run_ingredient_product_search_job",
-                    child.pk,
-                    task_name=f"groceries_ingredient_search:{child.pk}",
-                )
-            now = timezone.now()
-            search.result_candidates = []
-            search.status = SearchStatus.COMPLETED
-            search.completed_at = now
-            search.save(
-                update_fields=[
-                    "kind",
-                    "result_candidates",
-                    "status",
-                    "completed_at",
-                ],
-            )
-        except RuntimeError:
-            logger.warning(
-                "run_product_search_job: GEMINI_API_KEY unset (question search id=%s).",
-                search_id,
-            )
-            search.status = SearchStatus.FAILED
-            search.completed_at = timezone.now()
-            search.save(update_fields=["kind", "status", "completed_at"])
-        except Exception:
-            logger.exception(
-                "run_product_search_job: question-related products failed (search id=%s)",
-                search_id,
-            )
-            search.status = SearchStatus.FAILED
-            search.completed_at = timezone.now()
-            search.save(update_fields=["kind", "status", "completed_at"])
-        return
-    if search.parent_id is not None:
-        logger.warning(
-            "run_product_search_job: Search id=%s has parent (use ingredient worker); skipping.",
-            search_id,
-        )
-        return
     page_context: str | None = None
     if is_http_https_url(q):
         page_context = fetch_page_text_for_product_context(q)
     preferred = _preferred_merchant_context_for_user(user_id)
     try:
-        if kind_val == SearchQueryKind.RECIPE.value:
-            ingredients = gemini_service.fetch_recipe_common_ingredients_chile(
-                recipe_query=q,
-            )
-            if not ingredients:
-                search.status = SearchStatus.FAILED
-                search.completed_at = timezone.now()
-                search.save(update_fields=["kind", "status", "completed_at"])
-                return
-            catalog_names = load_user_catalog_standard_names_normalized(user_id=user_id)
-            to_enqueue = [
-                line
-                for line in ingredients
-                if not _ingredient_string_matches_user_catalog(
-                    line, catalog_standard_names=catalog_names
-                )
-            ]
-            if not to_enqueue:
-                now = timezone.now()
-                search.result_candidates = []
-                search.status = SearchStatus.COMPLETED
-                search.completed_at = now
-                search.save(
-                    update_fields=[
-                        "kind",
-                        "result_candidates",
-                        "status",
-                        "completed_at",
-                    ],
-                )
-                return
-            for line in to_enqueue:
-                child = Search.objects.create(
-                    user_id=user_id,
-                    parent_id=search.pk,
-                    query=line,
-                )
-                async_task(
-                    "groceries.scheduled_tasks.run_ingredient_product_search_job",
-                    child.pk,
-                    task_name=f"groceries_ingredient_search:{child.pk}",
-                )
-            now = timezone.now()
-            search.result_candidates = []
-            search.status = SearchStatus.COMPLETED
-            search.completed_at = now
-            search.save(
-                update_fields=[
-                    "kind",
-                    "result_candidates",
-                    "status",
-                    "completed_at",
-                ],
-            )
-            return
         items = gemini_service.fetch_merchant_product_candidates(
             query=q,
             preferred_merchants=preferred,
@@ -1345,7 +1062,6 @@ def run_product_search_job(*, search_id: int) -> None:
         search.completed_at = timezone.now()
         search.save(
             update_fields=[
-                "kind",
                 "result_candidates",
                 "status",
                 "completed_at",
@@ -1359,264 +1075,9 @@ def run_product_search_job(*, search_id: int) -> None:
         )
         search.status = SearchStatus.FAILED
         search.completed_at = timezone.now()
-        search.save(update_fields=["kind", "status", "completed_at"])
+        search.save(update_fields=["status", "completed_at"])
     except Exception:
         logger.exception("run_product_search_job failed (search id=%s)", search_id)
         search.status = SearchStatus.FAILED
         search.completed_at = timezone.now()
-        search.save(update_fields=["kind", "status", "completed_at"])
-
-
-def run_ingredient_product_search_job(*, search_id: int) -> None:
-    """Background worker: one ingredient string → up to ``FIND_PRODUCTS_MAX`` product rows."""
-    try:
-        search = Search.all_objects.get(pk=search_id)
-    except Search.DoesNotExist:
-        logger.warning(
-            "run_ingredient_product_search_job: missing Search id=%s",
-            search_id,
-        )
-        return
-    if search.deleted_at is not None:
-        logger.warning(
-            "run_ingredient_product_search_job: Search id=%s soft-deleted; skipping.",
-            search_id,
-        )
-        return
-    if search.parent_id is None:
-        logger.warning(
-            "run_ingredient_product_search_job: Search id=%s has no parent; skipping.",
-            search_id,
-        )
-        return
-    user_id = search.user_id
-    ing = search.query.strip()
-    preferred = _preferred_merchant_context_for_user(user_id)
-    try:
-        if not ing:
-            search.status = SearchStatus.FAILED
-            search.completed_at = timezone.now()
-            search.save(update_fields=["status", "completed_at"])
-        else:
-            items = gemini_service.fetch_merchant_product_candidates(
-                query=ing,
-                max_products=gemini_service.FIND_PRODUCTS_MAX,
-                preferred_merchants=preferred,
-            )
-            tagged = _candidates_tagged_with_ingredient(items, ing)
-            candidates_json = _search_candidates_as_json(tagged)
-            search.result_candidates = candidates_json
-            search.emoji = _search_emoji_from_first_result_candidate(candidates_json)
-            search.status = SearchStatus.COMPLETED
-            search.completed_at = timezone.now()
-            search.save(
-                update_fields=[
-                    "result_candidates",
-                    "status",
-                    "completed_at",
-                    "emoji",
-                ],
-            )
-    except RuntimeError:
-        logger.warning(
-            "run_ingredient_product_search_job: GEMINI_API_KEY unset (search id=%s).",
-            search_id,
-        )
-        search.status = SearchStatus.FAILED
-        search.completed_at = timezone.now()
         search.save(update_fields=["status", "completed_at"])
-    except Exception:
-        logger.exception(
-            "run_ingredient_product_search_job failed (search id=%s)",
-            search_id,
-        )
-        search.status = SearchStatus.FAILED
-        search.completed_at = timezone.now()
-        search.save(update_fields=["status", "completed_at"])
-
-
-def create_recipe_from_title_and_notes(
-    *,
-    title: str,
-    notes: str,
-    user_id: int,
-) -> Recipe:
-    """Persist recipe; fill ingredients and steps from Gemini (Chile-focused)."""
-    t = (title or "").strip()
-    if not t:
-        msg = "Recipe title must not be empty."
-        raise ValueError(msg)
-    note_clean = (notes or "").strip()
-
-    try:
-        full = gemini_service.fetch_recipe_full_chile(title=t, notes=note_clean)
-    except RuntimeError as exc:
-        raise RecipeGenerationFailedError(
-            "Recipe generation is unavailable (missing API key).",
-        ) from exc
-    except Exception as exc:
-        logger.exception("create_recipe_from_title_and_notes: Gemini failed")
-        raise RecipeGenerationFailedError(
-            "Recipe generation failed. Try again later.",
-        ) from exc
-
-    if full is None:
-        raise RecipeGenerationFailedError(
-            "Could not obtain a valid recipe from the model. Try again.",
-        )
-
-    with transaction.atomic():
-        recipe = Recipe.objects.create(
-            user_id=user_id,
-            title=t[:255],
-            notes=note_clean,
-        )
-        RecipeIngredient.objects.bulk_create(
-            [
-                RecipeIngredient(
-                    recipe=recipe,
-                    order=i,
-                    name=line.name[:255],
-                    amount=(line.amount or "")[:255],
-                )
-                for i, line in enumerate(full.ingredients)
-            ],
-        )
-        RecipeStep.objects.bulk_create(
-            [
-                RecipeStep(recipe=recipe, order=i, text=text)
-                for i, text in enumerate(full.steps)
-            ],
-        )
-    return recipe
-
-
-def get_recipe(*, recipe_id: int, user_id: int) -> Recipe:
-    """Return user's recipe with ingredients and steps prefetched."""
-    return Recipe.objects.prefetch_related("ingredients", "steps").get(
-        pk=recipe_id,
-        user_id=user_id,
-    )
-
-
-def delete_recipe(*, recipe_id: int, user_id: int) -> None:
-    """Hard-delete recipe owned by *user_id* (ingredients and steps cascade).
-
-    Raises ``Recipe.DoesNotExist`` when no row matches *recipe_id* and *user_id*.
-    """
-    recipe = Recipe.objects.get(pk=recipe_id, user_id=user_id)
-    recipe.delete()
-
-
-def update_recipe(
-    *,
-    recipe_id: int,
-    user_id: int,
-    title: str,
-    notes: str,
-    ingredient_lines: list[tuple[str, str]],
-    step_texts: list[str],
-) -> Recipe:
-    """Replace recipe metadata, ingredients, and steps for owner's row.
-
-    *ingredient_lines* are ``(name, amount)`` pairs in display order.
-    *step_texts* are ordered cooking steps. Raises ``ValueError`` when
-    title is blank, lists empty, or any ingredient name / step text blank
-    after strip. Raises ``Recipe.DoesNotExist`` when not owned by *user_id*.
-    """
-    t = (title or "").strip()
-    if not t:
-        msg = "Recipe title must not be empty."
-        raise ValueError(msg)
-    note_clean = (notes or "").strip()
-    cleaned_ingredients: list[tuple[str, str]] = []
-    for raw_name, raw_amount in ingredient_lines:
-        name = (raw_name or "").strip()
-        if not name:
-            msg = "Each ingredient must have a non-empty name."
-            raise ValueError(msg)
-        amount = (raw_amount or "").strip()
-        cleaned_ingredients.append((name[:255], amount[:255]))
-    cleaned_steps: list[str] = []
-    for raw_text in step_texts:
-        text = (raw_text or "").strip()
-        if not text:
-            msg = "Each step must have non-empty text."
-            raise ValueError(msg)
-        cleaned_steps.append(text)
-    if not cleaned_ingredients:
-        msg = "Recipe must have at least one ingredient."
-        raise ValueError(msg)
-    if not cleaned_steps:
-        msg = "Recipe must have at least one step."
-        raise ValueError(msg)
-
-    with transaction.atomic():
-        recipe = Recipe.objects.select_for_update().get(pk=recipe_id, user_id=user_id)
-        recipe.title = t[:255]
-        recipe.notes = note_clean
-        recipe.save(update_fields=["title", "notes", "updated_at"])
-        recipe.ingredients.all().delete()
-        recipe.steps.all().delete()
-        RecipeIngredient.objects.bulk_create(
-            [
-                RecipeIngredient(
-                    recipe=recipe,
-                    order=i,
-                    name=name,
-                    amount=amount,
-                )
-                for i, (name, amount) in enumerate(cleaned_ingredients)
-            ],
-        )
-        RecipeStep.objects.bulk_create(
-            [
-                RecipeStep(recipe=recipe, order=i, text=text)
-                for i, text in enumerate(cleaned_steps)
-            ],
-        )
-    return get_recipe(recipe_id=recipe.pk, user_id=user_id)
-
-
-def list_user_recipes(
-    *,
-    user_id: int,
-    limit: int = DEFAULT_LIST_LIMIT,
-    cursor: str | None = None,
-) -> tuple[list[Recipe], str | None]:
-    """List recipes for *user_id* with cursor pagination (newest ``updated_at`` first).
-
-    Does not prefetch ingredients or steps. Caller should not load those for list views.
-    """
-    page_size = _clamp_limit(limit)
-    qs = Recipe.objects.filter(user_id=user_id).order_by("-updated_at", "-pk")
-
-    if cursor:
-        cursor_payload = _decode_list_user_recipes_cursor(cursor)
-        updated_at_iso, cursor_recipe_id = _parse_list_user_recipes_cursor_payload(
-            cursor_payload,
-            expected_user_id=user_id,
-        )
-        cursor_updated_at = parse_datetime(updated_at_iso)
-        if cursor_updated_at is None:
-            raise InvalidRecipeListCursorError()
-        qs = qs.filter(
-            Q(updated_at__lt=cursor_updated_at)
-            | Q(updated_at=cursor_updated_at, pk__lt=cursor_recipe_id),
-        )
-
-    rows = list(qs[: page_size + 1])
-    has_next_page = len(rows) > page_size
-    page_recipes = rows[:page_size]
-
-    next_cursor = None
-    if has_next_page and page_recipes:
-        last = page_recipes[-1]
-        next_cursor = _encode_list_user_recipes_cursor(
-            {
-                _LIST_USER_RECIPES_CURSOR_USER_ID: user_id,
-                _LIST_USER_RECIPES_CURSOR_UPDATED_AT: last.updated_at.isoformat(),
-                _LIST_USER_RECIPES_CURSOR_RECIPE_ID: last.pk,
-            },
-        )
-    return page_recipes, next_cursor

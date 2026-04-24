@@ -187,11 +187,8 @@ JWT_ACCESS_TOKEN_LIFETIME_SECONDS = int(
 # django-flags — https://cfpb.github.io/django-flags/
 # RUNNING_LOW_SCHEDULED_SYNC: enable groceries daily django-q enqueue for running-low
 # sync. Empty here; toggle boolean in Django admin (FlagState) when deployed.
-# SKIP_SEARCH_QUERY_CLASSIFICATION: groceries search treats every query as product
-# (no Gemini classify; recipe/question paths skipped).
 FLAGS: dict[str, list] = {
     "RUNNING_LOW_SCHEDULED_SYNC": [],
-    "SKIP_SEARCH_QUERY_CLASSIFICATION": [],
 }
 
 # django-q2 task queue — ORM broker (uses the default SQLite database)

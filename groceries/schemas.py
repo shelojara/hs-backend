@@ -29,14 +29,6 @@ def _strip_nonempty_query(v: str) -> str:
     return s
 
 
-def _strip_nonempty_recipe_title(v: str) -> str:
-    s = v.strip()
-    if not s:
-        msg = "Recipe title must not be empty."
-        raise ValueError(msg)
-    return s
-
-
 def _strip_nonempty_website(v: str) -> str:
     s = v.strip()
     if not s:
@@ -83,8 +75,6 @@ class SearchSchema(Schema):
     emoji: str
     status: str
     completed_at: datetime | None
-    parent_id: int | None = None
-    sub_search_count: int = 0
     result_candidates: list[SearchResultCandidateSchema]
 
 
@@ -98,7 +88,6 @@ class GetSearchRequest(Schema):
 
 class GetSearchResponse(Schema):
     search: SearchSchema
-    child_searches: list[SearchSchema]
 
 
 class DeleteSearchRequest(Schema):
@@ -312,79 +301,3 @@ class DeleteMerchantRequest(Schema):
 
 class DeleteMerchantResponse(Schema):
     pass
-
-
-class RecipeIngredientSchema(Schema):
-    order: int
-    name: str
-    amount: str
-
-
-class RecipeStepSchema(Schema):
-    order: int
-    text: str
-
-
-class RecipeSchema(Schema):
-    recipe_id: int
-    title: str
-    notes: str
-    ingredients: list[RecipeIngredientSchema]
-    steps: list[RecipeStepSchema]
-
-
-class RecipeSummarySchema(Schema):
-    """List rows: identity and metadata only (no ingredients or steps)."""
-
-    recipe_id: int
-    title: str
-    notes: str
-    created_at: datetime
-    updated_at: datetime
-
-
-class CreateRecipeFromGeminiRequest(Schema):
-    name: Annotated[str, AfterValidator(_strip_nonempty_recipe_title)]
-    notes: Annotated[str, BeforeValidator(_null_str_field_to_empty)] = ""
-
-
-class CreateRecipeFromGeminiResponse(Schema):
-    recipe_id: int
-
-
-class GetRecipeRequest(Schema):
-    recipe_id: int
-
-
-class GetRecipeResponse(Schema):
-    recipe: RecipeSchema
-
-
-class UpdateRecipeRequest(Schema):
-    recipe_id: int
-    title: Annotated[str, AfterValidator(_strip_nonempty_recipe_title)]
-    notes: Annotated[str, BeforeValidator(_null_str_field_to_empty)] = ""
-    ingredients: list[RecipeIngredientSchema]
-    steps: list[RecipeStepSchema]
-
-
-class UpdateRecipeResponse(Schema):
-    recipe_id: int
-
-
-class DeleteRecipeRequest(Schema):
-    recipe_id: int
-
-
-class DeleteRecipeResponse(Schema):
-    pass
-
-
-class ListRecipesRequest(Schema):
-    limit: int = 50
-    cursor: str | None = None
-
-
-class ListRecipesResponse(Schema):
-    recipes: list[RecipeSummarySchema]
-    next_cursor: str | None = None

@@ -10,8 +10,6 @@ from groceries.schemas import (
     BasketSchema,
     CreateMerchantRequest,
     CreateMerchantResponse,
-    CreateRecipeFromGeminiRequest,
-    CreateRecipeFromGeminiResponse,
     CreateSearchRequest,
     CreateSearchResponse,
     DeleteSearchRequest,
@@ -22,14 +20,10 @@ from groceries.schemas import (
     DeleteProductResponse,
     DeleteProductFromBasketRequest,
     DeleteProductFromBasketResponse,
-    DeleteRecipeRequest,
-    DeleteRecipeResponse,
     CreateProductFromCandidateRequest,
     CreateProductFromCandidateResponse,
     GetCurrentBasketRequest,
     GetCurrentBasketResponse,
-    GetRecipeRequest,
-    GetRecipeResponse,
     GetSearchRequest,
     GetSearchResponse,
     GetWhiteboardRequest,
@@ -42,13 +36,7 @@ from groceries.schemas import (
     ListPurchasedBasketsResponse,
     ListSearchesRequest,
     ListSearchesResponse,
-    ListRecipesRequest,
-    ListRecipesResponse,
     MerchantSchema,
-    RecipeIngredientSchema,
-    RecipeSchema,
-    RecipeSummarySchema,
-    RecipeStepSchema,
     RetryEmptyCompletedSearchRequest,
     RetryEmptyCompletedSearchResponse,
     ProductSchema,
@@ -67,16 +55,9 @@ from groceries.schemas import (
     UpdateMerchantResponse,
     UpdateProductRequest,
     UpdateProductResponse,
-    UpdateRecipeRequest,
-    UpdateRecipeResponse,
 )
-from groceries.models import SEARCH_DEFAULT_EMOJI, Merchant, Product, Recipe, Search
-from groceries.services import (
-    InvalidProductListCursorError,
-    InvalidRecipeListCursorError,
-    NoOpenBasketError,
-    RecipeGenerationFailedError,
-)
+from groceries.models import SEARCH_DEFAULT_EMOJI, Merchant, Product, Search
+from groceries.services import InvalidProductListCursorError, NoOpenBasketError
 
 router = Router(auth=protected_api_auth, tags=["Groceries"])
 
@@ -93,8 +74,6 @@ def _search_schema(
         emoji=(s.emoji or "").strip() or SEARCH_DEFAULT_EMOJI,
         status=s.status,
         completed_at=s.completed_at,
-        parent_id=s.parent_id,
-        sub_search_count=getattr(s, "sub_search_count", 0),
         result_candidates=services.search_result_candidates_as_product_schemas(
             s.result_candidates,
             fallback_name=s.query,
@@ -115,16 +94,6 @@ def _product_schema(p: Product) -> ProductSchema:
         is_custom=p.is_custom,
         purchase_count=p.purchase_count,
         running_low=p.running_low,
-    )
-
-
-def _recipe_summary_schema(recipe: Recipe) -> RecipeSummarySchema:
-    return RecipeSummarySchema(
-        recipe_id=recipe.pk,
-        title=recipe.title,
-        notes=recipe.notes,
-        created_at=recipe.created_at,
-        updated_at=recipe.updated_at,
     )
 
 
@@ -157,16 +126,12 @@ def get_search(request, payload: GetSearchRequest):
         s = services.get_search(search_id=payload.search_id, user_id=request.auth.pk)
     except Search.DoesNotExist as exc:
         raise HttpError(404, "Search not found.") from exc
-    children = services.list_direct_child_searches(s.pk, user_id=request.auth.pk)
     in_catalog_check = services.make_user_catalog_in_catalog_check(
         user_id=request.auth.pk,
     )
 
     return GetSearchResponse(
         search=_search_schema(s, in_catalog_check=in_catalog_check),
-        child_searches=[
-            _search_schema(c, in_catalog_check=in_catalog_check) for c in children
-        ],
     )
 
 
@@ -487,111 +452,3 @@ def delete_merchant(request, payload: DeleteMerchantRequest):
     except Merchant.DoesNotExist as exc:
         raise HttpError(404, "Merchant not found.") from exc
     return DeleteMerchantResponse()
-
-
-@router.post(
-    "/v1.Groceries.CreateRecipeFromGemini",
-    response=CreateRecipeFromGeminiResponse,
-)
-def create_recipe_from_gemini(request, payload: CreateRecipeFromGeminiRequest):
-    try:
-        recipe = services.create_recipe_from_title_and_notes(
-            title=payload.name,
-            notes=payload.notes,
-            user_id=request.auth.pk,
-        )
-    except ValueError as exc:
-        raise HttpError(400, str(exc)) from exc
-    except RecipeGenerationFailedError as exc:
-        raise HttpError(502, str(exc)) from exc
-    return CreateRecipeFromGeminiResponse(recipe_id=recipe.pk)
-
-
-@router.post("/v1.Groceries.ListRecipes", response=ListRecipesResponse)
-def list_recipes(request, payload: ListRecipesRequest):
-    try:
-        rows, next_cursor = services.list_user_recipes(
-            user_id=request.auth.pk,
-            limit=payload.limit,
-            cursor=payload.cursor,
-        )
-    except InvalidRecipeListCursorError as exc:
-        raise HttpError(400, str(exc)) from exc
-    return ListRecipesResponse(
-        recipes=[_recipe_summary_schema(r) for r in rows],
-        next_cursor=next_cursor,
-    )
-
-
-@router.post("/v1.Groceries.GetRecipe", response=GetRecipeResponse)
-def get_recipe(request, payload: GetRecipeRequest):
-    try:
-        recipe = services.get_recipe(
-            recipe_id=payload.recipe_id,
-            user_id=request.auth.pk,
-        )
-    except Recipe.DoesNotExist as exc:
-        raise HttpError(404, "Recipe not found.") from exc
-    return GetRecipeResponse(
-        recipe=RecipeSchema(
-            recipe_id=recipe.pk,
-            title=recipe.title,
-            notes=recipe.notes,
-            ingredients=[
-                RecipeIngredientSchema(
-                    order=ing.order,
-                    name=ing.name,
-                    amount=ing.amount,
-                )
-                for ing in recipe.ingredients.all()
-            ],
-            steps=[
-                RecipeStepSchema(order=st.order, text=st.text)
-                for st in recipe.steps.all()
-            ],
-        ),
-    )
-
-
-@router.post("/v1.Groceries.UpdateRecipe", response=UpdateRecipeResponse)
-def update_recipe(request, payload: UpdateRecipeRequest):
-    ing_lines = [
-        row
-        for _, row in sorted(
-            enumerate(payload.ingredients),
-            key=lambda e: (e[1].order, e[0]),
-        )
-    ]
-    step_rows = [
-        row
-        for _, row in sorted(
-            enumerate(payload.steps),
-            key=lambda e: (e[1].order, e[0]),
-        )
-    ]
-    try:
-        recipe = services.update_recipe(
-            recipe_id=payload.recipe_id,
-            user_id=request.auth.pk,
-            title=payload.title,
-            notes=payload.notes,
-            ingredient_lines=[(ing.name, ing.amount) for ing in ing_lines],
-            step_texts=[st.text for st in step_rows],
-        )
-    except Recipe.DoesNotExist as exc:
-        raise HttpError(404, "Recipe not found.") from exc
-    except ValueError as exc:
-        raise HttpError(400, str(exc)) from exc
-    return UpdateRecipeResponse(recipe_id=recipe.pk)
-
-
-@router.post("/v1.Groceries.DeleteRecipe", response=DeleteRecipeResponse)
-def delete_recipe(request, payload: DeleteRecipeRequest):
-    try:
-        services.delete_recipe(
-            recipe_id=payload.recipe_id,
-            user_id=request.auth.pk,
-        )
-    except Recipe.DoesNotExist as exc:
-        raise HttpError(404, "Recipe not found.") from exc
-    return DeleteRecipeResponse()

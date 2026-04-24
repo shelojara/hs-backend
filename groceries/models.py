@@ -13,15 +13,6 @@ class SearchStatus(models.TextChoices):
     FAILED = "failed", "Failed"
 
 
-class SearchQueryKind(models.TextChoices):
-    """Gemini classification of user search text (admin/analytics only)."""
-
-    PRODUCT = "product", "Product"
-    BRAND = "brand", "Brand"
-    RECIPE = "recipe", "Recipe"
-    QUESTION = "question", "Question"
-
-
 class ActiveSearchManager(models.Manager):
     """Rows with ``deleted_at`` unset (not soft-deleted)."""
 
@@ -37,25 +28,11 @@ class Search(models.Model):
         on_delete=models.CASCADE,
         related_name="groceries_searches",
     )
-    parent = models.ForeignKey(
-        "self",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="child_searches",
-    )
     query = models.TextField()
     emoji = models.CharField(
         max_length=64,
         blank=True,
         default=SEARCH_DEFAULT_EMOJI,
-    )
-    kind = models.CharField(
-        max_length=16,
-        choices=SearchQueryKind.choices,
-        blank=True,
-        default="",
-        db_index=True,
     )
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(
@@ -174,68 +151,6 @@ class Whiteboard(models.Model):
 
     def __str__(self) -> str:
         return f"Whiteboard(user={self.user_id})"
-
-
-class Recipe(models.Model):
-    """User-owned saved recipe; ingredients and steps in related tables."""
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="recipes",
-    )
-    title = models.CharField(max_length=255)
-    notes = models.TextField(blank=True, default="")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ("-updated_at", "-id")
-
-    def __str__(self) -> str:
-        return self.title
-
-
-class RecipeIngredient(models.Model):
-    """One ingredient line for a recipe (ordered)."""
-
-    recipe = models.ForeignKey(
-        Recipe,
-        on_delete=models.CASCADE,
-        related_name="ingredients",
-    )
-    order = models.PositiveIntegerField(default=0)
-    name = models.CharField(max_length=255)
-    amount = models.CharField(
-        max_length=255,
-        blank=True,
-        default="",
-        help_text="Optional quantity or measure (e.g. 2 cups, 1 tbsp).",
-    )
-
-    class Meta:
-        ordering = ("recipe", "order", "id")
-
-    def __str__(self) -> str:
-        return f"{self.name} (recipe={self.recipe_id})"
-
-
-class RecipeStep(models.Model):
-    """One numbered cooking step for a recipe (ordered)."""
-
-    recipe = models.ForeignKey(
-        Recipe,
-        on_delete=models.CASCADE,
-        related_name="steps",
-    )
-    order = models.PositiveIntegerField(default=0)
-    text = models.TextField()
-
-    class Meta:
-        ordering = ("recipe", "order", "id")
-
-    def __str__(self) -> str:
-        return f"Step {self.order} (recipe={self.recipe_id})"
 
 
 class Merchant(models.Model):
