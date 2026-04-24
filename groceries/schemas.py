@@ -29,6 +29,14 @@ def _strip_nonempty_query(v: str) -> str:
     return s
 
 
+def _strip_nonempty_recipe_title(v: str) -> str:
+    s = v.strip()
+    if not s:
+        msg = "Recipe title must not be empty."
+        raise ValueError(msg)
+    return s
+
+
 def _strip_nonempty_website(v: str) -> str:
     s = v.strip()
     if not s:
@@ -303,3 +311,27 @@ class DeleteMerchantRequest(Schema):
 
 class DeleteMerchantResponse(Schema):
     pass
+
+
+class RecipeIngredientLineSchema(Schema):
+    order: int
+    name: str
+    amount: str
+
+
+class RecipeStepLineSchema(Schema):
+    order: int
+    text: str
+
+
+class CreateRecipeFromGeminiRequest(Schema):
+    name: Annotated[str, AfterValidator(_strip_nonempty_recipe_title)]
+    notes: Annotated[str, BeforeValidator(_null_str_field_to_empty)] = ""
+
+
+class CreateRecipeFromGeminiResponse(Schema):
+    recipe_id: int
+    title: str
+    notes: str
+    ingredients: list[RecipeIngredientLineSchema]
+    steps: list[RecipeStepLineSchema]

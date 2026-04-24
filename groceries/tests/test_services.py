@@ -7,17 +7,24 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from groceries.gemini_service import MerchantProductInfo, RunningLowSuggestion
-from groceries.gemini_service import PreferredMerchantContext
-from groceries.models import Basket, BasketProduct, Merchant, Product
+from groceries.gemini_service import (
+    MerchantProductInfo,
+    PreferredMerchantContext,
+    RecipeFullFromGemini,
+    RecipeIngredientLine,
+    RunningLowSuggestion,
+)
+from groceries.models import Basket, BasketProduct, Merchant, Product, Recipe
 from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 from groceries.services import (
     InvalidProductListCursorError,
     LIST_PURCHASED_BASKETS_LIMIT,
     NoOpenBasketError,
+    RecipeGenerationFailedError,
     add_product_to_basket,
     basket_product_lines,
     create_product_from_candidate,
+    create_recipe_from_title_and_notes,
     delete_product,
     delete_product_from_basket,
     get_current_basket,
@@ -1397,3 +1404,48 @@ def test_save_whiteboard_round_trip_and_replace():
     out2 = get_whiteboard(user_id=user.pk)
     assert len(out2) == 1
     assert out2[0].tool == "line"
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_recipe_full_chile")
+def test_create_recipe_from_title_and_notes_persists_gemini_output(mock_fetch):
+    u = _user(username="chef1")
+    mock_fetch.return_value = RecipeFullFromGemini(
+        ingredients=(
+            RecipeIngredientLine(name="Papa", amount="500 g"),
+            RecipeIngredientLine(name="Cebolla", amount="1 unidad"),
+        ),
+        steps=("Pelar papas.", "Hervir 15 min."),
+    )
+    r = create_recipe_from_title_and_notes(
+        title="  Charquicán  ",
+        notes="  sin carne  ",
+        user_id=u.pk,
+    )
+    mock_fetch.assert_called_once_with(title="Charquicán", notes="sin carne")
+    row = Recipe.objects.get(pk=r.pk)
+    assert row.user_id == u.pk
+    assert row.title == "Charquicán"
+    assert row.notes == "sin carne"
+    ings = list(row.ingredients.order_by("order", "id"))
+    assert len(ings) == 2
+    assert ings[0].name == "Papa" and ings[0].amount == "500 g"
+    sts = list(row.steps.order_by("order", "id"))
+    assert len(sts) == 2
+    assert sts[0].text == "Pelar papas."
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_recipe_full_chile", return_value=None)
+def test_create_recipe_from_title_and_notes_raises_when_gemini_empty(_mock):
+    u = _user()
+    with pytest.raises(RecipeGenerationFailedError):
+        create_recipe_from_title_and_notes(title="X", notes="", user_id=u.pk)
+    assert Recipe.objects.filter(user_id=u.pk).count() == 0
+
+
+@pytest.mark.django_db
+def test_create_recipe_from_title_and_notes_empty_title_raises():
+    u = _user()
+    with pytest.raises(ValueError, match="title"):
+        create_recipe_from_title_and_notes(title="   ", notes="", user_id=u.pk)
