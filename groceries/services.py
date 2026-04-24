@@ -22,6 +22,7 @@ from groceries.favicon_service import fetch_favicon_url, normalize_website_url
 from groceries.gemini_service import MerchantProductInfo, PreferredMerchantContext
 from groceries.url_page_context import fetch_page_text_for_product_context, is_http_https_url
 from groceries.models import (
+    SEARCH_DEFAULT_EMOJI,
     Basket,
     BasketProduct,
     Merchant,
@@ -1007,6 +1008,26 @@ def _search_candidates_as_json(items: list[MerchantProductInfo]) -> list[dict[st
     return [_search_candidate_dict(p) for p in items]
 
 
+def _result_candidates_with_search_emoji_on_first(
+    rows: list[dict[str, Any]],
+    *,
+    search_emoji: str,
+) -> list[dict[str, Any]]:
+    """First candidate ``emoji`` matches *search_emoji* (search row is source of truth for that slot)."""
+    if not rows:
+        return rows
+    em = (search_emoji or "").strip() or SEARCH_DEFAULT_EMOJI
+    out: list[dict[str, Any]] = []
+    for i, row in enumerate(rows):
+        if i == 0 and isinstance(row, dict):
+            first = dict(row)
+            first["emoji"] = em
+            out.append(first)
+        else:
+            out.append(row)
+    return out
+
+
 def create_search(*, query: str, user_id: int) -> int:
     """Create pending root ``Search`` and enqueue Gemini worker; returns primary key."""
     normalized = query.strip()
@@ -1328,7 +1349,10 @@ def run_product_search_job(*, search_id: int) -> None:
             preferred_merchants=preferred,
             page_context=page_context,
         )
-        search.result_candidates = _search_candidates_as_json(items)
+        search.result_candidates = _result_candidates_with_search_emoji_on_first(
+            _search_candidates_as_json(items),
+            search_emoji=search.emoji,
+        )
         search.status = SearchStatus.COMPLETED
         search.completed_at = timezone.now()
         search.save(
@@ -1386,7 +1410,10 @@ def run_ingredient_product_search_job(*, search_id: int) -> None:
                 preferred_merchants=preferred,
             )
             tagged = _candidates_tagged_with_ingredient(items, ing)
-            search.result_candidates = _search_candidates_as_json(tagged)
+            search.result_candidates = _result_candidates_with_search_emoji_on_first(
+                _search_candidates_as_json(tagged),
+                search_emoji=search.emoji,
+            )
             search.status = SearchStatus.COMPLETED
             search.completed_at = timezone.now()
             search.save(

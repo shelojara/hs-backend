@@ -3,6 +3,9 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import models
 
+# Default icon for new product searches (API + first result candidate row).
+SEARCH_DEFAULT_EMOJI = "\N{LEFT-POINTING MAGNIFYING GLASS}"
+
 
 class SearchStatus(models.TextChoices):
     PENDING = "pending", "Pending"
@@ -42,6 +45,11 @@ class Search(models.Model):
         related_name="child_searches",
     )
     query = models.TextField()
+    emoji = models.CharField(
+        max_length=64,
+        blank=True,
+        default=SEARCH_DEFAULT_EMOJI,
+    )
     kind = models.CharField(
         max_length=16,
         choices=SearchQueryKind.choices,

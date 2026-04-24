@@ -8,7 +8,7 @@ from django.test import override_settings
 from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
-from groceries.models import Product, Search, SearchStatus
+from groceries.models import SEARCH_DEFAULT_EMOJI, Product, Search, SearchStatus
 from groceries.services import (
     candidate_in_user_catalog_by_standard_name,
     create_search,
@@ -35,6 +35,7 @@ def test_create_search_persists_pending_and_enqueues_worker(mock_async):
     row = Search.objects.get(pk=sid)
     assert row.user_id == u.pk
     assert row.query == "leche"
+    assert row.emoji == SEARCH_DEFAULT_EMOJI
     assert row.parent_id is None
     assert row.status == SearchStatus.PENDING
     assert row.result_candidates == []
@@ -70,7 +71,11 @@ def test_run_product_search_job_marks_completed_with_candidates(
     _mock_kind,
 ):
     u = User.objects.create_user(username="s2", password="pw")
-    row = Search.objects.create(user_id=u.pk, query="leche")
+    row = Search.objects.create(
+        user_id=u.pk,
+        query="leche",
+        emoji="\N{TELEPHONE RECEIVER}",
+    )
     run_product_search_job(search_id=row.pk)
     row.refresh_from_db()
     assert row.status == SearchStatus.COMPLETED
@@ -83,11 +88,12 @@ def test_run_product_search_job_marks_completed_with_candidates(
             "brand": "Colún",
             "price": "1990.00",
             "format": "1 L",
-            "emoji": "🥛",
+            "emoji": "\N{TELEPHONE RECEIVER}",
             "merchant": "Lider",
             "ingredient": "",
         },
     ]
+    assert row.emoji == "\N{TELEPHONE RECEIVER}"
     _mock_kind.assert_called_once_with(query="leche")
 
 
@@ -155,6 +161,7 @@ def test_recipe_search_enqueues_parallel_ingredient_jobs_then_child_completes_pa
     children = list(Search.all_objects.filter(parent_id=row.pk).order_by("pk"))
     assert len(children) == 1
     assert children[0].query == "Pasta seca"
+    assert children[0].emoji == SEARCH_DEFAULT_EMOJI
     assert children[0].status == SearchStatus.PENDING
     mock_async.assert_called_once_with(
         "groceries.scheduled_tasks.run_ingredient_product_search_job",
@@ -162,6 +169,8 @@ def test_recipe_search_enqueues_parallel_ingredient_jobs_then_child_completes_pa
         task_name=f"groceries_ingredient_search:{children[0].pk}",
     )
     _mock_fetch.assert_not_called()
+    Search.all_objects.filter(pk=children[0].pk).update(emoji="\N{BREAD}")
+    children[0].refresh_from_db()
     run_ingredient_product_search_job(search_id=children[0].pk)
     row.refresh_from_db()
     children[0].refresh_from_db()
@@ -178,7 +187,7 @@ def test_recipe_search_enqueues_parallel_ingredient_jobs_then_child_completes_pa
             "brand": "",
             "price": None,
             "format": "500 g",
-            "emoji": "🍝",
+            "emoji": "\N{BREAD}",
             "merchant": "Lider",
             "ingredient": "Pasta seca",
         },
@@ -388,6 +397,7 @@ def test_run_product_search_job_skip_classification_forces_product(
     assert row.status == SearchStatus.COMPLETED
     assert row.kind == "product"
     assert row.result_candidates
+    assert row.result_candidates[0]["emoji"] == SEARCH_DEFAULT_EMOJI
     _mock_kind.assert_not_called()
     _mock_fetch.assert_called_once()
 

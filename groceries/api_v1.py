@@ -70,7 +70,7 @@ from groceries.schemas import (
     UpdateRecipeRequest,
     UpdateRecipeResponse,
 )
-from groceries.models import Merchant, Product, Recipe, Search
+from groceries.models import SEARCH_DEFAULT_EMOJI, Merchant, Product, Recipe, Search
 from groceries.services import (
     InvalidProductListCursorError,
     InvalidRecipeListCursorError,
@@ -90,6 +90,7 @@ def _search_schema(
         search_id=s.pk,
         created_at=s.created_at,
         query=s.query,
+        emoji=(s.emoji or "").strip() or SEARCH_DEFAULT_EMOJI,
         status=s.status,
         completed_at=s.completed_at,
         parent_id=s.parent_id,
