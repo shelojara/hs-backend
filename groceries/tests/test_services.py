@@ -38,6 +38,7 @@ from groceries.services import (
     create_recipe_from_title_and_notes,
     get_recipe,
     update_recipe,
+    delete_recipe,
     delete_product,
     delete_product_from_basket,
     get_current_basket,
@@ -1480,6 +1481,31 @@ def test_get_recipe_returns_row_for_owner(mock_fetch):
     assert list(out.ingredients.values_list("name", flat=True)) == ["Ajo"]
     with pytest.raises(Recipe.DoesNotExist):
         get_recipe(recipe_id=r.pk, user_id=u2.pk)
+
+
+@pytest.mark.django_db
+def test_delete_recipe_removes_row_and_children():
+    u = _user(username="chef_del")
+    r = Recipe.objects.create(user=u, title="Gone", notes="")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="X", amount="")
+    RecipeStep.objects.create(recipe=r, order=0, text="Y")
+    rid = r.pk
+    delete_recipe(recipe_id=rid, user_id=u.pk)
+    assert Recipe.objects.filter(pk=rid).count() == 0
+    assert RecipeIngredient.objects.filter(recipe_id=rid).count() == 0
+    assert RecipeStep.objects.filter(recipe_id=rid).count() == 0
+
+
+@pytest.mark.django_db
+def test_delete_recipe_wrong_user_raises():
+    u = _user(username="owner_del")
+    other = _user(username="other_del")
+    r = Recipe.objects.create(user=u, title="Mine", notes="")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="A", amount="")
+    RecipeStep.objects.create(recipe=r, order=0, text="S")
+    with pytest.raises(Recipe.DoesNotExist):
+        delete_recipe(recipe_id=r.pk, user_id=other.pk)
+    assert Recipe.objects.filter(pk=r.pk).exists()
 
 
 @pytest.mark.django_db
