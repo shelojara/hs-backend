@@ -40,9 +40,12 @@ from groceries.schemas import (
     ListPurchasedBasketsResponse,
     ListSearchesRequest,
     ListSearchesResponse,
+    ListUserRecipesRequest,
+    ListUserRecipesResponse,
     MerchantSchema,
     RecipeIngredientSchema,
     RecipeSchema,
+    RecipeSummarySchema,
     RecipeStepSchema,
     RetryEmptyCompletedSearchRequest,
     RetryEmptyCompletedSearchResponse,
@@ -66,6 +69,7 @@ from groceries.schemas import (
 from groceries.models import Merchant, Product, Recipe, Search
 from groceries.services import (
     InvalidProductListCursorError,
+    InvalidRecipeListCursorError,
     NoOpenBasketError,
     RecipeGenerationFailedError,
 )
@@ -106,6 +110,16 @@ def _product_schema(p: Product) -> ProductSchema:
         is_custom=p.is_custom,
         purchase_count=p.purchase_count,
         running_low=p.running_low,
+    )
+
+
+def _recipe_summary_schema(recipe: Recipe) -> RecipeSummarySchema:
+    return RecipeSummarySchema(
+        recipe_id=recipe.pk,
+        title=recipe.title,
+        notes=recipe.notes,
+        created_at=recipe.created_at,
+        updated_at=recipe.updated_at,
     )
 
 
@@ -486,6 +500,22 @@ def create_recipe_from_gemini(request, payload: CreateRecipeFromGeminiRequest):
     except RecipeGenerationFailedError as exc:
         raise HttpError(502, str(exc)) from exc
     return CreateRecipeFromGeminiResponse(recipe_id=recipe.pk)
+
+
+@router.post("/v1.Groceries.ListUserRecipes", response=ListUserRecipesResponse)
+def list_user_recipes(request, payload: ListUserRecipesRequest):
+    try:
+        rows, next_cursor = services.list_user_recipes(
+            user_id=request.auth.pk,
+            limit=payload.limit,
+            cursor=payload.cursor,
+        )
+    except InvalidRecipeListCursorError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return ListUserRecipesResponse(
+        recipes=[_recipe_summary_schema(r) for r in rows],
+        next_cursor=next_cursor,
+    )
 
 
 @router.post("/v1.Groceries.GetRecipe", response=GetRecipeResponse)

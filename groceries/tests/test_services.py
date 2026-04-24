@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from groceries.gemini_service import (
@@ -18,6 +20,7 @@ from groceries.models import Basket, BasketProduct, Merchant, Product, Recipe
 from groceries.schemas import ProductCandidateSchema, WhiteboardLineSchema
 from groceries.services import (
     InvalidProductListCursorError,
+    InvalidRecipeListCursorError,
     LIST_PURCHASED_BASKETS_LIMIT,
     NoOpenBasketError,
     RecipeGenerationFailedError,
@@ -32,6 +35,7 @@ from groceries.services import (
     get_current_basket_with_products,
     get_whiteboard,
     list_products,
+    list_user_recipes,
     list_purchased_baskets,
     list_purchased_baskets_for_running_low,
     purchase_latest_open_basket,
@@ -1467,3 +1471,60 @@ def test_get_recipe_returns_row_for_owner(mock_fetch):
     assert list(out.ingredients.values_list("name", flat=True)) == ["Ajo"]
     with pytest.raises(Recipe.DoesNotExist):
         get_recipe(recipe_id=r.pk, user_id=u2.pk)
+
+
+@pytest.mark.django_db
+def test_list_user_recipes_empty():
+    u = _user()
+    rows, nxt = list_user_recipes(user_id=u.pk)
+    assert rows == [] and nxt is None
+
+
+@pytest.mark.django_db
+def test_list_user_recipes_paginates_with_cursor():
+    u = _user(username="chef_page")
+    base = timezone.now()
+    r_old = Recipe.objects.create(user=u, title="old", notes="")
+    Recipe.objects.filter(pk=r_old.pk).update(updated_at=base - timedelta(hours=2))
+    r_mid = Recipe.objects.create(user=u, title="mid", notes="")
+    Recipe.objects.filter(pk=r_mid.pk).update(updated_at=base - timedelta(hours=1))
+    r_new = Recipe.objects.create(user=u, title="new", notes="")
+    Recipe.objects.filter(pk=r_new.pk).update(updated_at=base)
+
+    p1, cur = list_user_recipes(user_id=u.pk, limit=2)
+    assert [r.pk for r in p1] == [r_new.pk, r_mid.pk]
+    assert cur is not None
+
+    p2, cur2 = list_user_recipes(user_id=u.pk, limit=2, cursor=cur)
+    assert [r.pk for r in p2] == [r_old.pk]
+    assert cur2 is None
+
+
+@pytest.mark.django_db
+def test_list_user_recipes_single_select_no_prefetch():
+    u = _user()
+    Recipe.objects.create(user=u, title="A", notes="")
+    with CaptureQueriesContext(connection) as ctx:
+        list_user_recipes(user_id=u.pk, limit=10)
+    assert len(ctx.captured_queries) == 1
+
+
+@pytest.mark.django_db
+def test_list_user_recipes_rejects_invalid_cursor():
+    u = _user()
+    with pytest.raises(InvalidRecipeListCursorError):
+        list_user_recipes(user_id=u.pk, cursor="not-a-token")
+
+
+@pytest.mark.django_db
+def test_list_user_recipes_rejects_cursor_from_different_user():
+    alice = _user(username="alice_r")
+    bob = _user(username="bob_r")
+    base = timezone.now()
+    for i in range(3):
+        r = Recipe.objects.create(user=alice, title=f"x{i}", notes="")
+        Recipe.objects.filter(pk=r.pk).update(updated_at=base - timedelta(seconds=i))
+    _, cur = list_user_recipes(user_id=alice.pk, limit=2)
+    assert cur is not None
+    with pytest.raises(InvalidRecipeListCursorError):
+        list_user_recipes(user_id=bob.pk, cursor=cur)
