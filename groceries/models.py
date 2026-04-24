@@ -168,6 +168,27 @@ class Whiteboard(models.Model):
         return f"Whiteboard(user={self.user_id})"
 
 
+class Recipe(models.Model):
+    """User-owned saved recipe (title, free-form body, optional source link)."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="recipes",
+    )
+    title = models.CharField(max_length=255)
+    body = models.TextField(blank=True, default="")
+    source_url = models.URLField(max_length=2048, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-updated_at", "-id")
+
+    def __str__(self) -> str:
+        return self.title
+
+
 class Merchant(models.Model):
     """User-preferred merchant (store) with optional resolved favicon URL."""
 
