@@ -9,6 +9,7 @@ from groceries.gemini_service import (
     RunningLowSuggestion,
     _parse_merchant_product_list_payload,
     _parse_merchant_product_payload,
+    _parse_recipe_chat_payload,
     _parse_recipe_full_chile_payload,
     _parse_running_low_suggestions,
     merchant_product_find_system_instruction,
@@ -257,6 +258,44 @@ def test_parse_recipe_full_chile_payload_rejects_duplicate_ingredient_names():
     out = _parse_recipe_full_chile_payload(raw, max_ingredients=10, max_steps=10)
     assert out is not None
     assert len(out.ingredients) == 1
+
+
+def test_parse_recipe_chat_payload_answer_only():
+    raw = '{"answer": "Usa mantequilla sin sal.", "update_recipe": false}'
+    out = _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10)
+    assert out is not None
+    assert out.answer == "Usa mantequilla sin sal."
+    assert out.update_recipe is False
+    assert out.updated is None
+
+
+def test_parse_recipe_chat_payload_with_full_update():
+    raw = (
+        '{"answer": "Listo.", "update_recipe": true, '
+        '"ingredients": [{"name": "Harina", "amount": "500 g"}], '
+        '"steps": ["Amasar.", "Hornear."]}'
+    )
+    out = _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10)
+    assert out is not None
+    assert out.update_recipe is True
+    assert out.updated is not None
+    assert out.updated.ingredients[0].name == "Harina"
+
+
+def test_parse_recipe_chat_payload_update_ignores_title_notes_in_json():
+    raw = (
+        '{"answer": "Ok.", "update_recipe": true, "title": "Ignored", "notes": "Also ignored", '
+        '"ingredients": [{"name": "X", "amount": ""}], "steps": ["Y."]}'
+    )
+    out = _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10)
+    assert out is not None
+    assert out.updated is not None
+    assert out.updated.ingredients[0].name == "X"
+
+
+def test_parse_recipe_chat_payload_update_empty_ingredients_returns_none():
+    raw = '{"answer": "Ok.", "update_recipe": true, "ingredients": [], "steps": ["Y."]}'
+    assert _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10) is None
 
 
 def test_parse_recipe_full_chile_payload_requires_both_lists_nonempty():

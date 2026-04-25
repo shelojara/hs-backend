@@ -8,6 +8,8 @@ from groceries.schemas import (
     AddProductToBasketResponse,
     BasketLineSchema,
     BasketSchema,
+    SendRecipeMessageRequest,
+    SendRecipeMessageResponse,
     CreateMerchantRequest,
     CreateMerchantResponse,
     CreateRecipeFromGeminiRequest,
@@ -501,6 +503,32 @@ def list_recipes(request, payload: ListRecipesRequest):
     )
 
 
+def _recipe_schema_for_user(*, recipe: Recipe, user_id: int) -> RecipeSchema:
+    ing_rows = list(recipe.ingredients.all())
+    catalog_flags = services.recipe_ingredient_in_catalog_flags(
+        user_id=user_id,
+        ingredient_names=[ing.name for ing in ing_rows],
+    )
+    return RecipeSchema(
+        recipe_id=recipe.pk,
+        title=recipe.title,
+        notes=recipe.notes,
+        ingredients=[
+            RecipeIngredientSchema(
+                order=ing.order,
+                name=ing.name,
+                amount=ing.amount,
+                in_catalog=catalog_flags.get((ing.name or "").strip(), False),
+            )
+            for ing in ing_rows
+        ],
+        steps=[
+            RecipeStepSchema(order=st.order, text=st.text)
+            for st in recipe.steps.all()
+        ],
+    )
+
+
 @router.post("/v1.Groceries.GetRecipe", response=GetRecipeResponse)
 def get_recipe(request, payload: GetRecipeRequest):
     try:
@@ -510,30 +538,28 @@ def get_recipe(request, payload: GetRecipeRequest):
         )
     except Recipe.DoesNotExist as exc:
         raise HttpError(404, "Recipe not found.") from exc
-    ing_rows = list(recipe.ingredients.all())
-    catalog_flags = services.recipe_ingredient_in_catalog_flags(
-        user_id=request.auth.pk,
-        ingredient_names=[ing.name for ing in ing_rows],
-    )
     return GetRecipeResponse(
-        recipe=RecipeSchema(
-            recipe_id=recipe.pk,
-            title=recipe.title,
-            notes=recipe.notes,
-            ingredients=[
-                RecipeIngredientSchema(
-                    order=ing.order,
-                    name=ing.name,
-                    amount=ing.amount,
-                    in_catalog=catalog_flags.get((ing.name or "").strip(), False),
-                )
-                for ing in ing_rows
-            ],
-            steps=[
-                RecipeStepSchema(order=st.order, text=st.text)
-                for st in recipe.steps.all()
-            ],
-        ),
+        recipe=_recipe_schema_for_user(recipe=recipe, user_id=request.auth.pk),
+    )
+
+
+@router.post("/v1.Groceries.SendRecipeMessage", response=SendRecipeMessageResponse)
+def send_recipe_message(request, payload: SendRecipeMessageRequest):
+    try:
+        result = services.recipe_chat_about_recipe(
+            recipe_id=payload.recipe_id,
+            user_id=request.auth.pk,
+            message=payload.message,
+        )
+    except Recipe.DoesNotExist as exc:
+        raise HttpError(404, "Recipe not found.") from exc
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    except RecipeGenerationFailedError as exc:
+        raise HttpError(502, str(exc)) from exc
+    return SendRecipeMessageResponse(
+        answer=result.answer,
+        recipe_updated=result.recipe_updated,
     )
 
 

@@ -198,6 +198,39 @@ class RecipeFullFromGemini:
     steps: tuple[str, ...]
 
 
+RECIPE_CHAT_ANSWER_MAX_CHARS = 800
+
+RECIPE_CHAT_JSON_SYSTEM_INSTRUCTION = (
+    "You help a home cook in Chile chat about their saved recipe (title, notes, ingredients, steps). "
+    "They may ask a short question, request substitutions, scaling, timing tips, or edits to ingredients/steps.\n"
+    "The app never changes the saved recipe title or notes from your reply — only ingredients and steps "
+    "can be replaced when updating.\n"
+    "Respond with a single JSON object only — no markdown, no code fences, no other text.\n"
+    "Required keys:\n"
+    f'- "answer" (string: concise reply in Spanish Chile when the recipe is in Spanish; '
+    f"at most {RECIPE_CHAT_ANSWER_MAX_CHARS} characters; practical and safe for cooking).\n"
+    '- "update_recipe" (boolean): true only if the user asked to change the stored recipe '
+    "(ingredients and/or steps) and you can supply replacement lists below; "
+    "false for pure Q&A, tips, or when you should not rewrite ingredients/steps.\n"
+    '- When "update_recipe" is true, also include these keys (same ingredient/step shape as our recipe generator):\n'
+    f'  - "ingredients": JSON array of at most {RECIPE_FULL_INGREDIENTS_MAX} objects with '
+    '"name" and "amount" (strings; amount may be empty),\n'
+    f'  - "steps": JSON array of at most {RECIPE_FULL_STEPS_MAX} strings (ordered steps).\n'
+    'When "update_recipe" is false, omit "ingredients" and "steps" or set them to empty arrays — prefer omitting.\n'
+    "If update_recipe is true, ingredients and steps must be non-empty lists. "
+    "No duplicate ingredient names. Keep Chile-typical ingredients when the recipe is Chilean."
+)
+
+
+@dataclass(frozen=True)
+class RecipeChatFromGemini:
+    """Model output: short reply plus optional ingredients+steps replacement."""
+
+    answer: str
+    update_recipe: bool
+    updated: RecipeFullFromGemini | None
+
+
 @dataclass(frozen=True)
 class RunningLowSuggestion:
     product_name: str
@@ -573,6 +606,57 @@ def _parse_recipe_full_chile_payload(
     )
 
 
+def _parse_recipe_chat_payload(
+    raw: str | None,
+    *,
+    max_ingredients: int,
+    max_steps: int,
+) -> RecipeChatFromGemini | None:
+    if not raw or max_ingredients < 1 or max_steps < 1:
+        return None
+    blob = _extract_json_object(raw)
+    if not blob:
+        return None
+    try:
+        data = json.loads(blob)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    answer = _normalize_field(data.get("answer"), RECIPE_CHAT_ANSWER_MAX_CHARS)
+    if not answer:
+        return None
+    want_update = data.get("update_recipe")
+    if isinstance(want_update, str):
+        want_update = want_update.strip().lower() in {"1", "true", "yes", "sí", "si"}
+    update_recipe = bool(want_update)
+    if not update_recipe:
+        return RecipeChatFromGemini(
+            answer=answer,
+            update_recipe=False,
+            updated=None,
+        )
+    inner = json.dumps(
+        {
+            "ingredients": data.get("ingredients"),
+            "steps": data.get("steps"),
+        },
+        ensure_ascii=False,
+    )
+    full = _parse_recipe_full_chile_payload(
+        inner,
+        max_ingredients=max_ingredients,
+        max_steps=max_steps,
+    )
+    if full is None:
+        return None
+    return RecipeChatFromGemini(
+        answer=answer,
+        update_recipe=True,
+        updated=full,
+    )
+
+
 def fetch_recipe_full_chile(
     *,
     title: str,
@@ -606,6 +690,52 @@ def fetch_recipe_full_chile(
         ),
     )
     return _parse_recipe_full_chile_payload(
+        response.text,
+        max_ingredients=n_ing,
+        max_steps=n_st,
+    )
+
+
+RECIPE_CHAT_USER_MESSAGE_MAX = 4000
+RECIPE_CHAT_CONTEXT_MAX = 12000
+
+
+def fetch_recipe_chat_chile(
+    *,
+    recipe_context: str,
+    user_message: str,
+    max_ingredients: int = RECIPE_FULL_INGREDIENTS_MAX,
+    max_steps: int = RECIPE_FULL_STEPS_MAX,
+) -> RecipeChatFromGemini | None:
+    """Ask Gemini for a short answer and optionally a full recipe update JSON."""
+    msg = (user_message or "").strip()
+    if not msg:
+        return None
+    msg = _clip(msg, RECIPE_CHAT_USER_MESSAGE_MAX)
+    ctx = (recipe_context or "").strip()
+    if not ctx:
+        return None
+    ctx = _clip(ctx, RECIPE_CHAT_CONTEXT_MAX)
+    n_ing = max(1, min(max_ingredients, RECIPE_FULL_INGREDIENTS_MAX))
+    n_st = max(1, min(max_steps, RECIPE_FULL_STEPS_MAX))
+    prompt = (
+        "Current recipe (title and notes are fixed in the database; only ingredients and steps may be "
+        "replaced when update_recipe is true):\n"
+        f"{ctx}\n\n"
+        f"User message:\n{msg}\n\n"
+        f"When update_recipe is true, cap ingredients at {n_ing} and steps at {n_st}. "
+        "Return the JSON object described in the system instruction."
+    )
+    client = _get_client()
+    response = client.models.generate_content(
+        model=GEMINI_FIND_PRODUCTS_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=RECIPE_CHAT_JSON_SYSTEM_INSTRUCTION,
+            temperature=0.35,
+        ),
+    )
+    return _parse_recipe_chat_payload(
         response.text,
         max_ingredients=n_ing,
         max_steps=n_st,

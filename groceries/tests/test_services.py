@@ -48,6 +48,7 @@ from groceries.services import (
     list_purchased_baskets,
     list_purchased_baskets_for_running_low,
     recipe_ingredient_in_catalog_flags,
+    recipe_chat_about_recipe,
     purchase_latest_open_basket,
     purchase_single_product,
     set_product_purchase_in_open_basket,
@@ -1484,6 +1485,105 @@ def test_delete_recipe_removes_row_and_children():
     assert Recipe.objects.filter(pk=rid).count() == 0
     assert RecipeIngredient.objects.filter(recipe_id=rid).count() == 0
     assert RecipeStep.objects.filter(recipe_id=rid).count() == 0
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_recipe_chat_chile")
+def test_recipe_chat_about_recipe_answer_only_no_db_change(mock_fetch):
+    from groceries.gemini_service import RecipeChatFromGemini
+
+    u = _user(username="chat_u1")
+    r = Recipe.objects.create(user=u, title="Sopa", notes="")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="Agua", amount="1 L")
+    RecipeStep.objects.create(recipe=r, order=0, text="Hervir.")
+    mock_fetch.return_value = RecipeChatFromGemini(
+        answer="Prueba de sal al final.",
+        update_recipe=False,
+        updated=None,
+    )
+
+    out = recipe_chat_about_recipe(
+        recipe_id=r.pk,
+        user_id=u.pk,
+        message="  ¿Cuándo sal?  ",
+    )
+    assert out.answer == "Prueba de sal al final."
+    assert out.recipe_updated is False
+    row = get_recipe(recipe_id=r.pk, user_id=u.pk)
+    assert row.title == "Sopa"
+    assert list(
+        row.ingredients.order_by("order").values_list("name", flat=True),
+    ) == ["Agua"]
+    mock_fetch.assert_called_once()
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_recipe_chat_chile")
+def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch):
+    from groceries.gemini_service import RecipeChatFromGemini, RecipeFullFromGemini
+
+    u = _user(username="chat_u2")
+    r = Recipe.objects.create(user=u, title="Viejo", notes="notas fijas")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="X", amount="")
+    RecipeStep.objects.create(recipe=r, order=0, text="Paso viejo.")
+    mock_fetch.return_value = RecipeChatFromGemini(
+        answer="Actualizado.",
+        update_recipe=True,
+        updated=RecipeFullFromGemini(
+            ingredients=(RecipeIngredientLine(name="Y", amount="100 g"),),
+            steps=("Nuevo paso.",),
+        ),
+    )
+
+    out = recipe_chat_about_recipe(
+        recipe_id=r.pk,
+        user_id=u.pk,
+        message="Cambia todo",
+    )
+    assert out.recipe_updated is True
+    row = get_recipe(recipe_id=r.pk, user_id=u.pk)
+    assert row.title == "Viejo"
+    assert row.notes == "notas fijas"
+    assert list(
+        row.ingredients.order_by("order").values_list("name", flat=True),
+    ) == ["Y"]
+    assert list(row.steps.order_by("order").values_list("text", flat=True)) == [
+        "Nuevo paso.",
+    ]
+
+
+@pytest.mark.django_db
+def test_recipe_chat_about_recipe_empty_message_raises():
+    u = _user(username="chat_u3")
+    r = Recipe.objects.create(user=u, title="T", notes="")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="A", amount="")
+    RecipeStep.objects.create(recipe=r, order=0, text="S")
+    with pytest.raises(ValueError, match="Message"):
+        recipe_chat_about_recipe(recipe_id=r.pk, user_id=u.pk, message="   ")
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_recipe_chat_chile")
+def test_recipe_chat_about_recipe_wrong_user_raises(mock_fetch):
+    u = _user(username="owner_chat")
+    other = _user(username="other_chat")
+    r = Recipe.objects.create(user=u, title="Mine", notes="")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="A", amount="")
+    RecipeStep.objects.create(recipe=r, order=0, text="S")
+    with pytest.raises(Recipe.DoesNotExist):
+        recipe_chat_about_recipe(recipe_id=r.pk, user_id=other.pk, message="Hola")
+    mock_fetch.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_recipe_chat_chile", return_value=None)
+def test_recipe_chat_about_recipe_raises_when_gemini_empty(_mock):
+    u = _user(username="chat_u4")
+    r = Recipe.objects.create(user=u, title="T", notes="")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="A", amount="")
+    RecipeStep.objects.create(recipe=r, order=0, text="S")
+    with pytest.raises(RecipeGenerationFailedError):
+        recipe_chat_about_recipe(recipe_id=r.pk, user_id=u.pk, message="?")
 
 
 @pytest.mark.django_db
