@@ -1399,6 +1399,7 @@ def recipe_chat_about_recipe(
         recipe=recipe,
         user_message=msg,
         assistant_answer=out.answer,
+        gemini_response_raw=out.gemini_response_raw or "",
         recipe_updated=recipe_updated,
     )
 

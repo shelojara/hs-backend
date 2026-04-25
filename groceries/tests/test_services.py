@@ -1550,10 +1550,12 @@ def test_recipe_chat_about_recipe_answer_only_no_db_change(mock_fetch):
     r = Recipe.objects.create(user=u, title="Sopa", notes="")
     RecipeIngredient.objects.create(recipe=r, order=0, name="Agua", amount="1 L")
     RecipeStep.objects.create(recipe=r, order=0, text="Hervir.")
+    raw = '{"answer": "Prueba de sal al final.", "update_recipe": false}'
     mock_fetch.return_value = RecipeChatFromGemini(
         answer="Prueba de sal al final.",
         update_recipe=False,
         updated=None,
+        gemini_response_raw=raw,
     )
 
     out = recipe_chat_about_recipe(
@@ -1572,6 +1574,7 @@ def test_recipe_chat_about_recipe_answer_only_no_db_change(mock_fetch):
     stored = RecipeMessage.objects.get(recipe_id=r.pk)
     assert stored.user_message == "¿Cuándo sal?"
     assert stored.assistant_answer == "Prueba de sal al final."
+    assert stored.gemini_response_raw == raw
     assert stored.recipe_updated is False
 
 
@@ -1584,6 +1587,10 @@ def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch
     r = Recipe.objects.create(user=u, title="Viejo", notes="notas fijas")
     RecipeIngredient.objects.create(recipe=r, order=0, name="X", amount="")
     RecipeStep.objects.create(recipe=r, order=0, text="Paso viejo.")
+    raw = (
+        '{"answer": "Actualizado.", "update_recipe": true, '
+        '"ingredients": [{"name": "Y", "amount": "100 g"}], "steps": ["Nuevo paso."]}'
+    )
     mock_fetch.return_value = RecipeChatFromGemini(
         answer="Actualizado.",
         update_recipe=True,
@@ -1591,6 +1598,7 @@ def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch
             ingredients=(RecipeIngredientLine(name="Y", amount="100 g"),),
             steps=("Nuevo paso.",),
         ),
+        gemini_response_raw=raw,
     )
 
     out = recipe_chat_about_recipe(
@@ -1611,6 +1619,7 @@ def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch
     stored = RecipeMessage.objects.get(recipe_id=r.pk)
     assert stored.user_message == "Cambia todo"
     assert stored.assistant_answer == "Actualizado."
+    assert stored.gemini_response_raw == raw
     assert stored.recipe_updated is True
 
 
@@ -1625,6 +1634,10 @@ def test_recipe_chat_about_recipe_persists_recipe_ops_patch(mock_fetch):
     RecipeIngredient.objects.create(recipe=r, order=1, name="Agua", amount="2 tazas")
     RecipeStep.objects.create(recipe=r, order=0, text="Hervir.")
     RecipeStep.objects.create(recipe=r, order=1, text="Reposar.")
+    raw = (
+        '{"answer": "Agregué sal.", "update_recipe": true, '
+        '"recipe_ops": [{"op": "insert_ingredient", "index": 2, "name": "Sal", "amount": "1 pizca"}]}'
+    )
     mock_fetch.return_value = RecipeChatFromGemini(
         answer="Agregué sal.",
         update_recipe=True,
@@ -1637,6 +1650,7 @@ def test_recipe_chat_about_recipe_persists_recipe_ops_patch(mock_fetch):
                 "amount": "1 pizca",
             },
         ),
+        gemini_response_raw=raw,
     )
 
     out = recipe_chat_about_recipe(
@@ -1657,6 +1671,8 @@ def test_recipe_chat_about_recipe_persists_recipe_ops_patch(mock_fetch):
         "Hervir.",
         "Reposar.",
     ]
+    stored = RecipeMessage.objects.get(recipe_id=r.pk)
+    assert stored.gemini_response_raw == raw
 
 
 @pytest.mark.django_db

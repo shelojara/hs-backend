@@ -270,6 +270,7 @@ def test_parse_recipe_chat_payload_answer_only():
     assert out.answer == "Usa mantequilla sin sal."
     assert out.update_recipe is False
     assert out.updated is None
+    assert out.gemini_response_raw == raw
 
 
 def test_parse_recipe_chat_payload_with_full_update():
@@ -283,6 +284,7 @@ def test_parse_recipe_chat_payload_with_full_update():
     assert out.update_recipe is True
     assert out.updated is not None
     assert out.updated.ingredients[0].name == "Harina"
+    assert out.gemini_response_raw == raw
 
 
 def test_parse_recipe_chat_payload_update_ignores_title_notes_in_json():
@@ -294,6 +296,7 @@ def test_parse_recipe_chat_payload_update_ignores_title_notes_in_json():
     assert out is not None
     assert out.updated is not None
     assert out.updated.ingredients[0].name == "X"
+    assert out.gemini_response_raw == raw
 
 
 def test_parse_recipe_chat_payload_update_empty_ingredients_returns_none():
@@ -313,6 +316,7 @@ def test_parse_recipe_chat_payload_with_recipe_ops():
     assert out.recipe_ops == (
         {"op": "replace_ingredient", "index": 0, "name": "Sal marina", "amount": "1 pizca"},
     )
+    assert out.gemini_response_raw == raw
 
 
 def test_parse_recipe_chat_payload_recipe_ops_takes_precedence_over_full_lists():
@@ -325,6 +329,7 @@ def test_parse_recipe_chat_payload_recipe_ops_takes_precedence_over_full_lists()
     assert out is not None
     assert out.recipe_ops is not None
     assert out.updated is None
+    assert out.gemini_response_raw == raw
 
 
 def test_parse_recipe_chat_payload_recipe_ops_caps_count():
@@ -334,6 +339,7 @@ def test_parse_recipe_chat_payload_recipe_ops_caps_count():
     assert out is not None
     assert out.recipe_ops is not None
     assert len(out.recipe_ops) == RECIPE_OPS_MAX
+    assert out.gemini_response_raw == raw
 
 
 def test_apply_recipe_patch_ops_replace_and_insert():

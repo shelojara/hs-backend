@@ -585,6 +585,7 @@ def list_recipe_messages(request, payload: ListRecipeMessagesRequest):
                 created_at=m.created_at,
                 user_message=m.user_message,
                 assistant_answer=m.assistant_answer,
+                gemini_response_raw=m.gemini_response_raw or "",
                 recipe_updated=m.recipe_updated,
             )
             for m in rows

@@ -247,6 +247,7 @@ class RecipeChatFromGemini:
     update_recipe: bool
     updated: RecipeFullFromGemini | None
     recipe_ops: tuple[dict[str, Any], ...] | None = None
+    gemini_response_raw: str = ""
 
 
 @dataclass(frozen=True)
@@ -770,6 +771,7 @@ def _parse_recipe_chat_payload(
             update_recipe=False,
             updated=None,
             recipe_ops=None,
+            gemini_response_raw=raw or "",
         )
     ops_raw = data.get("recipe_ops")
     ops_list: list[dict[str, Any]] = []
@@ -785,6 +787,7 @@ def _parse_recipe_chat_payload(
             update_recipe=True,
             updated=None,
             recipe_ops=tuple(ops_list),
+            gemini_response_raw=raw or "",
         )
     inner = json.dumps(
         {
@@ -805,6 +808,7 @@ def _parse_recipe_chat_payload(
         update_recipe=True,
         updated=full,
         recipe_ops=None,
+        gemini_response_raw=raw or "",
     )
 
 
