@@ -89,8 +89,6 @@ def _search_schema(
         emoji=(s.emoji or "").strip() or SEARCH_DEFAULT_EMOJI,
         status=s.status,
         completed_at=s.completed_at,
-        parent_id=s.parent_id,
-        sub_search_count=getattr(s, "sub_search_count", 0),
         result_candidates=services.search_result_candidates_as_product_schemas(
             s.result_candidates,
             fallback_name=s.query,
@@ -153,16 +151,12 @@ def get_search(request, payload: GetSearchRequest):
         s = services.get_search(search_id=payload.search_id, user_id=request.auth.pk)
     except Search.DoesNotExist as exc:
         raise HttpError(404, "Search not found.") from exc
-    children = services.list_direct_child_searches(s.pk, user_id=request.auth.pk)
     in_catalog_check = services.make_user_catalog_in_catalog_check(
         user_id=request.auth.pk,
     )
 
     return GetSearchResponse(
         search=_search_schema(s, in_catalog_check=in_catalog_check),
-        child_searches=[
-            _search_schema(c, in_catalog_check=in_catalog_check) for c in children
-        ],
     )
 
 

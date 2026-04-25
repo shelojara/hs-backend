@@ -8,10 +8,8 @@ from collections.abc import Callable
 from typing import Any, TypeAlias
 
 from dateutil.relativedelta import relativedelta
-from flags.state import flag_enabled
-
 from django.db import transaction
-from django.db.models import Count, F, Max, Prefetch, Q, QuerySet
+from django.db.models import F, Max, Prefetch, Q, QuerySet
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django_q.tasks import async_task
@@ -31,7 +29,6 @@ from groceries.models import (
     RecipeIngredient,
     RecipeStep,
     Search,
-    SearchQueryKind,
     SearchStatus,
 )
 from groceries.schemas import ProductCandidateSchema, SearchResultCandidateSchema
@@ -49,26 +46,6 @@ def _preferred_merchant_context_for_user(user_id: int) -> list[PreferredMerchant
     return [
         PreferredMerchantContext(name=m.name, website=m.website)
         for m in rows
-    ]
-
-
-def _candidates_tagged_with_ingredient(
-    items: list[MerchantProductInfo],
-    ingredient: str,
-) -> list[MerchantProductInfo]:
-    tag = (ingredient or "").strip()
-    return [
-        MerchantProductInfo(
-            display_name=p.display_name,
-            standard_name=p.standard_name,
-            brand=p.brand,
-            price=p.price,
-            format=p.format,
-            emoji=p.emoji,
-            merchant=p.merchant,
-            ingredient=tag,
-        )
-        for p in items
     ]
 
 
@@ -1006,7 +983,7 @@ def _search_emoji_from_first_result_candidate(rows: list[dict[str, Any]]) -> str
 
 
 def create_search(*, query: str, user_id: int) -> int:
-    """Create pending root ``Search`` and enqueue Gemini worker; returns primary key."""
+    """Create pending ``Search`` and enqueue Gemini worker; returns primary key."""
     normalized = query.strip()
     if not normalized:
         msg = "Query must not be empty."
@@ -1021,36 +998,15 @@ def create_search(*, query: str, user_id: int) -> int:
 
 
 def list_searches(*, user_id: int) -> list[Search]:
-    """Latest 10 root ``Search`` rows (*parent* unset) for *user_id*, newest first.
-
-    Each row has ``sub_search_count`` annotation: number of direct child
-    ``Search`` rows with ``deleted_at`` unset, same user.
-    """
+    """Latest 10 ``Search`` rows for *user_id*, newest first."""
     return list(
-        Search.objects.filter(user_id=user_id, parent_id__isnull=True)
-        .annotate(
-            sub_search_count=Count(
-                "child_searches",
-                filter=Q(child_searches__deleted_at__isnull=True),
-            ),
-        )
-        .order_by("-created_at", "-pk")[:10],
+        Search.objects.filter(user_id=user_id).order_by("-created_at", "-pk")[:10],
     )
 
 
 def get_search(search_id: int, *, user_id: int) -> Search:
     """Return one ``Search`` row owned by *user_id*."""
     return Search.objects.get(pk=search_id, user_id=user_id)
-
-
-def list_direct_child_searches(parent_search_id: int, *, user_id: int) -> list[Search]:
-    """Direct child ``Search`` rows for *parent_search_id*, same user, newest first."""
-    return list(
-        Search.objects.filter(
-            parent_id=parent_search_id,
-            user_id=user_id,
-        ).order_by("-created_at", "-pk"),
-    )
 
 
 def delete_search(*, search_id: int, user_id: int) -> None:
@@ -1073,18 +1029,11 @@ def retry_empty_completed_search(*, search_id: int, user_id: int) -> None:
     row.status = SearchStatus.PENDING
     row.completed_at = None
     row.save(update_fields=["status", "completed_at"])
-    if row.parent_id is None:
-        async_task(
-            "groceries.scheduled_tasks.run_product_search_job",
-            row.pk,
-            task_name=f"groceries_product_search:{row.pk}",
-        )
-    else:
-        async_task(
-            "groceries.scheduled_tasks.run_ingredient_product_search_job",
-            row.pk,
-            task_name=f"groceries_ingredient_search:{row.pk}",
-        )
+    async_task(
+        "groceries.scheduled_tasks.run_product_search_job",
+        row.pk,
+        task_name=f"groceries_product_search:{row.pk}",
+    )
 
 
 def search_result_candidates_as_product_schemas(
@@ -1151,29 +1100,6 @@ def run_product_search_job(*, search_id: int) -> None:
         return
     user_id = search.user_id
     q = search.query.strip()
-    kind_val = ""
-    if flag_enabled("SKIP_SEARCH_QUERY_CLASSIFICATION"):
-        kind_val = SearchQueryKind.PRODUCT.value
-    else:
-        try:
-            kind_val = gemini_service.classify_search_query_kind(query=q)
-        except RuntimeError:
-            logger.warning(
-                "run_product_search_job: skip query kind (GEMINI unset) (search id=%s).",
-                search_id,
-            )
-        except Exception:
-            logger.exception(
-                "run_product_search_job: classify query kind failed (search id=%s)",
-                search_id,
-            )
-    search.kind = kind_val
-    if search.parent_id is not None:
-        logger.warning(
-            "run_product_search_job: Search id=%s has parent (use ingredient worker); skipping.",
-            search_id,
-        )
-        return
     page_context: str | None = None
     if is_http_https_url(q):
         page_context = fetch_page_text_for_product_context(q)
@@ -1191,7 +1117,6 @@ def run_product_search_job(*, search_id: int) -> None:
         search.completed_at = timezone.now()
         search.save(
             update_fields=[
-                "kind",
                 "result_candidates",
                 "status",
                 "completed_at",
@@ -1205,77 +1130,9 @@ def run_product_search_job(*, search_id: int) -> None:
         )
         search.status = SearchStatus.FAILED
         search.completed_at = timezone.now()
-        search.save(update_fields=["kind", "status", "completed_at"])
-    except Exception:
-        logger.exception("run_product_search_job failed (search id=%s)", search_id)
-        search.status = SearchStatus.FAILED
-        search.completed_at = timezone.now()
-        search.save(update_fields=["kind", "status", "completed_at"])
-
-
-def run_ingredient_product_search_job(*, search_id: int) -> None:
-    """Background worker: one ingredient string → up to ``FIND_PRODUCTS_MAX`` product rows."""
-    try:
-        search = Search.all_objects.get(pk=search_id)
-    except Search.DoesNotExist:
-        logger.warning(
-            "run_ingredient_product_search_job: missing Search id=%s",
-            search_id,
-        )
-        return
-    if search.deleted_at is not None:
-        logger.warning(
-            "run_ingredient_product_search_job: Search id=%s soft-deleted; skipping.",
-            search_id,
-        )
-        return
-    if search.parent_id is None:
-        logger.warning(
-            "run_ingredient_product_search_job: Search id=%s has no parent; skipping.",
-            search_id,
-        )
-        return
-    user_id = search.user_id
-    ing = search.query.strip()
-    preferred = _preferred_merchant_context_for_user(user_id)
-    try:
-        if not ing:
-            search.status = SearchStatus.FAILED
-            search.completed_at = timezone.now()
-            search.save(update_fields=["status", "completed_at"])
-        else:
-            items = gemini_service.fetch_merchant_product_candidates(
-                query=ing,
-                max_products=gemini_service.FIND_PRODUCTS_MAX,
-                preferred_merchants=preferred,
-            )
-            tagged = _candidates_tagged_with_ingredient(items, ing)
-            candidates_json = _search_candidates_as_json(tagged)
-            search.result_candidates = candidates_json
-            search.emoji = _search_emoji_from_first_result_candidate(candidates_json)
-            search.status = SearchStatus.COMPLETED
-            search.completed_at = timezone.now()
-            search.save(
-                update_fields=[
-                    "result_candidates",
-                    "status",
-                    "completed_at",
-                    "emoji",
-                ],
-            )
-    except RuntimeError:
-        logger.warning(
-            "run_ingredient_product_search_job: GEMINI_API_KEY unset (search id=%s).",
-            search_id,
-        )
-        search.status = SearchStatus.FAILED
-        search.completed_at = timezone.now()
         search.save(update_fields=["status", "completed_at"])
     except Exception:
-        logger.exception(
-            "run_ingredient_product_search_job failed (search id=%s)",
-            search_id,
-        )
+        logger.exception("run_product_search_job failed (search id=%s)", search_id)
         search.status = SearchStatus.FAILED
         search.completed_at = timezone.now()
         search.save(update_fields=["status", "completed_at"])

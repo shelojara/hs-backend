@@ -13,15 +13,6 @@ class SearchStatus(models.TextChoices):
     FAILED = "failed", "Failed"
 
 
-class SearchQueryKind(models.TextChoices):
-    """Gemini classification of user search text (admin/analytics only)."""
-
-    PRODUCT = "product", "Product"
-    BRAND = "brand", "Brand"
-    RECIPE = "recipe", "Recipe"
-    QUESTION = "question", "Question"
-
-
 class ActiveSearchManager(models.Manager):
     """Rows with ``deleted_at`` unset (not soft-deleted)."""
 
@@ -37,25 +28,11 @@ class Search(models.Model):
         on_delete=models.CASCADE,
         related_name="groceries_searches",
     )
-    parent = models.ForeignKey(
-        "self",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="child_searches",
-    )
     query = models.TextField()
     emoji = models.CharField(
         max_length=64,
         blank=True,
         default=SEARCH_DEFAULT_EMOJI,
-    )
-    kind = models.CharField(
-        max_length=16,
-        choices=SearchQueryKind.choices,
-        blank=True,
-        default="",
-        db_index=True,
     )
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(

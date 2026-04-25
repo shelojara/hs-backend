@@ -83,8 +83,6 @@ class SearchSchema(Schema):
     emoji: str
     status: str
     completed_at: datetime | None
-    parent_id: int | None = None
-    sub_search_count: int = 0
     result_candidates: list[SearchResultCandidateSchema]
 
 
@@ -98,7 +96,6 @@ class GetSearchRequest(Schema):
 
 class GetSearchResponse(Schema):
     search: SearchSchema
-    child_searches: list[SearchSchema]
 
 
 class DeleteSearchRequest(Schema):

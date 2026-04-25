@@ -10,8 +10,6 @@ from typing import Any
 from google import genai
 from google.genai import types
 
-from groceries.models import SearchQueryKind
-
 logger = logging.getLogger(__name__)
 
 FIND_PRODUCTS_MAX = 10
@@ -25,20 +23,6 @@ GEMINI_FIND_PRODUCTS_MODEL = "gemini-2.5-flash"
 PRODUCT_EMOJI_SYSTEM_INSTRUCTION = (
     "You pick one Unicode emoji that best represents a grocery product for a shopping list. "
     "Reply with exactly one emoji and no other text."
-)
-
-_SEARCH_QUERY_KIND_OK = frozenset({c.value for c in SearchQueryKind})
-
-SEARCH_QUERY_KIND_SYSTEM_INSTRUCTION = (
-    "You classify a grocery-app search box string from a shopper. "
-    "Decide the primary intent:\n"
-    '- "product" — looking for a type of product to buy (e.g. "oat milk", "rice 1kg", "pasta").\n'
-    '- "brand" — mainly a brand or manufacturer name (e.g. "Colún", "Nestlé", "Lider brand X").\n'
-    '- "recipe" — dish or meal name the shopper might want ingredients for; still classify as recipe '
-    '(analytics only; search always runs as product lookup).\n'
-    '- "question" — general question rather than a product lookup.\n'
-    "Respond with a single JSON object only — no markdown, no code fences, no other text. "
-    'Exactly one key: "kind" whose value is one of: "product", "brand", "recipe", "question".'
 )
 
 RUNNING_LOW_MAX_SUGGESTIONS = 15
@@ -667,55 +651,6 @@ def fetch_recipe_full_chile(
         max_ingredients=n_ing,
         max_steps=n_st,
     )
-
-
-def _parse_search_query_kind_payload(raw: str | None) -> str:
-    """Return validated ``SearchQueryKind`` value or empty string."""
-    if not raw:
-        return ""
-    blob = _extract_json_object(raw)
-    if not blob:
-        return ""
-    try:
-        data = json.loads(blob)
-    except json.JSONDecodeError:
-        return ""
-    if not isinstance(data, dict):
-        return ""
-    val = str(data.get("kind") or "").strip().lower()
-    return val if val in _SEARCH_QUERY_KIND_OK else ""
-
-
-def classify_search_query_kind(*, query: str) -> str:
-    """Ask Gemini for ``SearchQueryKind`` label; empty string if unparseable or blank *query*."""
-    q = (query or "").strip()
-    if not q:
-        return ""
-
-    prompt = f"Classify this search query:\n{q!r}"
-
-    try:
-        client = _get_client()
-    except RuntimeError:
-        raise
-    except Exception:
-        logger.exception("classify_search_query_kind: client init failed")
-        return ""
-
-    try:
-        response = client.models.generate_content(
-            model=GEMINI_FIND_PRODUCTS_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SEARCH_QUERY_KIND_SYSTEM_INSTRUCTION,
-                temperature=0.1,
-            ),
-        )
-    except Exception:
-        logger.exception("classify_search_query_kind: generate_content failed")
-        return ""
-
-    return _parse_search_query_kind_payload(response.text)
 
 
 _URGENCY_OK = frozenset({"high", "medium", "low"})
