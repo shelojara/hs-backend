@@ -256,6 +256,26 @@ def test_fetch_recipe_full_chile_passes_google_search_grounding(mock_get_client)
     assert cfg.tools == [types.Tool(google_search=types.GoogleSearch())]
 
 
+@patch("groceries.gemini_service._get_client")
+def test_fetch_recipe_chat_chile_system_instruction_spanish_chile_humor(mock_get_client):
+    mock_response = MagicMock()
+    mock_response.text = '{"answer": "Listo.", "update_recipe": false}'
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    out = gemini_service.fetch_recipe_chat_chile(
+        recipe_context="ing[0] Harina 1 taza\nstep[0] Mezclar.",
+        user_message="¿Más agua?",
+    )
+    assert out is not None
+    cfg = mock_client.models.generate_content.call_args.kwargs["config"]
+    si = cfg.system_instruction or ""
+    assert "español de Chile" in si
+    assert "wordplay" in si
+    assert cfg.temperature == 0.45
+
+
 def test_parse_recipe_full_chile_payload_object_and_fenced():
     inner = (
         '{"ingredients": [{"name": "Arroz", "amount": "1 taza"}, '
