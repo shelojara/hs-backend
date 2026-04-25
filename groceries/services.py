@@ -1341,12 +1341,12 @@ def recipe_chat_about_recipe(
         )
 
     recipe_updated = False
-    if out.update_recipe and out.updated is not None and out.title:
+    if out.update_recipe and out.updated is not None:
         update_recipe(
             recipe_id=recipe_id,
             user_id=user_id,
-            title=out.title,
-            notes=out.notes or "",
+            title=recipe.title,
+            notes=recipe.notes or "",
             ingredient_lines=[
                 (line.name, line.amount) for line in out.updated.ingredients
             ],

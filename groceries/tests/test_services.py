@@ -1500,8 +1500,6 @@ def test_recipe_chat_about_recipe_answer_only_no_db_change(mock_fetch):
         answer="Prueba de sal al final.",
         update_recipe=False,
         updated=None,
-        title=None,
-        notes=None,
     )
 
     out = recipe_chat_about_recipe(
@@ -1525,7 +1523,7 @@ def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch
     from groceries.gemini_service import RecipeChatFromGemini, RecipeFullFromGemini
 
     u = _user(username="chat_u2")
-    r = Recipe.objects.create(user=u, title="Viejo", notes="")
+    r = Recipe.objects.create(user=u, title="Viejo", notes="notas fijas")
     RecipeIngredient.objects.create(recipe=r, order=0, name="X", amount="")
     RecipeStep.objects.create(recipe=r, order=0, text="Paso viejo.")
     mock_fetch.return_value = RecipeChatFromGemini(
@@ -1535,8 +1533,6 @@ def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch
             ingredients=(RecipeIngredientLine(name="Y", amount="100 g"),),
             steps=("Nuevo paso.",),
         ),
-        title="Nuevo título",
-        notes="nota",
     )
 
     out = recipe_chat_about_recipe(
@@ -1546,8 +1542,8 @@ def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch
     )
     assert out.recipe_updated is True
     row = get_recipe(recipe_id=r.pk, user_id=u.pk)
-    assert row.title == "Nuevo título"
-    assert row.notes == "nota"
+    assert row.title == "Viejo"
+    assert row.notes == "notas fijas"
     assert list(
         row.ingredients.order_by("order").values_list("name", flat=True),
     ) == ["Y"]

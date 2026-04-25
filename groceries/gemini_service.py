@@ -202,36 +202,33 @@ RECIPE_CHAT_ANSWER_MAX_CHARS = 800
 
 RECIPE_CHAT_JSON_SYSTEM_INSTRUCTION = (
     "You help a home cook in Chile chat about their saved recipe (title, notes, ingredients, steps). "
-    "They may ask a short question, request substitutions, scaling, timing tips, or edits to the recipe.\n"
+    "They may ask a short question, request substitutions, scaling, timing tips, or edits to ingredients/steps.\n"
+    "The app never changes the saved recipe title or notes from your reply — only ingredients and steps "
+    "can be replaced when updating.\n"
     "Respond with a single JSON object only — no markdown, no code fences, no other text.\n"
     "Required keys:\n"
     f'- "answer" (string: concise reply in Spanish Chile when the recipe is in Spanish; '
     f"at most {RECIPE_CHAT_ANSWER_MAX_CHARS} characters; practical and safe for cooking).\n"
     '- "update_recipe" (boolean): true only if the user asked to change the stored recipe '
-    "(ingredients, steps, title, or notes) and you can supply a full replacement below; "
-    "false for pure Q&A, tips, or when you should not rewrite the recipe.\n"
-    '- When "update_recipe" is true, also include these keys (same shape as our recipe generator):\n'
-    f'  - "title" (string: non-empty dish name, max 255 chars),\n'
-    f'  - "notes" (string: cook notes; may be empty),\n'
+    "(ingredients and/or steps) and you can supply replacement lists below; "
+    "false for pure Q&A, tips, or when you should not rewrite ingredients/steps.\n"
+    '- When "update_recipe" is true, also include these keys (same ingredient/step shape as our recipe generator):\n'
     f'  - "ingredients": JSON array of at most {RECIPE_FULL_INGREDIENTS_MAX} objects with '
     '"name" and "amount" (strings; amount may be empty),\n'
     f'  - "steps": JSON array of at most {RECIPE_FULL_STEPS_MAX} strings (ordered steps).\n'
-    'When "update_recipe" is false, omit "title", "notes", "ingredients", and "steps" or set '
-    '"ingredients" and "steps" to empty arrays only if you are not updating — prefer omitting them.\n'
-    "If update_recipe is true, ingredients and steps must be non-empty lists and title non-empty. "
+    'When "update_recipe" is false, omit "ingredients" and "steps" or set them to empty arrays — prefer omitting.\n'
+    "If update_recipe is true, ingredients and steps must be non-empty lists. "
     "No duplicate ingredient names. Keep Chile-typical ingredients when the recipe is Chilean."
 )
 
 
 @dataclass(frozen=True)
 class RecipeChatFromGemini:
-    """Model output: short reply plus optional full recipe replacement."""
+    """Model output: short reply plus optional ingredients+steps replacement."""
 
     answer: str
     update_recipe: bool
     updated: RecipeFullFromGemini | None
-    title: str | None
-    notes: str | None
 
 
 @dataclass(frozen=True)
@@ -638,14 +635,7 @@ def _parse_recipe_chat_payload(
             answer=answer,
             update_recipe=False,
             updated=None,
-            title=None,
-            notes=None,
         )
-    title = _normalize_field(data.get("title"), 255)
-    if not title:
-        return None
-    notes = (data.get("notes") if data.get("notes") is not None else "")
-    notes_str = _normalize_field(notes, 4000)
     inner = json.dumps(
         {
             "ingredients": data.get("ingredients"),
@@ -664,8 +654,6 @@ def _parse_recipe_chat_payload(
         answer=answer,
         update_recipe=True,
         updated=full,
-        title=title,
-        notes=notes_str,
     )
 
 
@@ -731,10 +719,11 @@ def fetch_recipe_chat_chile(
     n_ing = max(1, min(max_ingredients, RECIPE_FULL_INGREDIENTS_MAX))
     n_st = max(1, min(max_steps, RECIPE_FULL_STEPS_MAX))
     prompt = (
-        "Current recipe (authoritative; edit only if update_recipe is true and user asked):\n"
+        "Current recipe (title and notes are fixed in the database; only ingredients and steps may be "
+        "replaced when update_recipe is true):\n"
         f"{ctx}\n\n"
         f"User message:\n{msg}\n\n"
-        f"When returning a full recipe update, cap ingredients at {n_ing} and steps at {n_st}. "
+        f"When update_recipe is true, cap ingredients at {n_ing} and steps at {n_st}. "
         "Return the JSON object described in the system instruction."
     )
     client = _get_client()
