@@ -147,7 +147,10 @@ RECIPE_FULL_CHILE_JSON_SYSTEM_INSTRUCTION = (
     "You help a home cook in Chile. Given a dish name and optional cook notes, output a complete recipe "
     "using ingredients and preparations typical in Chile (Lider/Jumbo style supermarkets; Spanish Chile; "
     "common Chilean products: e.g. aceite maravilla, merkén, choclo, pebre-style ideas when relevant, "
-    "crema para cocinar, harina con polvos, etc.). Prefer Chilean dishes when the name fits; otherwise "
+    "crema para cocinar, harina con polvos, etc.). "
+    "Use Google Search when helpful to ground ingredient lists, amounts, and steps in credible references "
+    "(especially for specific, regional, or ambiguous dish names or user constraints). "
+    "Prefer Chilean dishes when the name fits; otherwise "
     "adapt the dish to Chile-available ingredients.\n"
     "Respond with a single JSON object only — no markdown, no code fences, no other text.\n"
     "Required keys:\n"
@@ -836,12 +839,14 @@ def fetch_recipe_full_chile(
     prompt = "\n\n".join(prompt_parts)
 
     client = _get_client()
+    grounding = types.Tool(google_search=types.GoogleSearch())
     response = client.models.generate_content(
         model=GEMINI_FIND_PRODUCTS_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=RECIPE_FULL_CHILE_JSON_SYSTEM_INSTRUCTION,
             temperature=0.3,
+            tools=[grounding],
         ),
     )
     return _parse_recipe_full_chile_payload(
