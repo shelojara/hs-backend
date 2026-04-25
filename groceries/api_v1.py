@@ -124,6 +124,9 @@ def _recipe_summary_schema(recipe: Recipe) -> RecipeSummarySchema:
         notes=recipe.notes,
         created_at=recipe.created_at,
         updated_at=recipe.updated_at,
+        generation_status=recipe.generation_status,
+        generation_failed_at=recipe.generation_failed_at,
+        generation_error_message=recipe.generation_error_message or "",
     )
 
 
@@ -485,8 +488,6 @@ def create_recipe_from_gemini(request, payload: CreateRecipeFromGeminiRequest):
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    except RecipeGenerationFailedError as exc:
-        raise HttpError(502, str(exc)) from exc
     return CreateRecipeFromGeminiResponse(recipe_id=recipe.pk)
 
 
@@ -529,6 +530,9 @@ def _recipe_schema_for_user(*, recipe: Recipe, user_id: int) -> RecipeSchema:
             RecipeStepSchema(order=st.order, text=st.text)
             for st in recipe.steps.all()
         ],
+        generation_status=recipe.generation_status,
+        generation_failed_at=recipe.generation_failed_at,
+        generation_error_message=recipe.generation_error_message or "",
     )
 
 

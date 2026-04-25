@@ -307,6 +307,9 @@ class RecipeSchema(Schema):
     notes: str
     ingredients: list[RecipeIngredientSchema]
     steps: list[RecipeStepSchema]
+    generation_status: str
+    generation_failed_at: datetime | None = None
+    generation_error_message: str = ""
 
 
 class RecipeSummarySchema(Schema):
@@ -317,6 +320,9 @@ class RecipeSummarySchema(Schema):
     notes: str
     created_at: datetime
     updated_at: datetime
+    generation_status: str
+    generation_failed_at: datetime | None = None
+    generation_error_message: str = ""
 
 
 class CreateRecipeFromGeminiRequest(Schema):

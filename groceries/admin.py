@@ -137,7 +137,7 @@ class RecipeStepInline(admin.TabularInline):
 
 @admin.register(Recipe)
 class RecipeAdmin(admin.ModelAdmin):
-    list_display = ("id", "title", "user", "updated_at")
+    list_display = ("id", "title", "user", "generation_status", "updated_at")
     search_fields = ("title", "notes")
     list_filter = ("user",)
     inlines = (RecipeIngredientInline, RecipeStepInline)

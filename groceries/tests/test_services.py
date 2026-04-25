@@ -22,6 +22,7 @@ from groceries.models import (
     Merchant,
     Product,
     Recipe,
+    RecipeGenerationStatus,
     RecipeIngredient,
     RecipeMessage,
     RecipeStep,
@@ -38,6 +39,7 @@ from groceries.services import (
     create_product_from_candidate,
     create_recipe_from_title_and_notes,
     get_recipe,
+    run_recipe_gemini_job,
     update_recipe,
     delete_recipe,
     delete_product,
@@ -1395,8 +1397,12 @@ def test_running_low_sync_user_ids_distinct_owners():
 
 
 @pytest.mark.django_db
+@patch("groceries.services.async_task")
 @patch("groceries.services.gemini_service.fetch_recipe_full_chile")
-def test_create_recipe_from_title_and_notes_persists_gemini_output(mock_fetch):
+def test_create_recipe_from_title_and_notes_persists_gemini_output(
+    mock_fetch,
+    mock_async,
+):
     u = _user(username="chef1")
     mock_fetch.return_value = RecipeFullFromGemini(
         ingredients=(
@@ -1410,11 +1416,21 @@ def test_create_recipe_from_title_and_notes_persists_gemini_output(mock_fetch):
         notes="  sin carne  ",
         user_id=u.pk,
     )
+    mock_async.assert_called_once_with(
+        "groceries.scheduled_tasks.run_recipe_gemini_job",
+        r.pk,
+        task_name=f"groceries_recipe_gemini:{r.pk}",
+    )
+    mock_fetch.assert_not_called()
+    row = Recipe.objects.get(pk=r.pk)
+    assert row.generation_status == RecipeGenerationStatus.PENDING
+    run_recipe_gemini_job(recipe_id=r.pk)
     mock_fetch.assert_called_once_with(title="Charquicán", notes="sin carne")
     row = Recipe.objects.get(pk=r.pk)
     assert row.user_id == u.pk
     assert row.title == "Charquicán"
     assert row.notes == "sin carne"
+    assert row.generation_status == RecipeGenerationStatus.COMPLETED
     ings = list(row.ingredients.order_by("order", "id"))
     assert len(ings) == 2
     assert ings[0].name == "Papa" and ings[0].amount == "500 g"
@@ -1424,12 +1440,16 @@ def test_create_recipe_from_title_and_notes_persists_gemini_output(mock_fetch):
 
 
 @pytest.mark.django_db
+@patch("groceries.services.async_task")
 @patch("groceries.services.gemini_service.fetch_recipe_full_chile", return_value=None)
-def test_create_recipe_from_title_and_notes_raises_when_gemini_empty(_mock):
+def test_run_recipe_gemini_job_marks_failed_when_gemini_empty(_mock_fetch, _mock_async):
     u = _user()
-    with pytest.raises(RecipeGenerationFailedError):
-        create_recipe_from_title_and_notes(title="X", notes="", user_id=u.pk)
-    assert Recipe.objects.filter(user_id=u.pk).count() == 0
+    r = create_recipe_from_title_and_notes(title="X", notes="", user_id=u.pk)
+    run_recipe_gemini_job(recipe_id=r.pk)
+    row = Recipe.objects.get(pk=r.pk)
+    assert row.generation_status == RecipeGenerationStatus.FAILED
+    assert row.generation_error_message
+    assert row.ingredients.count() == 0
 
 
 @pytest.mark.django_db
@@ -1440,8 +1460,9 @@ def test_create_recipe_from_title_and_notes_empty_title_raises():
 
 
 @pytest.mark.django_db
+@patch("groceries.services.async_task")
 @patch("groceries.services.gemini_service.fetch_recipe_full_chile")
-def test_get_recipe_returns_row_for_owner(mock_fetch):
+def test_get_recipe_returns_row_for_owner(mock_fetch, _mock_async):
     u = _user(username="chef2")
     u2 = _user(username="other")
     mock_fetch.return_value = RecipeFullFromGemini(
@@ -1449,6 +1470,7 @@ def test_get_recipe_returns_row_for_owner(mock_fetch):
         steps=("Picar.",),
     )
     r = create_recipe_from_title_and_notes(title="Salsa", notes="", user_id=u.pk)
+    run_recipe_gemini_job(recipe_id=r.pk)
     out = get_recipe(recipe_id=r.pk, user_id=u.pk)
     assert out.pk == r.pk
     assert list(out.ingredients.values_list("name", flat=True)) == ["Ajo"]
@@ -1720,6 +1742,23 @@ def test_delete_recipe_wrong_user_raises():
     with pytest.raises(Recipe.DoesNotExist):
         delete_recipe(recipe_id=r.pk, user_id=other.pk)
     assert Recipe.objects.filter(pk=r.pk).exists()
+
+
+@pytest.mark.django_db
+@patch("groceries.services.async_task")
+def test_update_recipe_rejects_while_generation_pending(_mock_async):
+    u = _user()
+    r = create_recipe_from_title_and_notes(title="T", notes="", user_id=u.pk)
+    assert r.generation_status == RecipeGenerationStatus.PENDING
+    with pytest.raises(ValueError, match="progress"):
+        update_recipe(
+            recipe_id=r.pk,
+            user_id=u.pk,
+            title="T",
+            notes="",
+            ingredient_lines=[("A", "")],
+            step_texts=["S"],
+        )
 
 
 @pytest.mark.django_db
