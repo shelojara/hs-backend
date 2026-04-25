@@ -13,6 +13,7 @@ from groceries.gemini_service import (
     _parse_merchant_product_list_payload,
     _parse_merchant_product_payload,
     _parse_recipe_chat_payload,
+    _parse_recipe_chat_structural_payload,
     _parse_recipe_full_chile_payload,
     _parse_running_low_suggestions,
     merchant_product_find_system_instruction,
@@ -273,7 +274,8 @@ def test_parse_recipe_chat_payload_answer_only():
     assert out.gemini_response_raw == raw
 
 
-def test_parse_recipe_chat_payload_with_full_update():
+def test_parse_recipe_chat_payload_update_true_ignores_embedded_lists():
+    """Intent phase only returns answer + flag; structural JSON is a separate model turn."""
     raw = (
         '{"answer": "Listo.", "update_recipe": true, '
         '"ingredients": [{"name": "Harina", "amount": "500 g"}], '
@@ -282,64 +284,79 @@ def test_parse_recipe_chat_payload_with_full_update():
     out = _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10)
     assert out is not None
     assert out.update_recipe is True
-    assert out.updated is not None
-    assert out.updated.ingredients[0].name == "Harina"
+    assert out.updated is None
+    assert out.recipe_ops is None
+    assert out.answer == "Listo."
     assert out.gemini_response_raw == raw
 
 
-def test_parse_recipe_chat_payload_update_ignores_title_notes_in_json():
+def test_parse_recipe_chat_payload_update_true_ignores_title_notes_and_ops():
     raw = (
         '{"answer": "Ok.", "update_recipe": true, "title": "Ignored", "notes": "Also ignored", '
         '"ingredients": [{"name": "X", "amount": ""}], "steps": ["Y."]}'
     )
     out = _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10)
     assert out is not None
-    assert out.updated is not None
-    assert out.updated.ingredients[0].name == "X"
+    assert out.updated is None
+    assert out.recipe_ops is None
     assert out.gemini_response_raw == raw
 
 
-def test_parse_recipe_chat_payload_update_empty_ingredients_returns_none():
+def test_parse_recipe_chat_payload_update_true_empty_ingredients_still_ok():
     raw = '{"answer": "Ok.", "update_recipe": true, "ingredients": [], "steps": ["Y."]}'
-    assert _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10) is None
-
-
-def test_parse_recipe_chat_payload_with_recipe_ops():
-    raw = (
-        '{"answer": "Cambié la sal.", "update_recipe": true, '
-        '"recipe_ops": [{"op": "replace_ingredient", "index": 0, "name": "Sal marina", "amount": "1 pizca"}]}'
-    )
     out = _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10)
     assert out is not None
     assert out.update_recipe is True
     assert out.updated is None
-    assert out.recipe_ops == (
+
+
+def test_parse_recipe_chat_structural_payload_with_recipe_ops():
+    raw = (
+        '{"recipe_ops": [{"op": "replace_ingredient", "index": 0, "name": "Sal marina", '
+        '"amount": "1 pizca"}]}'
+    )
+    out = _parse_recipe_chat_structural_payload(raw, max_ingredients=10, max_steps=10)
+    assert out is not None
+    ops, full = out
+    assert full is None
+    assert ops == (
         {"op": "replace_ingredient", "index": 0, "name": "Sal marina", "amount": "1 pizca"},
     )
-    assert out.gemini_response_raw == raw
 
 
-def test_parse_recipe_chat_payload_recipe_ops_takes_precedence_over_full_lists():
+def test_parse_recipe_chat_structural_payload_recipe_ops_takes_precedence():
     raw = (
-        '{"answer": "x", "update_recipe": true, '
-        '"recipe_ops": [{"op": "replace_step", "index": 0, "text": "Nuevo."}], '
+        '{"recipe_ops": [{"op": "replace_step", "index": 0, "text": "Nuevo."}], '
         '"ingredients": [{"name": "Ignored", "amount": ""}], "steps": ["Ignored."]}'
     )
-    out = _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10)
+    out = _parse_recipe_chat_structural_payload(raw, max_ingredients=10, max_steps=10)
     assert out is not None
-    assert out.recipe_ops is not None
-    assert out.updated is None
-    assert out.gemini_response_raw == raw
+    ops, full = out
+    assert ops is not None
+    assert full is None
 
 
-def test_parse_recipe_chat_payload_recipe_ops_caps_count():
+def test_parse_recipe_chat_structural_payload_recipe_ops_caps_count():
     many = [{"op": "replace_step", "index": 0, "text": "A."}] * (RECIPE_OPS_MAX + 5)
-    raw = json.dumps({"answer": "x", "update_recipe": True, "recipe_ops": many})
-    out = _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10)
+    raw = json.dumps({"recipe_ops": many})
+    out = _parse_recipe_chat_structural_payload(raw, max_ingredients=10, max_steps=10)
     assert out is not None
-    assert out.recipe_ops is not None
-    assert len(out.recipe_ops) == RECIPE_OPS_MAX
-    assert out.gemini_response_raw == raw
+    ops, _full = out
+    assert ops is not None
+    assert len(ops) == RECIPE_OPS_MAX
+
+
+def test_parse_recipe_chat_structural_payload_full_lists():
+    raw = (
+        '{"ingredients": [{"name": "Harina", "amount": "500 g"}], '
+        '"steps": ["Amasar.", "Hornear."]}'
+    )
+    out = _parse_recipe_chat_structural_payload(raw, max_ingredients=10, max_steps=10)
+    assert out is not None
+    ops, full = out
+    assert ops is None
+    assert full is not None
+    assert full.ingredients[0].name == "Harina"
 
 
 def test_apply_recipe_patch_ops_replace_and_insert():
@@ -442,6 +459,74 @@ def test_parse_running_low_suggestions_product_ids():
     out = _parse_running_low_suggestions(raw, max_items=10)
     assert out[0].product_ids == (1, 2)
     assert out[1].product_ids == (3,)
+
+
+@patch("groceries.gemini_service._get_client")
+def test_fetch_recipe_full_chile_passes_google_search_tool(mock_get_client):
+    mock_response = MagicMock()
+    mock_response.text = (
+        '{"ingredients": [{"name": "Arroz", "amount": "1 taza"}], "steps": ["Hervir."]}'
+    )
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    out = gemini_service.fetch_recipe_full_chile(title="Arroz")
+    assert out is not None
+    assert out.ingredients[0].name == "Arroz"
+    mock_client.models.generate_content.assert_called_once()
+    cfg = mock_client.models.generate_content.call_args.kwargs["config"]
+    assert cfg.tools is not None
+    assert len(cfg.tools) == 1
+    assert cfg.tools[0].google_search is not None
+
+
+@patch("groceries.gemini_service._get_client")
+def test_fetch_recipe_chat_chile_uses_search_only_on_structural_turn(mock_get_client):
+    intent_text = '{"answer": "Hecho.", "update_recipe": true}'
+    struct_text = (
+        '{"recipe_ops": [{"op": "replace_ingredient", "index": 0, "name": "Sal", "amount": "1 pizca"}]}'
+    )
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = [
+        MagicMock(text=intent_text),
+        MagicMock(text=struct_text),
+    ]
+    mock_get_client.return_value = mock_client
+
+    ctx = "title: T\nnotes: \n\ningredients:\ning[0] Pimienta | \n\nsteps:\nstep[0] Mezclar."
+    out = gemini_service.fetch_recipe_chat_chile(
+        recipe_context=ctx,
+        user_message="Cambia pimienta por sal",
+    )
+    assert out is not None
+    assert out.answer == "Hecho."
+    assert out.update_recipe is True
+    assert out.recipe_ops is not None
+    assert out.recipe_ops[0]["name"] == "Sal"
+    assert mock_client.models.generate_content.call_count == 2
+    first_cfg = mock_client.models.generate_content.call_args_list[0].kwargs["config"]
+    second_cfg = mock_client.models.generate_content.call_args_list[1].kwargs["config"]
+    assert first_cfg.tools is None
+    assert second_cfg.tools is not None
+    assert second_cfg.tools[0].google_search is not None
+
+
+@patch("groceries.gemini_service._get_client")
+def test_fetch_recipe_chat_chile_answer_only_single_call(mock_get_client):
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = MagicMock(
+        text='{"answer": "Tip.", "update_recipe": false}',
+    )
+    mock_get_client.return_value = mock_client
+    ctx = "title: T\nnotes: \n\ningredients:\ning[0] A | \n\nsteps:\nstep[0] S."
+    out = gemini_service.fetch_recipe_chat_chile(
+        recipe_context=ctx,
+        user_message="¿Cuánto hiervo?",
+    )
+    assert out is not None
+    assert out.update_recipe is False
+    mock_client.models.generate_content.assert_called_once()
 
 
 @patch("groceries.gemini_service._get_client")

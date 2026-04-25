@@ -149,6 +149,9 @@ RECIPE_FULL_CHILE_JSON_SYSTEM_INSTRUCTION = (
     "common Chilean products: e.g. aceite maravilla, merkén, choclo, pebre-style ideas when relevant, "
     "crema para cocinar, harina con polvos, etc.). Prefer Chilean dishes when the name fits; otherwise "
     "adapt the dish to Chile-available ingredients.\n"
+    "Use Google Search when it helps verify authentic ingredient lists and cooking steps for this dish "
+    "(regional variants, classic proportions, or safety-critical times/temps). Rely on your training when "
+    "search adds no value.\n"
     "Respond with a single JSON object only — no markdown, no code fences, no other text.\n"
     "Required keys:\n"
     f'- "ingredients": JSON array of at most {RECIPE_FULL_INGREDIENTS_MAX} objects. Each object has '
@@ -205,6 +208,7 @@ RECIPE_OPS_MAX = 30
 RECIPE_CHAT_JSON_SYSTEM_INSTRUCTION = (
     "You help a home cook in Chile chat about their saved recipe (title, notes, ingredients, steps). "
     "They may ask a short question, request substitutions, scaling, timing tips, or edits to ingredients/steps.\n"
+    "Do not use Google Search in this reply — answer from the recipe context and general cooking knowledge only.\n"
     "The current recipe text uses zero-based indices: each line starts with ing[N] for ingredients "
     "and step[M] for steps. Use those N and M values in edits.\n"
     "The app never changes the saved recipe title or notes from your reply — only ingredients and steps "
@@ -216,26 +220,28 @@ RECIPE_CHAT_JSON_SYSTEM_INSTRUCTION = (
     '- "update_recipe" (boolean): true only if the user asked to change the stored recipe '
     "(ingredients and/or steps) and you can describe the edits; "
     "false for pure Q&A, tips, or when you should not change ingredients/steps.\n"
-    '- When "update_recipe" is true, prefer a compact "recipe_ops" array (at most '
-    f"{RECIPE_OPS_MAX} objects) instead of resending the full recipe. Apply ops in order; each op "
-    "sees the list state after previous ops. Valid op shapes (field \"op\" is required):\n"
-    '  - {"op": "replace_ingredient", "index": <int>, "name": <string>, "amount": <string optional>}\n'
-    '  - {"op": "remove_ingredient", "index": <int>}\n'
-    '  - {"op": "insert_ingredient", "index": <int>, "name": <string>, "amount": <string optional>} '
-    "— insert before current ingredient at index; index may equal current length to append.\n"
-    '  - {"op": "replace_step", "index": <int>, "text": <string>}\n'
-    '  - {"op": "remove_step", "index": <int>}\n'
-    '  - {"op": "insert_step", "index": <int>, "text": <string>} '
-    "— insert before current step at index; index may equal current length to append.\n"
-    "After all ops, the recipe must still have at least one ingredient and one step, unique ingredient "
-    "names (case-insensitive), and respect caps: at most "
-    f"{RECIPE_FULL_INGREDIENTS_MAX} ingredients and {RECIPE_FULL_STEPS_MAX} steps.\n"
-    'Legacy alternative when rewriting almost everything: omit "recipe_ops" and instead send full '
-    f'"ingredients" (array of {{name, amount}}) and "steps" (array of strings) as before — same limits '
-    "and non-empty when used.\n"
+    'When "update_recipe" is true, still include only "answer" and "update_recipe" in this JSON — '
+    "do not send recipe_ops, ingredients, or steps here; a follow-up system call will apply structural "
+    "edits with search when needed.\n"
     'When "update_recipe" is false, omit "recipe_ops", "ingredients", and "steps" (or use empty arrays) '
-    "— prefer omitting.\n"
-    'If "update_recipe" is true with "recipe_ops", omit full "ingredients" and "steps" when possible.'
+    "— prefer omitting."
+)
+
+# Second chat turn: structural edits only; paired with Google Search (ingredients/steps grounding).
+RECIPE_CHAT_STRUCTURAL_JSON_SYSTEM_INSTRUCTION = (
+    "You help a home cook in Chile apply edits to a saved recipe's ingredients and steps only.\n"
+    "The current recipe uses zero-based indices: each line starts with ing[N] for ingredients "
+    "and step[M] for steps. Use those N and M values in recipe_ops.\n"
+    "Respond with a single JSON object only — no markdown, no code fences, no other text.\n"
+    "No \"answer\" key. Include exactly one of:\n"
+    f'- "recipe_ops": JSON array (at most {RECIPE_OPS_MAX} objects) of patch ops as in the main recipe '
+    "chat spec (replace_ingredient, remove_ingredient, insert_ingredient, replace_step, remove_step, "
+    "insert_step), OR\n"
+    f'- "ingredients" (array of {{name, amount}}) and "steps" (array of strings) when rewriting almost '
+    "everything — same caps and rules as the main recipe chat spec (non-empty, unique ingredient names, "
+    f"at most {RECIPE_FULL_INGREDIENTS_MAX} ingredients and {RECIPE_FULL_STEPS_MAX} steps).\n"
+    "Use Google Search when it helps verify substitutions, amounts, or step order for this dish in Chile; "
+    "otherwise use the recipe context and the user's request alone."
 )
 
 
@@ -773,6 +779,35 @@ def _parse_recipe_chat_payload(
             recipe_ops=None,
             gemini_response_raw=raw or "",
         )
+    # Structural JSON (recipe_ops or ingredients+steps) is produced in a follow-up
+    # generate_content call with Google Search — see fetch_recipe_chat_chile.
+    return RecipeChatFromGemini(
+        answer=answer,
+        update_recipe=True,
+        updated=None,
+        recipe_ops=None,
+        gemini_response_raw=raw or "",
+    )
+
+
+def _parse_recipe_chat_structural_payload(
+    raw: str | None,
+    *,
+    max_ingredients: int,
+    max_steps: int,
+) -> tuple[tuple[dict[str, Any], ...] | None, RecipeFullFromGemini | None] | None:
+    """Parse second-turn JSON (recipe_ops or full ingredients+steps only). No *answer* key."""
+    if not raw or max_ingredients < 1 or max_steps < 1:
+        return None
+    blob = _extract_json_object(raw)
+    if not blob:
+        return None
+    try:
+        data = json.loads(blob)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
     ops_raw = data.get("recipe_ops")
     ops_list: list[dict[str, Any]] = []
     if isinstance(ops_raw, list):
@@ -782,13 +817,7 @@ def _parse_recipe_chat_payload(
             if isinstance(item, dict):
                 ops_list.append(dict(item))
     if ops_list:
-        return RecipeChatFromGemini(
-            answer=answer,
-            update_recipe=True,
-            updated=None,
-            recipe_ops=tuple(ops_list),
-            gemini_response_raw=raw or "",
-        )
+        return (tuple(ops_list), None)
     inner = json.dumps(
         {
             "ingredients": data.get("ingredients"),
@@ -803,13 +832,7 @@ def _parse_recipe_chat_payload(
     )
     if full is None:
         return None
-    return RecipeChatFromGemini(
-        answer=answer,
-        update_recipe=True,
-        updated=full,
-        recipe_ops=None,
-        gemini_response_raw=raw or "",
-    )
+    return (None, full)
 
 
 def fetch_recipe_full_chile(
@@ -836,12 +859,14 @@ def fetch_recipe_full_chile(
     prompt = "\n\n".join(prompt_parts)
 
     client = _get_client()
+    grounding = types.Tool(google_search=types.GoogleSearch())
     response = client.models.generate_content(
         model=GEMINI_FIND_PRODUCTS_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=RECIPE_FULL_CHILE_JSON_SYSTEM_INSTRUCTION,
             temperature=0.3,
+            tools=[grounding],
         ),
     )
     return _parse_recipe_full_chile_payload(
@@ -882,7 +907,7 @@ def fetch_recipe_chat_chile(
         "Return the JSON object described in the system instruction."
     )
     client = _get_client()
-    response = client.models.generate_content(
+    intent_response = client.models.generate_content(
         model=GEMINI_FIND_PRODUCTS_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
@@ -890,10 +915,54 @@ def fetch_recipe_chat_chile(
             temperature=0.35,
         ),
     )
-    return _parse_recipe_chat_payload(
-        response.text,
+    intent_raw = intent_response.text
+    intent = _parse_recipe_chat_payload(
+        intent_raw,
         max_ingredients=n_ing,
         max_steps=n_st,
+    )
+    if intent is None:
+        return None
+    if not intent.update_recipe:
+        return intent
+
+    struct_prompt = (
+        "Apply structural edits to ingredients and/or steps only for this request.\n\n"
+        f"Current recipe:\n{ctx}\n\n"
+        f"User request:\n{msg}\n\n"
+        f"Cap ingredients at {n_ing} and steps at {n_st}. "
+        "Return only the JSON object described in the system instruction (recipe_ops or full lists)."
+    )
+    grounding = types.Tool(google_search=types.GoogleSearch())
+    struct_response = client.models.generate_content(
+        model=GEMINI_FIND_PRODUCTS_MODEL,
+        contents=struct_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=RECIPE_CHAT_STRUCTURAL_JSON_SYSTEM_INSTRUCTION,
+            temperature=0.35,
+            tools=[grounding],
+        ),
+    )
+    struct_raw = struct_response.text
+    parsed_struct = _parse_recipe_chat_structural_payload(
+        struct_raw,
+        max_ingredients=n_ing,
+        max_steps=n_st,
+    )
+    if parsed_struct is None:
+        return None
+    struct_ops, struct_full = parsed_struct
+    merged_raw = (
+        f"{intent_raw or ''}\n\n--- structural ---\n{struct_raw or ''}"
+        if struct_raw
+        else (intent_raw or "")
+    )
+    return RecipeChatFromGemini(
+        answer=intent.answer,
+        update_recipe=True,
+        updated=struct_full,
+        recipe_ops=struct_ops,
+        gemini_response_raw=merged_raw,
     )
 
 
