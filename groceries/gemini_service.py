@@ -20,8 +20,6 @@ RECIPE_INGREDIENT_LIST_MAX = 20
 # Full recipe (ingredients + steps) from title/notes.
 RECIPE_FULL_INGREDIENTS_MAX = 25
 RECIPE_FULL_STEPS_MAX = 35
-# Question flow: cap related grocery product search strings (Chile).
-QUESTION_RELATED_PRODUCTS_MAX = 5
 
 # All Gemini calls use gemini-2.5-flash.
 GEMINI_FIND_PRODUCTS_MODEL = "gemini-2.5-flash"
@@ -39,9 +37,8 @@ SEARCH_QUERY_KIND_SYSTEM_INSTRUCTION = (
     '- "product" — looking for a type of product to buy (e.g. "oat milk", "rice 1kg", "pasta").\n'
     '- "brand" — mainly a brand or manufacturer name (e.g. "Colún", "Nestlé", "Lider brand X").\n'
     '- "recipe" — dish or meal to cook; ingredients implied (e.g. "carbonara", "chile con carne").\n'
-    '- "question" — how-to, nutrition, comparison, or other non-catalog question.\n'
     "Respond with a single JSON object only — no markdown, no code fences, no other text. "
-    'Exactly one key: "kind" whose value is one of: "product", "brand", "recipe", "question".'
+    'Exactly one key: "kind" whose value is one of: "product", "brand", "recipe".'
 )
 
 RUNNING_LOW_MAX_SUGGESTIONS = 15
@@ -173,20 +170,6 @@ RECIPE_CHILE_INGREDIENT_LIST_SYSTEM_INSTRUCTION = (
     f"At most {RECIPE_INGREDIENT_LIST_MAX} elements. "
     'Each element is either a JSON string (the ingredient name) or a JSON object with one key "ingredient" '
     'whose value is that string. No duplicate ingredients. Order from most central to the dish to supporting items.'
-)
-
-QUESTION_CHILE_RELATED_PRODUCTS_SYSTEM_INSTRUCTION = (
-    "You help a grocery shopper in Chile. The user asked a question (nutrition, comparison, how-to, or other) "
-    "that is not itself a product search.\n"
-    "Suggest up to five distinct grocery products they might want to buy that are relevant to the topic — "
-    "short Spanish Chile shelf-style phrases (e.g. \"Leche sin lactosa\", \"Avena en hojuelas\", \"Aceite de oliva\"). "
-    "Prefer concrete product types, not vague categories like \"comida saludable\". No brand names unless usual "
-    "for that item in Chile. No duplicate lines.\n"
-    f"Respond with a single JSON array only — no markdown, no code fences, no text before or after. "
-    f"At most {QUESTION_RELATED_PRODUCTS_MAX} elements. "
-    'Each element is either a JSON string (product line) or a JSON object with one key "product" '
-    'whose value is that string (alternatively \"ingredient\" or \"name\" as the only key). '
-    "Order from most relevant to less central."
 )
 
 RECIPE_FULL_CHILE_JSON_SYSTEM_INSTRUCTION = (
@@ -735,36 +718,6 @@ def fetch_recipe_full_chile(
         response.text,
         max_ingredients=n_ing,
         max_steps=n_st,
-    )
-
-
-def fetch_question_related_grocery_products_chile(
-    *,
-    question: str,
-    max_products: int = QUESTION_RELATED_PRODUCTS_MAX,
-) -> list[str]:
-    """Ask Gemini for up to *max_products* grocery product search strings relevant to *question* (Chile)."""
-    q = (question or "").strip()
-    if not q:
-        return []
-    lim = max(1, min(max_products, QUESTION_RELATED_PRODUCTS_MAX))
-    prompt = (
-        f"Shopper question (as entered): {q!r}\n\n"
-        f"Return at most {lim} related grocery product lines as the JSON array described in the system instruction."
-    )
-    client = _get_client()
-    response = client.models.generate_content(
-        model=GEMINI_FIND_PRODUCTS_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=QUESTION_CHILE_RELATED_PRODUCTS_SYSTEM_INSTRUCTION,
-            temperature=0.25,
-        ),
-    )
-    return _parse_json_string_list(
-        response.text,
-        max_items=lim,
-        dict_text_keys=("product", "ingredient", "name"),
     )
 
 
