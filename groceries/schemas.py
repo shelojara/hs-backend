@@ -389,7 +389,6 @@ class RecipeMessageSchema(Schema):
     created_at: datetime
     user_message: str
     assistant_answer: str
-    gemini_response_raw: str
     recipe_updated: bool
 
 
