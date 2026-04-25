@@ -45,6 +45,7 @@ from groceries.services import (
     get_current_basket,
     get_current_basket_with_products,
     list_products,
+    list_recipe_messages,
     list_user_recipes,
     list_purchased_baskets,
     list_purchased_baskets_for_running_low,
@@ -1473,6 +1474,51 @@ def test_recipe_ingredient_in_catalog_flags_icontains_standard_name():
     assert flags["Leche"] is True
     assert flags["Huevos"] is False
     assert flags["leche"] is True
+
+
+@pytest.mark.django_db
+def test_list_recipe_messages_ordered_oldest_first():
+    u = _user(username="msg_list_u")
+    r = Recipe.objects.create(user=u, title="Chatty", notes="")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="A", amount="")
+    RecipeStep.objects.create(recipe=r, order=0, text="S")
+    base = timezone.now()
+    m1 = RecipeMessage.objects.create(
+        recipe=r,
+        user_message="first",
+        assistant_answer="a1",
+        recipe_updated=False,
+    )
+    RecipeMessage.objects.filter(pk=m1.pk).update(created_at=base)
+    m2 = RecipeMessage.objects.create(
+        recipe=r,
+        user_message="second",
+        assistant_answer="a2",
+        recipe_updated=True,
+    )
+    RecipeMessage.objects.filter(pk=m2.pk).update(created_at=base + timedelta(seconds=1))
+
+    rows = list_recipe_messages(recipe_id=r.pk, user_id=u.pk)
+    assert [m.pk for m in rows] == [m1.pk, m2.pk]
+    assert rows[0].user_message == "first"
+    assert rows[1].recipe_updated is True
+
+
+@pytest.mark.django_db
+def test_list_recipe_messages_wrong_user_raises():
+    u = _user(username="msg_owner")
+    other = _user(username="msg_other")
+    r = Recipe.objects.create(user=u, title="Mine", notes="")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="A", amount="")
+    RecipeStep.objects.create(recipe=r, order=0, text="S")
+    RecipeMessage.objects.create(
+        recipe=r,
+        user_message="x",
+        assistant_answer="y",
+        recipe_updated=False,
+    )
+    with pytest.raises(Recipe.DoesNotExist):
+        list_recipe_messages(recipe_id=r.pk, user_id=other.pk)
 
 
 @pytest.mark.django_db

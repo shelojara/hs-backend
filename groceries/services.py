@@ -1213,6 +1213,24 @@ def get_recipe(*, recipe_id: int, user_id: int) -> Recipe:
     )
 
 
+def list_recipe_messages(
+    *,
+    recipe_id: int,
+    user_id: int,
+) -> list[RecipeMessage]:
+    """Chat turns for *recipe_id* owned by *user_id*, oldest first (``created_at``, ``id``).
+
+    Raises ``Recipe.DoesNotExist`` when recipe missing or not owned.
+    """
+    Recipe.objects.get(pk=recipe_id, user_id=user_id)
+    return list(
+        RecipeMessage.objects.filter(recipe_id=recipe_id).order_by(
+            "created_at",
+            "id",
+        ),
+    )
+
+
 def delete_recipe(*, recipe_id: int, user_id: int) -> None:
     """Hard-delete recipe owned by *user_id* (ingredients and steps cascade).
 
