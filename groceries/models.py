@@ -13,6 +13,11 @@ class SearchStatus(models.TextChoices):
     FAILED = "failed", "Failed"
 
 
+class SearchJobKind(models.TextChoices):
+    PRODUCT = "product", "Product"
+    RECIPE = "recipe", "Recipe"
+
+
 class ActiveSearchManager(models.Manager):
     """Rows with ``deleted_at`` unset (not soft-deleted)."""
 
@@ -21,14 +26,28 @@ class ActiveSearchManager(models.Manager):
 
 
 class Search(models.Model):
-    """Async Gemini product search job; ``result_candidates`` filled when completed."""
+    """Async Gemini job: product candidates (``job_type=product``) or recipe generation (``recipe``)."""
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="groceries_searches",
     )
+    job_type = models.CharField(
+        max_length=16,
+        choices=SearchJobKind.choices,
+        default=SearchJobKind.PRODUCT,
+        db_index=True,
+    )
     query = models.TextField()
+    recipe_notes = models.TextField(blank=True, default="")
+    recipe = models.ForeignKey(
+        "Recipe",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="source_searches",
+    )
     emoji = models.CharField(
         max_length=64,
         blank=True,

@@ -17,7 +17,11 @@ from rapidfuzz import fuzz
 
 from groceries import gemini_service
 from groceries.favicon_service import fetch_favicon_url, normalize_website_url
-from groceries.gemini_service import MerchantProductInfo, PreferredMerchantContext
+from groceries.gemini_service import (
+    MerchantProductInfo,
+    PreferredMerchantContext,
+    RecipeFullFromGemini,
+)
 from groceries.url_page_context import fetch_page_text_for_product_context, is_http_https_url
 from groceries.models import (
     SEARCH_DEFAULT_EMOJI,
@@ -29,6 +33,7 @@ from groceries.models import (
     RecipeIngredient,
     RecipeStep,
     Search,
+    SearchJobKind,
     SearchStatus,
 )
 from groceries.schemas import ProductCandidateSchema, SearchResultCandidateSchema
@@ -983,12 +988,16 @@ def _search_emoji_from_first_result_candidate(rows: list[dict[str, Any]]) -> str
 
 
 def create_search(*, query: str, user_id: int) -> int:
-    """Create pending ``Search`` and enqueue Gemini worker; returns primary key."""
+    """Create pending product ``Search`` and enqueue Gemini worker; returns primary key."""
     normalized = query.strip()
     if not normalized:
         msg = "Query must not be empty."
         raise ValueError(msg)
-    row = Search.objects.create(user_id=user_id, query=normalized)
+    row = Search.objects.create(
+        user_id=user_id,
+        query=normalized,
+        job_type=SearchJobKind.PRODUCT,
+    )
     async_task(
         "groceries.scheduled_tasks.run_product_search_job",
         row.pk,
@@ -1020,6 +1029,9 @@ def delete_search(*, search_id: int, user_id: int) -> None:
 def retry_empty_completed_search(*, search_id: int, user_id: int) -> None:
     """Re-queue Gemini worker for *completed* row with empty ``result_candidates``."""
     row = Search.objects.get(pk=search_id, user_id=user_id)
+    if row.job_type != SearchJobKind.PRODUCT:
+        msg = "Only product searches support empty-result retry."
+        raise ValueError(msg)
     if row.status != SearchStatus.COMPLETED:
         msg = "Search is not completed; only completed empty-result searches can be retried."
         raise ValueError(msg)
@@ -1138,36 +1150,18 @@ def run_product_search_job(*, search_id: int) -> None:
         search.save(update_fields=["status", "completed_at"])
 
 
-def create_recipe_from_title_and_notes(
+def _persist_recipe_from_gemini_full(
     *,
-    title: str,
-    notes: str,
     user_id: int,
+    title: str,
+    note_clean: str,
+    full: RecipeFullFromGemini,
 ) -> Recipe:
-    """Persist recipe; fill ingredients and steps from Gemini (Chile-focused)."""
+    """Insert ``Recipe`` + ingredients + steps from parsed Gemini payload."""
     t = (title or "").strip()
     if not t:
         msg = "Recipe title must not be empty."
         raise ValueError(msg)
-    note_clean = (notes or "").strip()
-
-    try:
-        full = gemini_service.fetch_recipe_full_chile(title=t, notes=note_clean)
-    except RuntimeError as exc:
-        raise RecipeGenerationFailedError(
-            "Recipe generation is unavailable (missing API key).",
-        ) from exc
-    except Exception as exc:
-        logger.exception("create_recipe_from_title_and_notes: Gemini failed")
-        raise RecipeGenerationFailedError(
-            "Recipe generation failed. Try again later.",
-        ) from exc
-
-    if full is None:
-        raise RecipeGenerationFailedError(
-            "Could not obtain a valid recipe from the model. Try again.",
-        )
-
     with transaction.atomic():
         recipe = Recipe.objects.create(
             user_id=user_id,
@@ -1192,6 +1186,138 @@ def create_recipe_from_title_and_notes(
             ],
         )
     return recipe
+
+
+def create_recipe_from_title_and_notes(
+    *,
+    title: str,
+    notes: str,
+    user_id: int,
+) -> Recipe:
+    """Sync: fetch from Gemini then persist. Used by tests; API uses ``create_recipe_search``."""
+    t = (title or "").strip()
+    if not t:
+        msg = "Recipe title must not be empty."
+        raise ValueError(msg)
+    note_clean = (notes or "").strip()
+
+    try:
+        full = gemini_service.fetch_recipe_full_chile(title=t, notes=note_clean)
+    except RuntimeError as exc:
+        raise RecipeGenerationFailedError(
+            "Recipe generation is unavailable (missing API key).",
+        ) from exc
+    except Exception as exc:
+        logger.exception("create_recipe_from_title_and_notes: Gemini failed")
+        raise RecipeGenerationFailedError(
+            "Recipe generation failed. Try again later.",
+        ) from exc
+
+    if full is None:
+        raise RecipeGenerationFailedError(
+            "Could not obtain a valid recipe from the model. Try again.",
+        )
+
+    return _persist_recipe_from_gemini_full(
+        user_id=user_id,
+        title=t,
+        note_clean=note_clean,
+        full=full,
+    )
+
+
+def create_recipe_search(*, title: str, notes: str, user_id: int) -> int:
+    """Pending ``Search`` (recipe job) + enqueue worker; returns ``Search`` primary key."""
+    t = (title or "").strip()
+    if not t:
+        msg = "Recipe title must not be empty."
+        raise ValueError(msg)
+    note_clean = (notes or "").strip()
+    row = Search.objects.create(
+        user_id=user_id,
+        job_type=SearchJobKind.RECIPE,
+        query=t,
+        recipe_notes=note_clean,
+    )
+    async_task(
+        "groceries.scheduled_tasks.run_recipe_from_gemini_job",
+        row.pk,
+        task_name=f"groceries_recipe_from_gemini:{row.pk}",
+    )
+    return row.pk
+
+
+def run_recipe_from_gemini_job(*, search_id: int) -> None:
+    """Background worker: Gemini full recipe → ``Recipe`` + link on ``Search``."""
+    try:
+        search = Search.all_objects.get(pk=search_id)
+    except Search.DoesNotExist:
+        logger.warning("run_recipe_from_gemini_job: missing Search id=%s", search_id)
+        return
+    if search.deleted_at is not None:
+        logger.warning(
+            "run_recipe_from_gemini_job: Search id=%s soft-deleted; skipping.",
+            search_id,
+        )
+        return
+    if search.job_type != SearchJobKind.RECIPE:
+        logger.warning(
+            "run_recipe_from_gemini_job: Search id=%s not a recipe job; skipping.",
+            search_id,
+        )
+        return
+    t = search.query.strip()
+    note_clean = (search.recipe_notes or "").strip()
+    try:
+        full = gemini_service.fetch_recipe_full_chile(title=t, notes=note_clean)
+    except RuntimeError:
+        logger.warning(
+            "run_recipe_from_gemini_job: GEMINI_API_KEY unset (search id=%s).",
+            search_id,
+        )
+        search.status = SearchStatus.FAILED
+        search.completed_at = timezone.now()
+        search.save(update_fields=["status", "completed_at"])
+        return
+    except Exception:
+        logger.exception(
+            "run_recipe_from_gemini_job: Gemini failed (search id=%s)",
+            search_id,
+        )
+        search.status = SearchStatus.FAILED
+        search.completed_at = timezone.now()
+        search.save(update_fields=["status", "completed_at"])
+        return
+
+    if full is None:
+        search.status = SearchStatus.FAILED
+        search.completed_at = timezone.now()
+        search.save(update_fields=["status", "completed_at"])
+        return
+
+    try:
+        recipe = _persist_recipe_from_gemini_full(
+            user_id=search.user_id,
+            title=t,
+            note_clean=note_clean,
+            full=full,
+        )
+    except Exception:
+        logger.exception(
+            "run_recipe_from_gemini_job: persist failed (search id=%s)",
+            search_id,
+        )
+        search.status = SearchStatus.FAILED
+        search.completed_at = timezone.now()
+        search.save(update_fields=["status", "completed_at"])
+        return
+
+    search.recipe = recipe
+    search.status = SearchStatus.COMPLETED
+    search.completed_at = timezone.now()
+    search.save(
+        update_fields=["recipe", "status", "completed_at"],
+    )
 
 
 def get_recipe(*, recipe_id: int, user_id: int) -> Recipe:

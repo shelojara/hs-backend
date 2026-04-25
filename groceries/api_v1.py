@@ -71,7 +71,6 @@ from groceries.services import (
     InvalidProductListCursorError,
     InvalidRecipeListCursorError,
     NoOpenBasketError,
-    RecipeGenerationFailedError,
 )
 
 router = Router(auth=protected_api_auth, tags=["Groceries"])
@@ -94,6 +93,7 @@ def _search_schema(
             fallback_name=s.query,
             in_catalog_check=in_catalog_check,
         ),
+        recipe_id=s.recipe_id,
     )
 
 
@@ -473,16 +473,14 @@ def delete_merchant(request, payload: DeleteMerchantRequest):
 )
 def create_recipe_from_gemini(request, payload: CreateRecipeFromGeminiRequest):
     try:
-        recipe = services.create_recipe_from_title_and_notes(
+        search_id = services.create_recipe_search(
             title=payload.name,
             notes=payload.notes,
             user_id=request.auth.pk,
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    except RecipeGenerationFailedError as exc:
-        raise HttpError(502, str(exc)) from exc
-    return CreateRecipeFromGeminiResponse(recipe_id=recipe.pk)
+    return CreateRecipeFromGeminiResponse(search_id=search_id)
 
 
 @router.post("/v1.Groceries.ListRecipes", response=ListRecipesResponse)

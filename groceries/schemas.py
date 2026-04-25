@@ -84,6 +84,7 @@ class SearchSchema(Schema):
     status: str
     completed_at: datetime | None
     result_candidates: list[SearchResultCandidateSchema]
+    recipe_id: int | None = None
 
 
 class ListSearchesResponse(Schema):
@@ -325,7 +326,7 @@ class CreateRecipeFromGeminiRequest(Schema):
 
 
 class CreateRecipeFromGeminiResponse(Schema):
-    recipe_id: int
+    search_id: int
 
 
 class GetRecipeRequest(Schema):

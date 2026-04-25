@@ -7,9 +7,16 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
-from groceries.models import SEARCH_DEFAULT_EMOJI, Product, Search, SearchStatus
+from groceries.models import (
+    SEARCH_DEFAULT_EMOJI,
+    Product,
+    Search,
+    SearchJobKind,
+    SearchStatus,
+)
 from groceries.services import (
     candidate_in_user_catalog_by_standard_name,
+    create_recipe_search,
     create_search,
     delete_search,
     get_search,
@@ -18,6 +25,7 @@ from groceries.services import (
     make_user_catalog_in_catalog_check,
     retry_empty_completed_search,
     run_product_search_job,
+    run_recipe_from_gemini_job,
     search_result_candidates_as_product_schemas,
 )
 
@@ -302,24 +310,62 @@ def test_retry_empty_completed_search_root_enqueues_product_worker(mock_async):
 
 
 @pytest.mark.django_db
-@patch("groceries.services.async_task")
-def test_retry_empty_completed_search_recipe_root_ok(mock_async):
+def test_retry_empty_completed_search_rejects_recipe_job():
     u = User.objects.create_user(username="retry5b", password="pw")
     root = Search.objects.create(
         user_id=u.pk,
         query="carbonara",
+        job_type=SearchJobKind.RECIPE,
         status=SearchStatus.COMPLETED,
         result_candidates=[],
         completed_at=timezone.now(),
     )
-    retry_empty_completed_search(search_id=root.pk, user_id=u.pk)
+    with pytest.raises(ValueError, match="Only product searches"):
+        retry_empty_completed_search(search_id=root.pk, user_id=u.pk)
     root.refresh_from_db()
-    assert root.status == SearchStatus.PENDING
+    assert root.status == SearchStatus.COMPLETED
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_recipe_full_chile")
+@patch("groceries.services.async_task")
+def test_create_recipe_search_enqueues_recipe_worker(mock_async, _mock_fetch):
+    u = User.objects.create_user(username="crsearch1", password="pw")
+    sid = create_recipe_search(title="  Empanadas  ", notes=" horno ", user_id=u.pk)
+    row = Search.objects.get(pk=sid)
+    assert row.job_type == SearchJobKind.RECIPE
+    assert row.query == "Empanadas"
+    assert row.recipe_notes == "horno"
+    assert row.status == SearchStatus.PENDING
     mock_async.assert_called_once_with(
-        "groceries.scheduled_tasks.run_product_search_job",
-        root.pk,
-        task_name=f"groceries_product_search:{root.pk}",
+        "groceries.scheduled_tasks.run_recipe_from_gemini_job",
+        sid,
+        task_name=f"groceries_recipe_from_gemini:{sid}",
     )
+
+
+@pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_recipe_full_chile")
+def test_run_recipe_from_gemini_job_links_recipe(mock_fetch):
+    from groceries.gemini_service import RecipeFullFromGemini, RecipeIngredientLine
+
+    u = User.objects.create_user(username="crjob1", password="pw")
+    mock_fetch.return_value = RecipeFullFromGemini(
+        ingredients=(RecipeIngredientLine(name="Harina", amount="1 kg"),),
+        steps=("Mezclar.",),
+    )
+    row = Search.objects.create(
+        user_id=u.pk,
+        job_type=SearchJobKind.RECIPE,
+        query="Pan",
+        recipe_notes="",
+    )
+    run_recipe_from_gemini_job(search_id=row.pk)
+    row.refresh_from_db()
+    assert row.status == SearchStatus.COMPLETED
+    assert row.recipe_id is not None
+    assert row.recipe.title == "Pan"
+    assert row.recipe.ingredients.count() == 1
 
 
 @pytest.mark.django_db
