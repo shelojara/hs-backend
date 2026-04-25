@@ -4,6 +4,7 @@ from django.conf import settings
 from django.db import models
 
 # Default icon for new product searches (API + first result candidate row).
+# Same glyph for new recipes until Gemini fills a dish-specific emoji.
 SEARCH_DEFAULT_EMOJI = "\N{LEFT-POINTING MAGNIFYING GLASS}"
 
 
@@ -152,6 +153,11 @@ class Recipe(models.Model):
         related_name="recipes",
     )
     title = models.CharField(max_length=255)
+    emoji = models.CharField(
+        max_length=64,
+        blank=True,
+        default=SEARCH_DEFAULT_EMOJI,
+    )
     notes = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

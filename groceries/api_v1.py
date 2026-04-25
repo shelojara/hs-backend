@@ -121,6 +121,7 @@ def _recipe_summary_schema(recipe: Recipe) -> RecipeSummarySchema:
     return RecipeSummarySchema(
         recipe_id=recipe.pk,
         title=recipe.title,
+        emoji=recipe.emoji or "",
         notes=recipe.notes,
         created_at=recipe.created_at,
         updated_at=recipe.updated_at,
@@ -516,6 +517,7 @@ def _recipe_schema_for_user(*, recipe: Recipe, user_id: int) -> RecipeSchema:
     return RecipeSchema(
         recipe_id=recipe.pk,
         title=recipe.title,
+        emoji=recipe.emoji or "",
         notes=recipe.notes,
         ingredients=[
             RecipeIngredientSchema(
