@@ -2,6 +2,8 @@ import json
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
+from google.genai import types
+
 from groceries import gemini_service
 from groceries.gemini_service import (
     RECIPE_OPS_MAX,
@@ -235,6 +237,23 @@ def test_merchant_product_instructions_include_preferred_merchant():
     assert "JSON array" in find
     assert f"at most {gemini_service.FIND_PRODUCTS_MAX} elements" in find
     assert "Chile" in gemini_service.RECIPE_FULL_CHILE_JSON_SYSTEM_INSTRUCTION
+
+
+@patch("groceries.gemini_service._get_client")
+def test_fetch_recipe_full_chile_passes_google_search_grounding(mock_get_client):
+    mock_response = MagicMock()
+    mock_response.text = (
+        '{"ingredients": [{"name": "Agua", "amount": "1 L"}], "steps": ["Hervir."]}'
+    )
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    out = gemini_service.fetch_recipe_full_chile(title="Té", notes="")
+    assert out is not None
+    assert out.ingredients[0].name == "Agua"
+    cfg = mock_client.models.generate_content.call_args.kwargs["config"]
+    assert cfg.tools == [types.Tool(google_search=types.GoogleSearch())]
 
 
 def test_parse_recipe_full_chile_payload_object_and_fenced():
