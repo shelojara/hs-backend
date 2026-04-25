@@ -17,6 +17,7 @@ from groceries.gemini_service import (
     RunningLowSuggestion,
 )
 from groceries.models import (
+    SEARCH_DEFAULT_EMOJI,
     Basket,
     BasketProduct,
     Merchant,
@@ -1473,6 +1474,16 @@ def test_create_recipe_placeholder_notes_stored_empty(_mock_async):
         user_id=u.pk,
     )
     assert Recipe.objects.get(pk=r.pk).notes == ""
+
+
+@pytest.mark.django_db
+@patch("groceries.services.async_task")
+def test_create_recipe_from_title_sets_default_emoji_before_generation(_mock_async):
+    u = _user()
+    r = create_recipe_from_title_and_notes(title="Tortilla", notes="", user_id=u.pk)
+    row = Recipe.objects.get(pk=r.pk)
+    assert row.emoji == SEARCH_DEFAULT_EMOJI
+    assert row.generation_status == RecipeGenerationStatus.PENDING
 
 
 @pytest.mark.django_db

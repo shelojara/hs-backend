@@ -1189,6 +1189,7 @@ def create_recipe_from_title_and_notes(
         user_id=user_id,
         title=t[:255],
         notes=note_clean,
+        emoji=SEARCH_DEFAULT_EMOJI,
         generation_status=RecipeGenerationStatus.PENDING,
     )
     async_task(
