@@ -207,6 +207,11 @@ class RecipeMessage(models.Model):
     )
     user_message = models.TextField()
     assistant_answer = models.TextField()
+    gemini_response_raw = models.TextField(
+        blank=True,
+        default="",
+        help_text="Full model response text from Gemini (before structured parse).",
+    )
     recipe_updated = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
