@@ -217,8 +217,11 @@ RECIPE_CHAT_JSON_SYSTEM_INSTRUCTION = (
     "can change when updating.\n"
     "Respond with a single JSON object only — no markdown, no code fences, no other text.\n"
     "Required keys:\n"
-    f'- "answer" (string: concise reply in Spanish Chile when the recipe is in Spanish; '
-    f"at most {RECIPE_CHAT_ANSWER_MAX_CHARS} characters; practical and safe for cooking).\n"
+    f'- "answer" (string: always write this field in Chilean Spanish (español de Chile: natural modisms, '
+    f"voseo where it fits, po/cachai tone when light); be warm and a bit funny — one pun, double entendre, "
+    f"or dad-joke-style wordplay on food or the dish when it does not blur safety or amounts; "
+    f"if humor would confuse timing or allergens, skip the joke and stay clear. "
+    f"At most {RECIPE_CHAT_ANSWER_MAX_CHARS} characters; practical and safe for cooking).\n"
     '- "update_recipe" (boolean): true only if the user asked to change the stored recipe '
     "(ingredients and/or steps) and you can describe the edits; "
     "false for pure Q&A, tips, or when you should not change ingredients/steps.\n"
@@ -915,7 +918,7 @@ def fetch_recipe_chat_chile(
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=RECIPE_CHAT_JSON_SYSTEM_INSTRUCTION,
-            temperature=0.35,
+            temperature=0.45,
         ),
     )
     return _parse_recipe_chat_payload(
