@@ -4,7 +4,6 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.test import override_settings
 from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
@@ -38,7 +37,6 @@ def test_create_search_persists_pending_and_enqueues_worker(mock_async):
     assert row.parent_id is None
     assert row.status == SearchStatus.PENDING
     assert row.result_candidates == []
-    assert row.kind == ""
     mock_async.assert_called_once_with(
         "groceries.scheduled_tasks.run_product_search_job",
         sid,
@@ -47,10 +45,6 @@ def test_create_search_persists_pending_and_enqueues_worker(mock_async):
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.classify_search_query_kind",
-    return_value="",
-)
 @patch(
     "groceries.services.gemini_service.fetch_merchant_product_candidates",
     return_value=[
@@ -65,17 +59,13 @@ def test_create_search_persists_pending_and_enqueues_worker(mock_async):
         ),
     ],
 )
-def test_run_product_search_job_marks_completed_with_candidates(
-    _mock_gemini,
-    _mock_kind,
-):
+def test_run_product_search_job_marks_completed_with_candidates(_mock_gemini):
     u = User.objects.create_user(username="s2", password="pw")
     row = Search.objects.create(user_id=u.pk, query="leche")
     run_product_search_job(search_id=row.pk)
     row.refresh_from_db()
     assert row.status == SearchStatus.COMPLETED
     assert row.completed_at is not None
-    assert row.kind == ""
     assert row.result_candidates == [
         {
             "display_name": "Leche 1 L",
@@ -89,14 +79,9 @@ def test_run_product_search_job_marks_completed_with_candidates(
         },
     ]
     assert row.emoji == "🥛"
-    _mock_kind.assert_called_once_with(query="leche")
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.classify_search_query_kind",
-    return_value="",
-)
 @patch(
     "groceries.services.gemini_service.fetch_merchant_product_candidates",
     return_value=[
@@ -122,7 +107,6 @@ def test_run_product_search_job_marks_completed_with_candidates(
 )
 def test_run_product_search_job_search_emoji_defaults_when_first_candidate_blank(
     _mock_gemini,
-    _mock_kind,
 ):
     u = User.objects.create_user(username="s2b", password="pw")
     row = Search.objects.create(user_id=u.pk, query="q")
@@ -136,14 +120,10 @@ def test_run_product_search_job_search_emoji_defaults_when_first_candidate_blank
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.classify_search_query_kind",
-    return_value="",
-)
-@patch(
     "groceries.services.gemini_service.fetch_merchant_product_candidates",
     side_effect=RuntimeError("no key"),
 )
-def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini, _mock_kind):
+def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini):
     u = User.objects.create_user(username="s3", password="pw")
     row = Search.objects.create(user_id=u.pk, query="x")
     before = timezone.now()
@@ -156,10 +136,6 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini, _mock_k
 
 
 @pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.classify_search_query_kind",
-    return_value="recipe",
-)
 @patch(
     "groceries.services.gemini_service.fetch_merchant_product_candidates",
     return_value=[
@@ -174,15 +150,11 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini, _mock_k
         ),
     ],
 )
-def test_run_product_search_job_recipe_kind_uses_merchant_product_search(
-    mock_fetch,
-    _mock_kind,
-):
+def test_run_product_search_job_recipe_query_uses_merchant_product_search(mock_fetch):
     u = User.objects.create_user(username="skind_recipe", password="pw")
     row = Search.objects.create(user_id=u.pk, query="carbonara")
     run_product_search_job(search_id=row.pk)
     row.refresh_from_db()
-    assert row.kind == "recipe"
     assert row.status == SearchStatus.COMPLETED
     assert row.emoji == "🍝"
     assert row.result_candidates
@@ -193,10 +165,6 @@ def test_run_product_search_job_recipe_kind_uses_merchant_product_search(
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.classify_search_query_kind",
-    return_value="question",
-)
-@patch(
     "groceries.services.gemini_service.fetch_merchant_product_candidates",
     return_value=[
         MerchantProductInfo(
@@ -210,64 +178,19 @@ def test_run_product_search_job_recipe_kind_uses_merchant_product_search(
         ),
     ],
 )
-def test_run_product_search_job_question_kind_uses_merchant_product_search(
+def test_run_product_search_job_question_like_query_uses_merchant_product_search(
     mock_fetch,
-    _mock_kind,
 ):
     u = User.objects.create_user(username="sq_merch", password="pw")
     row = Search.objects.create(user_id=u.pk, query="is oat milk healthy")
     run_product_search_job(search_id=row.pk)
     row.refresh_from_db()
-    assert row.kind == "question"
     assert row.status == SearchStatus.COMPLETED
     assert row.emoji == "🥛"
     assert row.result_candidates
     mock_fetch.assert_called_once()
     assert mock_fetch.call_args.kwargs["query"] == "is oat milk healthy"
     assert not Search.all_objects.filter(parent_id=row.pk).exists()
-
-
-@pytest.mark.django_db
-@override_settings(
-    FLAGS={
-        "SKIP_SEARCH_QUERY_CLASSIFICATION": [
-            {"condition": "boolean", "value": True},
-        ],
-    },
-)
-@patch(
-    "groceries.services.gemini_service.classify_search_query_kind",
-    return_value="question",
-)
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_candidates",
-    return_value=[
-        MerchantProductInfo(
-            display_name="Leche 1 L",
-            standard_name="Leche entera",
-            brand="Colún",
-            price=Decimal("1990"),
-            format="1 L",
-            emoji="🥛",
-            merchant="Lider",
-        ),
-    ],
-)
-def test_run_product_search_job_skip_classification_forces_product(
-    _mock_fetch,
-    _mock_kind,
-):
-    u = User.objects.create_user(username="s_skip_cls", password="pw")
-    row = Search.objects.create(user_id=u.pk, query="is oat milk healthy")
-    run_product_search_job(search_id=row.pk)
-    row.refresh_from_db()
-    assert row.status == SearchStatus.COMPLETED
-    assert row.kind == "product"
-    assert row.result_candidates
-    assert row.result_candidates[0]["emoji"] == "🥛"
-    assert row.emoji == "🥛"
-    _mock_kind.assert_not_called()
-    _mock_fetch.assert_called_once()
 
 
 @pytest.mark.django_db
@@ -285,8 +208,7 @@ def test_run_product_search_job_skip_classification_forces_product(
         ),
     ],
 )
-@patch("groceries.services.gemini_service.classify_search_query_kind")
-def test_run_product_search_job_skips_soft_deleted_search(_mock_kind, _mock_gemini):
+def test_run_product_search_job_skips_soft_deleted_search(_mock_gemini):
     u = User.objects.create_user(username="s_skip", password="pw")
     row = Search.objects.create(user_id=u.pk, query="leche")
     delete_search(search_id=row.pk, user_id=u.pk)
@@ -296,7 +218,6 @@ def test_run_product_search_job_skips_soft_deleted_search(_mock_kind, _mock_gemi
     assert row.result_candidates == []
     assert row.completed_at is None
     _mock_gemini.assert_not_called()
-    _mock_kind.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -417,7 +338,6 @@ def test_retry_empty_completed_search_root_enqueues_product_worker(mock_async):
         status=SearchStatus.COMPLETED,
         result_candidates=[],
         completed_at=timezone.now(),
-        kind="product",
     )
     retry_empty_completed_search(search_id=row.pk, user_id=u.pk)
     row.refresh_from_db()
@@ -437,7 +357,6 @@ def test_retry_empty_completed_search_recipe_root_with_children_ok(mock_async):
     root = Search.objects.create(
         user_id=u.pk,
         query="carbonara",
-        kind="recipe",
         status=SearchStatus.COMPLETED,
         result_candidates=[],
         completed_at=timezone.now(),

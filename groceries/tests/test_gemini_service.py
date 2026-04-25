@@ -11,7 +11,6 @@ from groceries.gemini_service import (
     _parse_merchant_product_payload,
     _parse_recipe_full_chile_payload,
     _parse_running_low_suggestions,
-    _parse_search_query_kind_payload,
     merchant_product_find_system_instruction,
     merchant_product_single_system_instruction,
 )
@@ -130,32 +129,6 @@ def test_parse_plain_text_without_json_returns_none():
 
 def test_parse_invalid_json_returns_none():
     assert _parse_merchant_product_payload("{not json") is None
-
-
-def test_parse_search_query_kind_payload_valid_and_invalid():
-    assert _parse_search_query_kind_payload('{"kind": "brand"}') == "brand"
-    assert _parse_search_query_kind_payload('{"kind": "PRODUCT"}') == "product"
-    assert _parse_search_query_kind_payload("```json\n{\"kind\": \"recipe\"}\n```") == "recipe"
-    assert _parse_search_query_kind_payload('{"kind": "other"}') == ""
-    assert _parse_search_query_kind_payload("") == ""
-
-
-@patch("groceries.gemini_service._get_client")
-def test_classify_search_query_kind_returns_parsed_value(mock_get_client):
-    mock_response = MagicMock()
-    mock_response.text = '{"kind": "question"}'
-    mock_client = MagicMock()
-    mock_client.models.generate_content.return_value = mock_response
-    mock_get_client.return_value = mock_client
-
-    assert gemini_service.classify_search_query_kind(query="  why milk  ") == "question"
-    mock_client.models.generate_content.assert_called_once()
-
-
-@patch("groceries.gemini_service._get_client")
-def test_classify_search_query_kind_blank_query_no_client(mock_get_client):
-    assert gemini_service.classify_search_query_kind(query="   ") == ""
-    mock_get_client.assert_not_called()
 
 
 def test_parse_merchant_product_list_payload_array():

@@ -8,8 +8,6 @@ from collections.abc import Callable
 from typing import Any, TypeAlias
 
 from dateutil.relativedelta import relativedelta
-from flags.state import flag_enabled
-
 from django.db import transaction
 from django.db.models import Count, F, Max, Prefetch, Q, QuerySet
 from django.utils import timezone
@@ -31,7 +29,6 @@ from groceries.models import (
     RecipeIngredient,
     RecipeStep,
     Search,
-    SearchQueryKind,
     SearchStatus,
 )
 from groceries.schemas import ProductCandidateSchema, SearchResultCandidateSchema
@@ -1151,23 +1148,6 @@ def run_product_search_job(*, search_id: int) -> None:
         return
     user_id = search.user_id
     q = search.query.strip()
-    kind_val = ""
-    if flag_enabled("SKIP_SEARCH_QUERY_CLASSIFICATION"):
-        kind_val = SearchQueryKind.PRODUCT.value
-    else:
-        try:
-            kind_val = gemini_service.classify_search_query_kind(query=q)
-        except RuntimeError:
-            logger.warning(
-                "run_product_search_job: skip query kind (GEMINI unset) (search id=%s).",
-                search_id,
-            )
-        except Exception:
-            logger.exception(
-                "run_product_search_job: classify query kind failed (search id=%s)",
-                search_id,
-            )
-    search.kind = kind_val
     if search.parent_id is not None:
         logger.warning(
             "run_product_search_job: Search id=%s has parent (use ingredient worker); skipping.",
@@ -1191,7 +1171,6 @@ def run_product_search_job(*, search_id: int) -> None:
         search.completed_at = timezone.now()
         search.save(
             update_fields=[
-                "kind",
                 "result_candidates",
                 "status",
                 "completed_at",
@@ -1205,12 +1184,12 @@ def run_product_search_job(*, search_id: int) -> None:
         )
         search.status = SearchStatus.FAILED
         search.completed_at = timezone.now()
-        search.save(update_fields=["kind", "status", "completed_at"])
+        search.save(update_fields=["status", "completed_at"])
     except Exception:
         logger.exception("run_product_search_job failed (search id=%s)", search_id)
         search.status = SearchStatus.FAILED
         search.completed_at = timezone.now()
-        search.save(update_fields=["kind", "status", "completed_at"])
+        search.save(update_fields=["status", "completed_at"])
 
 
 def run_ingredient_product_search_job(*, search_id: int) -> None:

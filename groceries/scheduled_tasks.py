@@ -31,5 +31,5 @@ def run_product_search_job(search_id: int) -> None:
 
 
 def run_ingredient_product_search_job(search_id: int) -> None:
-    """django-q2 entrypoint: one ingredient line → product candidates (no query classification)."""
+    """django-q2 entrypoint: one ingredient line → product candidates."""
     services.run_ingredient_product_search_job(search_id=search_id)
