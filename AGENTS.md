@@ -16,7 +16,7 @@ This document focuses on the **Page Checker** app: a Django Ninja API that monit
 | Start worker | `make worker` (or `uv run manage.py qcluster`) |
 | Start all (web + worker) | `make serve` (or `uv run honcho start`) |
 | Lint | `uv run ruff check .` |
-| Tests | `uv run pytest` |
+| Tests (app-scoped) | `uv run pytest pagechecker/` · `groceries/` · `auth/` · `backend/` |
 | Make migrations | `make migrations` |
 
 ### Caveats
@@ -27,6 +27,6 @@ This document focuses on the **Page Checker** app: a Django Ninja API that monit
 - Django Ninja auto-generates interactive API docs at `/api/docs`.
 - `check_page` makes outbound HTTP requests to fetch monitored URLs — network access is required.
 - The SQLite database file (`db.sqlite3`) is created in the project root after running migrations. It is gitignored.
-- When you change or add logic in `pagechecker/services.py`, add or extend **pytest** coverage in `pagechecker/tests/` (pytest-django; use `@pytest.mark.django_db` when the database is involved). Run `uv run pytest` together with `uv run ruff check .`.
+- When you change or add logic in `pagechecker/services.py`, add or extend **pytest** coverage in `pagechecker/tests/` (pytest-django; use `@pytest.mark.django_db` when the database is involved). Run `uv run pytest pagechecker/` together with `uv run ruff check .`. Prefer **app-scoped** test runs (`uv run pytest <app>/` or `uv run pytest path/to/test_file.py`) instead of `uv run pytest` for the whole repo—faster feedback. Use the full tree only when a change touches shared layers and you need cross-app confidence.
 - **Test services, not HTTP routes.** Prefer calling functions in `pagechecker/services.py` directly. Do not add or extend tests that hit `/api/...` RPC endpoints via `django.test.Client` unless there is an explicit reason (e.g. auth middleware contract). Interactive behavior stays verifiable via `/api/docs`.
 - **Do not test schemas.** Do not add or extend tests for Pydantic/Ninja `Schema` classes in `pagechecker/schemas.py` (e.g. `model_validate` round-trips). API shapes stay covered indirectly via services and `/api/docs`.
