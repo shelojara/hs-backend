@@ -1,12 +1,15 @@
+import json
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from groceries import gemini_service
 from groceries.gemini_service import (
+    RECIPE_OPS_MAX,
     MerchantProductInfo,
     PreferredMerchantContext,
     RecipeIngredientLine,
     RunningLowSuggestion,
+    apply_recipe_patch_ops,
     _parse_merchant_product_list_payload,
     _parse_merchant_product_payload,
     _parse_recipe_chat_payload,
@@ -296,6 +299,83 @@ def test_parse_recipe_chat_payload_update_ignores_title_notes_in_json():
 def test_parse_recipe_chat_payload_update_empty_ingredients_returns_none():
     raw = '{"answer": "Ok.", "update_recipe": true, "ingredients": [], "steps": ["Y."]}'
     assert _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10) is None
+
+
+def test_parse_recipe_chat_payload_with_recipe_ops():
+    raw = (
+        '{"answer": "Cambié la sal.", "update_recipe": true, '
+        '"recipe_ops": [{"op": "replace_ingredient", "index": 0, "name": "Sal marina", "amount": "1 pizca"}]}'
+    )
+    out = _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10)
+    assert out is not None
+    assert out.update_recipe is True
+    assert out.updated is None
+    assert out.recipe_ops == (
+        {"op": "replace_ingredient", "index": 0, "name": "Sal marina", "amount": "1 pizca"},
+    )
+
+
+def test_parse_recipe_chat_payload_recipe_ops_takes_precedence_over_full_lists():
+    raw = (
+        '{"answer": "x", "update_recipe": true, '
+        '"recipe_ops": [{"op": "replace_step", "index": 0, "text": "Nuevo."}], '
+        '"ingredients": [{"name": "Ignored", "amount": ""}], "steps": ["Ignored."]}'
+    )
+    out = _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10)
+    assert out is not None
+    assert out.recipe_ops is not None
+    assert out.updated is None
+
+
+def test_parse_recipe_chat_payload_recipe_ops_caps_count():
+    many = [{"op": "replace_step", "index": 0, "text": "A."}] * (RECIPE_OPS_MAX + 5)
+    raw = json.dumps({"answer": "x", "update_recipe": True, "recipe_ops": many})
+    out = _parse_recipe_chat_payload(raw, max_ingredients=10, max_steps=10)
+    assert out is not None
+    assert out.recipe_ops is not None
+    assert len(out.recipe_ops) == RECIPE_OPS_MAX
+
+
+def test_apply_recipe_patch_ops_replace_and_insert():
+    full = apply_recipe_patch_ops(
+        ingredients=[("Sal", "1 pizca"), ("Pimienta", "")],
+        steps=["Mezclar.", "Servir."],
+        ops=[
+            {"op": "replace_ingredient", "index": 0, "name": "Sal marina", "amount": "2 pizcas"},
+            {"op": "insert_ingredient", "index": 2, "name": "Aceite", "amount": "1 cdta"},
+        ],
+        max_ingredients=10,
+        max_steps=10,
+    )
+    assert full is not None
+    assert [x.name for x in full.ingredients] == ["Sal marina", "Pimienta", "Aceite"]
+    assert full.steps == ("Mezclar.", "Servir.")
+
+
+def test_apply_recipe_patch_ops_remove_step_invalidates():
+    assert (
+        apply_recipe_patch_ops(
+            ingredients=[("A", "")],
+            steps=["Uno", "Dos"],
+            ops=[{"op": "remove_step", "index": 0}, {"op": "remove_step", "index": 0}],
+            max_ingredients=10,
+            max_steps=10,
+        )
+        is None
+    )
+
+
+def test_apply_recipe_patch_ops_duplicate_name_rejected():
+    assert (
+        apply_recipe_patch_ops(
+            ingredients=[("A", ""), ("B", "")],
+            steps=["S"],
+            ops=[{"op": "replace_ingredient", "index": 1, "name": "a", "amount": ""}],
+            max_ingredients=10,
+            max_steps=10,
+        )
+        is None
+    )
 
 
 def test_parse_recipe_full_chile_payload_requires_both_lists_nonempty():
