@@ -8,8 +8,8 @@ from groceries.schemas import (
     AddProductToBasketResponse,
     BasketLineSchema,
     BasketSchema,
-    ChatRecipeRequest,
-    ChatRecipeResponse,
+    SendRecipeMessageRequest,
+    SendRecipeMessageResponse,
     CreateMerchantRequest,
     CreateMerchantResponse,
     CreateRecipeFromGeminiRequest,
@@ -543,8 +543,8 @@ def get_recipe(request, payload: GetRecipeRequest):
     )
 
 
-@router.post("/v1.Groceries.ChatRecipe", response=ChatRecipeResponse)
-def chat_recipe(request, payload: ChatRecipeRequest):
+@router.post("/v1.Groceries.SendRecipeMessage", response=SendRecipeMessageResponse)
+def send_recipe_message(request, payload: SendRecipeMessageRequest):
     try:
         result = services.recipe_chat_about_recipe(
             recipe_id=payload.recipe_id,
@@ -557,7 +557,7 @@ def chat_recipe(request, payload: ChatRecipeRequest):
         raise HttpError(400, str(exc)) from exc
     except RecipeGenerationFailedError as exc:
         raise HttpError(502, str(exc)) from exc
-    return ChatRecipeResponse(
+    return SendRecipeMessageResponse(
         answer=result.answer,
         recipe_updated=result.recipe_updated,
         recipe=_recipe_schema_for_user(

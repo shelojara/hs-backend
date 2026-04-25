@@ -374,12 +374,12 @@ def _strip_nonempty_recipe_chat_message(v: str) -> str:
     return s
 
 
-class ChatRecipeRequest(Schema):
+class SendRecipeMessageRequest(Schema):
     recipe_id: int
     message: Annotated[str, AfterValidator(_strip_nonempty_recipe_chat_message)]
 
 
-class ChatRecipeResponse(Schema):
+class SendRecipeMessageResponse(Schema):
     answer: str
     recipe_updated: bool
     recipe: RecipeSchema
