@@ -382,3 +382,19 @@ class SendRecipeMessageRequest(Schema):
 class SendRecipeMessageResponse(Schema):
     answer: str
     recipe_updated: bool
+
+
+class RecipeMessageSchema(Schema):
+    recipe_message_id: int
+    created_at: datetime
+    user_message: str
+    assistant_answer: str
+    recipe_updated: bool
+
+
+class ListRecipeMessagesRequest(Schema):
+    recipe_id: int
+
+
+class ListRecipeMessagesResponse(Schema):
+    messages: list[RecipeMessageSchema]

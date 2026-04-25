@@ -44,8 +44,11 @@ from groceries.schemas import (
     ListSearchesResponse,
     ListRecipesRequest,
     ListRecipesResponse,
+    ListRecipeMessagesRequest,
+    ListRecipeMessagesResponse,
     MerchantSchema,
     RecipeIngredientSchema,
+    RecipeMessageSchema,
     RecipeSchema,
     RecipeSummarySchema,
     RecipeStepSchema,
@@ -560,6 +563,32 @@ def send_recipe_message(request, payload: SendRecipeMessageRequest):
     return SendRecipeMessageResponse(
         answer=result.answer,
         recipe_updated=result.recipe_updated,
+    )
+
+
+@router.post(
+    "/v1.Groceries.ListRecipeMessages",
+    response=ListRecipeMessagesResponse,
+)
+def list_recipe_messages(request, payload: ListRecipeMessagesRequest):
+    try:
+        rows = services.list_recipe_messages(
+            recipe_id=payload.recipe_id,
+            user_id=request.auth.pk,
+        )
+    except Recipe.DoesNotExist as exc:
+        raise HttpError(404, "Recipe not found.") from exc
+    return ListRecipeMessagesResponse(
+        messages=[
+            RecipeMessageSchema(
+                recipe_message_id=m.pk,
+                created_at=m.created_at,
+                user_message=m.user_message,
+                assistant_answer=m.assistant_answer,
+                recipe_updated=m.recipe_updated,
+            )
+            for m in rows
+        ],
     )
 
 
