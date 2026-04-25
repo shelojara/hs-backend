@@ -31,6 +31,7 @@ from groceries.models import (
     Product,
     Recipe,
     RecipeIngredient,
+    RecipeMessage,
     RecipeStep,
     Search,
     SearchStatus,
@@ -1353,6 +1354,13 @@ def recipe_chat_about_recipe(
             step_texts=list(out.updated.steps),
         )
         recipe_updated = True
+
+    RecipeMessage.objects.create(
+        recipe=recipe,
+        user_message=msg,
+        assistant_answer=out.answer,
+        recipe_updated=recipe_updated,
+    )
 
     return RecipeChatResult(
         answer=out.answer,

@@ -197,6 +197,26 @@ class RecipeStep(models.Model):
         return f"Step {self.order} (recipe={self.recipe_id})"
 
 
+class RecipeMessage(models.Model):
+    """User message to recipe chat plus model reply; CASCADE with recipe."""
+
+    recipe = models.ForeignKey(
+        Recipe,
+        on_delete=models.CASCADE,
+        related_name="messages",
+    )
+    user_message = models.TextField()
+    assistant_answer = models.TextField()
+    recipe_updated = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("recipe", "created_at", "id")
+
+    def __str__(self) -> str:
+        return f"RecipeMessage(recipe={self.recipe_id}, id={self.pk})"
+
+
 class Merchant(models.Model):
     """User-preferred merchant (store) with optional resolved favicon URL."""
 
