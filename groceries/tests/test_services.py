@@ -23,6 +23,7 @@ from groceries.models import (
     Product,
     Recipe,
     RecipeIngredient,
+    RecipeMessage,
     RecipeStep,
 )
 from groceries.schemas import ProductCandidateSchema
@@ -1481,10 +1482,17 @@ def test_delete_recipe_removes_row_and_children():
     RecipeIngredient.objects.create(recipe=r, order=0, name="X", amount="")
     RecipeStep.objects.create(recipe=r, order=0, text="Y")
     rid = r.pk
+    RecipeMessage.objects.create(
+        recipe=r,
+        user_message="hi",
+        assistant_answer="bye",
+        recipe_updated=False,
+    )
     delete_recipe(recipe_id=rid, user_id=u.pk)
     assert Recipe.objects.filter(pk=rid).count() == 0
     assert RecipeIngredient.objects.filter(recipe_id=rid).count() == 0
     assert RecipeStep.objects.filter(recipe_id=rid).count() == 0
+    assert RecipeMessage.objects.filter(recipe_id=rid).count() == 0
 
 
 @pytest.mark.django_db
@@ -1515,6 +1523,10 @@ def test_recipe_chat_about_recipe_answer_only_no_db_change(mock_fetch):
         row.ingredients.order_by("order").values_list("name", flat=True),
     ) == ["Agua"]
     mock_fetch.assert_called_once()
+    stored = RecipeMessage.objects.get(recipe_id=r.pk)
+    assert stored.user_message == "¿Cuándo sal?"
+    assert stored.assistant_answer == "Prueba de sal al final."
+    assert stored.recipe_updated is False
 
 
 @pytest.mark.django_db
@@ -1550,6 +1562,10 @@ def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch
     assert list(row.steps.order_by("order").values_list("text", flat=True)) == [
         "Nuevo paso.",
     ]
+    stored = RecipeMessage.objects.get(recipe_id=r.pk)
+    assert stored.user_message == "Cambia todo"
+    assert stored.assistant_answer == "Actualizado."
+    assert stored.recipe_updated is True
 
 
 @pytest.mark.django_db
@@ -1584,6 +1600,7 @@ def test_recipe_chat_about_recipe_raises_when_gemini_empty(_mock):
     RecipeStep.objects.create(recipe=r, order=0, text="S")
     with pytest.raises(RecipeGenerationFailedError):
         recipe_chat_about_recipe(recipe_id=r.pk, user_id=u.pk, message="?")
+    assert RecipeMessage.objects.filter(recipe_id=r.pk).count() == 0
 
 
 @pytest.mark.django_db
