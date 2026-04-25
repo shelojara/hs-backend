@@ -82,7 +82,6 @@ class InvalidRecipeListCursorError(Exception):
 class RecipeChatResult:
     answer: str
     recipe_updated: bool
-    recipe: Recipe
 
 
 DEFAULT_LIST_LIMIT = 50
@@ -1343,7 +1342,7 @@ def recipe_chat_about_recipe(
 
     recipe_updated = False
     if out.update_recipe and out.updated is not None and out.title:
-        recipe = update_recipe(
+        update_recipe(
             recipe_id=recipe_id,
             user_id=user_id,
             title=out.title,
@@ -1358,7 +1357,6 @@ def recipe_chat_about_recipe(
     return RecipeChatResult(
         answer=out.answer,
         recipe_updated=recipe_updated,
-        recipe=recipe,
     )
 
 

@@ -382,4 +382,3 @@ class SendRecipeMessageRequest(Schema):
 class SendRecipeMessageResponse(Schema):
     answer: str
     recipe_updated: bool
-    recipe: RecipeSchema

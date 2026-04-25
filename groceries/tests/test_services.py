@@ -1511,9 +1511,10 @@ def test_recipe_chat_about_recipe_answer_only_no_db_change(mock_fetch):
     )
     assert out.answer == "Prueba de sal al final."
     assert out.recipe_updated is False
-    assert out.recipe.title == "Sopa"
+    row = get_recipe(recipe_id=r.pk, user_id=u.pk)
+    assert row.title == "Sopa"
     assert list(
-        out.recipe.ingredients.order_by("order").values_list("name", flat=True),
+        row.ingredients.order_by("order").values_list("name", flat=True),
     ) == ["Agua"]
     mock_fetch.assert_called_once()
 
@@ -1544,12 +1545,13 @@ def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch
         message="Cambia todo",
     )
     assert out.recipe_updated is True
-    assert out.recipe.title == "Nuevo título"
-    assert out.recipe.notes == "nota"
+    row = get_recipe(recipe_id=r.pk, user_id=u.pk)
+    assert row.title == "Nuevo título"
+    assert row.notes == "nota"
     assert list(
-        out.recipe.ingredients.order_by("order").values_list("name", flat=True),
+        row.ingredients.order_by("order").values_list("name", flat=True),
     ) == ["Y"]
-    assert list(out.recipe.steps.order_by("order").values_list("text", flat=True)) == [
+    assert list(row.steps.order_by("order").values_list("text", flat=True)) == [
         "Nuevo paso.",
     ]
 

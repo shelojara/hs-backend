@@ -560,10 +560,6 @@ def send_recipe_message(request, payload: SendRecipeMessageRequest):
     return SendRecipeMessageResponse(
         answer=result.answer,
         recipe_updated=result.recipe_updated,
-        recipe=_recipe_schema_for_user(
-            recipe=result.recipe,
-            user_id=request.auth.pk,
-        ),
     )
 
 
