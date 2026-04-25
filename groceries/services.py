@@ -1152,6 +1152,26 @@ def run_product_search_job(*, search_id: int) -> None:
         search.save(update_fields=["status", "completed_at"])
 
 
+def _normalize_user_recipe_notes(notes: str | None) -> str:
+    """Strip user notes; empty if whitespace-only or common 'no notes' placeholders."""
+    s = (notes or "").strip()
+    if not s:
+        return ""
+    key = s.casefold()
+    if key in {
+        "no notes",
+        "sin notas",
+        "sin nota",
+        "n/a",
+        "na",
+        "-",
+        "—",
+        "none",
+    }:
+        return ""
+    return s
+
+
 def create_recipe_from_title_and_notes(
     *,
     title: str,
@@ -1163,7 +1183,7 @@ def create_recipe_from_title_and_notes(
     if not t:
         msg = "Recipe title must not be empty."
         raise ValueError(msg)
-    note_clean = (notes or "").strip()
+    note_clean = _normalize_user_recipe_notes(notes)
 
     recipe = Recipe.objects.create(
         user_id=user_id,
@@ -1226,7 +1246,7 @@ def run_recipe_gemini_job(*, recipe_id: int) -> None:
         return
 
     t = (recipe.title or "").strip()
-    note_clean = (recipe.notes or "").strip()
+    note_clean = _normalize_user_recipe_notes(recipe.notes)
 
     try:
         full = gemini_service.fetch_recipe_full_chile(title=t, notes=note_clean)
@@ -1272,11 +1292,29 @@ def run_recipe_gemini_job(*, recipe_id: int) -> None:
                 for i, text in enumerate(full.steps)
             ],
         )
+        em = gemini_service.normalize_recipe_emoji(full.emoji)
+        if not em:
+            try:
+                em = gemini_service.suggest_product_emoji(name=t)
+            except RuntimeError:
+                logger.warning(
+                    "run_recipe_gemini_job: skipped emoji fallback (no API key) recipe id=%s",
+                    locked.pk,
+                )
+                em = ""
+            except Exception:
+                logger.exception(
+                    "run_recipe_gemini_job: emoji fallback failed (recipe id=%s)",
+                    locked.pk,
+                )
+                em = ""
+        locked.emoji = (em or "")[:64]
         locked.generation_status = RecipeGenerationStatus.COMPLETED
         locked.generation_failed_at = None
         locked.generation_error_message = ""
         locked.save(
             update_fields=[
+                "emoji",
                 "generation_status",
                 "generation_failed_at",
                 "generation_error_message",
@@ -1340,7 +1378,7 @@ def update_recipe(
     if not t:
         msg = "Recipe title must not be empty."
         raise ValueError(msg)
-    note_clean = (notes or "").strip()
+    note_clean = _normalize_user_recipe_notes(notes)
     cleaned_ingredients: list[tuple[str, str]] = []
     for raw_name, raw_amount in ingredient_lines:
         name = (raw_name or "").strip()

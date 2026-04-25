@@ -1398,9 +1398,11 @@ def test_running_low_sync_user_ids_distinct_owners():
 
 @pytest.mark.django_db
 @patch("groceries.services.async_task")
+@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="")
 @patch("groceries.services.gemini_service.fetch_recipe_full_chile")
 def test_create_recipe_from_title_and_notes_persists_gemini_output(
     mock_fetch,
+    _mock_suggest,
     mock_async,
 ):
     u = _user(username="chef1")
@@ -1410,6 +1412,7 @@ def test_create_recipe_from_title_and_notes_persists_gemini_output(
             RecipeIngredientLine(name="Cebolla", amount="1 unidad"),
         ),
         steps=("Pelar papas.", "Hervir 15 min."),
+        emoji="🥘",
     )
     r = create_recipe_from_title_and_notes(
         title="  Charquicán  ",
@@ -1431,6 +1434,7 @@ def test_create_recipe_from_title_and_notes_persists_gemini_output(
     assert row.title == "Charquicán"
     assert row.notes == "sin carne"
     assert row.generation_status == RecipeGenerationStatus.COMPLETED
+    assert row.emoji == "🥘"
     ings = list(row.ingredients.order_by("order", "id"))
     assert len(ings) == 2
     assert ings[0].name == "Papa" and ings[0].amount == "500 g"
@@ -1461,8 +1465,42 @@ def test_create_recipe_from_title_and_notes_empty_title_raises():
 
 @pytest.mark.django_db
 @patch("groceries.services.async_task")
+def test_create_recipe_placeholder_notes_stored_empty(_mock_async):
+    u = _user()
+    r = create_recipe_from_title_and_notes(
+        title="Pollo",
+        notes="  Sin notas  ",
+        user_id=u.pk,
+    )
+    assert Recipe.objects.get(pk=r.pk).notes == ""
+
+
+@pytest.mark.django_db
+@patch("groceries.services.async_task")
+@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="🧄")
 @patch("groceries.services.gemini_service.fetch_recipe_full_chile")
-def test_get_recipe_returns_row_for_owner(mock_fetch, _mock_async):
+def test_run_recipe_gemini_job_uses_suggest_emoji_when_json_omits_emoji(
+    mock_fetch,
+    mock_suggest,
+    _mock_async,
+):
+    u = _user(username="chef_emoji_fallback")
+    mock_fetch.return_value = RecipeFullFromGemini(
+        ingredients=(RecipeIngredientLine(name="Ajo", amount="1"),),
+        steps=("Sofreír.",),
+    )
+    r = create_recipe_from_title_and_notes(title="Salsa verde", notes="", user_id=u.pk)
+    run_recipe_gemini_job(recipe_id=r.pk)
+    row = Recipe.objects.get(pk=r.pk)
+    assert row.emoji == "🧄"
+    mock_suggest.assert_called_once_with(name="Salsa verde")
+
+
+@pytest.mark.django_db
+@patch("groceries.services.async_task")
+@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="")
+@patch("groceries.services.gemini_service.fetch_recipe_full_chile")
+def test_get_recipe_returns_row_for_owner(mock_fetch, _mock_suggest, _mock_async):
     u = _user(username="chef2")
     u2 = _user(username="other")
     mock_fetch.return_value = RecipeFullFromGemini(

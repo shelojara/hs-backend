@@ -304,6 +304,7 @@ class RecipeStepSchema(Schema):
 class RecipeSchema(Schema):
     recipe_id: int
     title: str
+    emoji: str = ""
     notes: str
     ingredients: list[RecipeIngredientSchema]
     steps: list[RecipeStepSchema]
@@ -317,6 +318,7 @@ class RecipeSummarySchema(Schema):
 
     recipe_id: int
     title: str
+    emoji: str = ""
     notes: str
     created_at: datetime
     updated_at: datetime

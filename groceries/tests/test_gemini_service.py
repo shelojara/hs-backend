@@ -260,7 +260,7 @@ def test_parse_recipe_full_chile_payload_object_and_fenced():
     inner = (
         '{"ingredients": [{"name": "Arroz", "amount": "1 taza"}, '
         '{"ingredient": "Agua", "cantidad": "2 tazas"}], '
-        '"steps": ["Lavar arroz.", {"text": "Hervir."}]}'
+        '"steps": ["Lavar arroz.", {"text": "Hervir."}], "emoji": "🍚"}'
     )
     raw = f"```json\n{inner}\n```"
     out = _parse_recipe_full_chile_payload(raw, max_ingredients=10, max_steps=10)
@@ -270,6 +270,7 @@ def test_parse_recipe_full_chile_payload_object_and_fenced():
         RecipeIngredientLine(name="Agua", amount="2 tazas"),
     )
     assert out.steps == ("Lavar arroz.", "Hervir.")
+    assert out.emoji == "🍚"
 
 
 def test_parse_recipe_full_chile_payload_rejects_duplicate_ingredient_names():

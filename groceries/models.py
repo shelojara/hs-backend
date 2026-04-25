@@ -152,6 +152,7 @@ class Recipe(models.Model):
         related_name="recipes",
     )
     title = models.CharField(max_length=255)
+    emoji = models.CharField(max_length=64, blank=True, default="")
     notes = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

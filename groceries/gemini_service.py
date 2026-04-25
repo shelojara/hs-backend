@@ -159,6 +159,8 @@ RECIPE_FULL_CHILE_JSON_SYSTEM_INSTRUCTION = (
     '"amount" (string: quantity with unit, e.g. 500 g, 2 tazas, 1 cucharada; empty string if vague).\n'
     f'- "steps": JSON array of at most {RECIPE_FULL_STEPS_MAX} strings — ordered cooking steps in Spanish '
     "Chile, imperative or infinitive, one clear action per string.\n"
+    '- "emoji" (string: exactly one Unicode emoji that fits the dish visually, e.g. 🥘 for stew; '
+    'empty string "" only if truly impossible).\n'
     "No duplicate ingredient names. Order ingredients from main to supporting. Steps must be practical "
     "and safe (cooking times, heat)."
 )
@@ -199,6 +201,7 @@ class RecipeIngredientLine:
 class RecipeFullFromGemini:
     ingredients: tuple[RecipeIngredientLine, ...]
     steps: tuple[str, ...]
+    emoji: str = ""
 
 
 RECIPE_CHAT_ANSWER_MAX_CHARS = 800
@@ -320,6 +323,18 @@ def _normalize_field(s: str | None, max_len: int) -> str:
         return ""
     text = " ".join(str(s).split())
     return _clip(text, max_len) if text else ""
+
+
+def normalize_recipe_emoji(raw: str | None) -> str:
+    """One emoji string from model; keeps ZWJ inside token; drops extra space-separated tokens."""
+    if not raw:
+        return ""
+    t = str(raw).strip()
+    if not t:
+        return ""
+    if " " in t:
+        t = t.split()[0]
+    return t[:64] if len(t) > 64 else t
 
 
 def _quantize_clp(value: Decimal) -> Decimal:
@@ -622,9 +637,16 @@ def _parse_recipe_full_chile_payload(
                 steps_out.append(t)
     if not lines or not steps_out:
         return None
+    raw_emoji = data.get("emoji")
+    emoji_str = ""
+    if isinstance(raw_emoji, str):
+        emoji_str = normalize_recipe_emoji(raw_emoji)
+    elif raw_emoji is not None:
+        emoji_str = normalize_recipe_emoji(str(raw_emoji))
     return RecipeFullFromGemini(
         ingredients=tuple(lines),
         steps=tuple(steps_out),
+        emoji=emoji_str,
     )
 
 
@@ -741,6 +763,7 @@ def apply_recipe_patch_ops(
     return RecipeFullFromGemini(
         ingredients=tuple(RecipeIngredientLine(name=n, amount=a) for n, a in ing),
         steps=tuple(st),
+        emoji="",
     )
 
 
