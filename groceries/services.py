@@ -17,7 +17,11 @@ from rapidfuzz import fuzz
 
 from groceries import gemini_service
 from groceries.favicon_service import fetch_favicon_url, normalize_website_url
-from groceries.gemini_service import MerchantProductInfo, PreferredMerchantContext
+from groceries.gemini_service import (
+    MerchantProductInfo,
+    PreferredMerchantContext,
+    RecipeChatFromGemini,
+)
 from groceries.url_page_context import fetch_page_text_for_product_context, is_http_https_url
 from groceries.models import (
     SEARCH_DEFAULT_EMOJI,
@@ -72,6 +76,13 @@ class InvalidRecipeListCursorError(Exception):
 
     def __init__(self, message: str = "Invalid cursor.") -> None:
         super().__init__(message)
+
+
+@dataclass(frozen=True)
+class RecipeChatResult:
+    answer: str
+    recipe_updated: bool
+    recipe: Recipe
 
 
 DEFAULT_LIST_LIMIT = 50
@@ -1279,6 +1290,76 @@ def update_recipe(
             ],
         )
     return get_recipe(recipe_id=recipe.pk, user_id=user_id)
+
+
+def _recipe_context_for_gemini_chat(recipe: Recipe) -> str:
+    """Plain-text snapshot of recipe for model context."""
+    ing_rows = sorted(recipe.ingredients.all(), key=lambda r: r.order)
+    st_rows = sorted(recipe.steps.all(), key=lambda r: r.order)
+    ing_block = "\n".join(
+        f"- {ing.name} | {(ing.amount or '').strip()}" for ing in ing_rows
+    )
+    steps_block = "\n".join(f"{i + 1}. {st.text}" for i, st in enumerate(st_rows))
+    notes = (recipe.notes or "").strip()
+    return (
+        f"title: {recipe.title}\n"
+        f"notes: {notes}\n\n"
+        f"ingredients:\n{ing_block}\n\n"
+        f"steps:\n{steps_block}"
+    )
+
+
+def recipe_chat_about_recipe(
+    *,
+    recipe_id: int,
+    user_id: int,
+    message: str,
+) -> RecipeChatResult:
+    """Gemini: short *message* about user's recipe; optionally persist model edits."""
+    msg = (message or "").strip()
+    if not msg:
+        raise ValueError("Message must not be empty.")
+    recipe = get_recipe(recipe_id=recipe_id, user_id=user_id)
+    ctx = _recipe_context_for_gemini_chat(recipe)
+    try:
+        out: RecipeChatFromGemini | None = gemini_service.fetch_recipe_chat_chile(
+            recipe_context=ctx,
+            user_message=msg,
+        )
+    except RuntimeError as exc:
+        raise RecipeGenerationFailedError(
+            "Recipe chat is unavailable (missing API key).",
+        ) from exc
+    except Exception as exc:
+        logger.exception("recipe_chat_about_recipe: Gemini failed")
+        raise RecipeGenerationFailedError(
+            "Recipe chat failed. Try again later.",
+        ) from exc
+
+    if out is None:
+        raise RecipeGenerationFailedError(
+            "Could not obtain a valid reply from the model. Try again.",
+        )
+
+    recipe_updated = False
+    if out.update_recipe and out.updated is not None and out.title:
+        recipe = update_recipe(
+            recipe_id=recipe_id,
+            user_id=user_id,
+            title=out.title,
+            notes=out.notes or "",
+            ingredient_lines=[
+                (line.name, line.amount) for line in out.updated.ingredients
+            ],
+            step_texts=list(out.updated.steps),
+        )
+        recipe_updated = True
+
+    return RecipeChatResult(
+        answer=out.answer,
+        recipe_updated=recipe_updated,
+        recipe=recipe,
+    )
 
 
 def list_user_recipes(

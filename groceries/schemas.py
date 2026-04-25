@@ -364,3 +364,22 @@ class ListRecipesRequest(Schema):
 class ListRecipesResponse(Schema):
     recipes: list[RecipeSummarySchema]
     next_cursor: str | None = None
+
+
+def _strip_nonempty_recipe_chat_message(v: str) -> str:
+    s = v.strip()
+    if not s:
+        msg = "Message must not be empty."
+        raise ValueError(msg)
+    return s
+
+
+class ChatRecipeRequest(Schema):
+    recipe_id: int
+    message: Annotated[str, AfterValidator(_strip_nonempty_recipe_chat_message)]
+
+
+class ChatRecipeResponse(Schema):
+    answer: str
+    recipe_updated: bool
+    recipe: RecipeSchema
