@@ -13,7 +13,6 @@ from groceries.services import (
     create_search,
     delete_search,
     get_search,
-    list_direct_child_searches,
     list_searches,
     load_user_catalog_standard_names_normalized,
     make_user_catalog_in_catalog_check,
@@ -34,7 +33,6 @@ def test_create_search_persists_pending_and_enqueues_worker(mock_async):
     assert row.user_id == u.pk
     assert row.query == "leche"
     assert row.emoji == SEARCH_DEFAULT_EMOJI
-    assert row.parent_id is None
     assert row.status == SearchStatus.PENDING
     assert row.result_candidates == []
     mock_async.assert_called_once_with(
@@ -160,7 +158,6 @@ def test_run_product_search_job_recipe_query_uses_merchant_product_search(mock_f
     assert row.result_candidates
     mock_fetch.assert_called_once()
     assert mock_fetch.call_args.kwargs["query"] == "carbonara"
-    assert not Search.all_objects.filter(parent_id=row.pk).exists()
 
 
 @pytest.mark.django_db
@@ -190,7 +187,6 @@ def test_run_product_search_job_question_like_query_uses_merchant_product_search
     assert row.result_candidates
     mock_fetch.assert_called_once()
     assert mock_fetch.call_args.kwargs["query"] == "is oat milk healthy"
-    assert not Search.all_objects.filter(parent_id=row.pk).exists()
 
 
 @pytest.mark.django_db
@@ -238,39 +234,6 @@ def test_list_searches_returns_latest_ten_newest_first_ordered_by_pk():
 
 
 @pytest.mark.django_db
-def test_list_searches_excludes_child_searches():
-    u = User.objects.create_user(username="ls_child", password="pw")
-    root = Search.objects.create(user_id=u.pk, query="root")
-    Search.objects.create(user_id=u.pk, query="child", parent_id=root.pk)
-    rows = list_searches(user_id=u.pk)
-    assert len(rows) == 1
-    assert rows[0].pk == root.pk
-
-
-@pytest.mark.django_db
-def test_list_searches_annotates_sub_search_count():
-    u = User.objects.create_user(username="ls_subcnt", password="pw")
-    root = Search.objects.create(user_id=u.pk, query="root")
-    Search.objects.create(user_id=u.pk, query="c1", parent_id=root.pk)
-    Search.objects.create(user_id=u.pk, query="c2", parent_id=root.pk)
-    rows = list_searches(user_id=u.pk)
-    assert len(rows) == 1
-    assert rows[0].sub_search_count == 2
-
-
-@pytest.mark.django_db
-def test_list_searches_sub_search_count_excludes_soft_deleted_children():
-    u = User.objects.create_user(username="ls_subdel", password="pw")
-    root = Search.objects.create(user_id=u.pk, query="root")
-    alive = Search.objects.create(user_id=u.pk, query="alive", parent_id=root.pk)
-    gone = Search.objects.create(user_id=u.pk, query="gone", parent_id=root.pk)
-    delete_search(search_id=gone.pk, user_id=u.pk)
-    rows = list_searches(user_id=u.pk)
-    assert rows[0].sub_search_count == 1
-    assert alive.pk in {c.pk for c in Search.objects.filter(parent_id=root.pk)}
-
-
-@pytest.mark.django_db
 def test_get_search_returns_row_for_owner():
     u = User.objects.create_user(username="gs1", password="pw")
     row = Search.objects.create(user_id=u.pk, query="milk")
@@ -286,18 +249,6 @@ def test_get_search_wrong_user_raises():
     row = Search.objects.create(user_id=u.pk, query="x")
     with pytest.raises(Search.DoesNotExist):
         get_search(search_id=row.pk, user_id=other.pk)
-
-
-@pytest.mark.django_db
-def test_list_direct_child_searches_newest_first_excludes_other_parent():
-    u = User.objects.create_user(username="ch1", password="pw")
-    root_a = Search.objects.create(user_id=u.pk, query="a")
-    root_b = Search.objects.create(user_id=u.pk, query="b")
-    c_old = Search.objects.create(user_id=u.pk, query="old", parent_id=root_a.pk)
-    c_new = Search.objects.create(user_id=u.pk, query="new", parent_id=root_a.pk)
-    Search.objects.create(user_id=u.pk, query="other tree", parent_id=root_b.pk)
-    got = list_direct_child_searches(root_a.pk, user_id=u.pk)
-    assert [r.pk for r in got] == [c_new.pk, c_old.pk]
 
 
 @pytest.mark.django_db
@@ -352,7 +303,7 @@ def test_retry_empty_completed_search_root_enqueues_product_worker(mock_async):
 
 @pytest.mark.django_db
 @patch("groceries.services.async_task")
-def test_retry_empty_completed_search_recipe_root_with_children_ok(mock_async):
+def test_retry_empty_completed_search_recipe_root_ok(mock_async):
     u = User.objects.create_user(username="retry5b", password="pw")
     root = Search.objects.create(
         user_id=u.pk,
@@ -361,7 +312,6 @@ def test_retry_empty_completed_search_recipe_root_with_children_ok(mock_async):
         result_candidates=[],
         completed_at=timezone.now(),
     )
-    Search.objects.create(user_id=u.pk, query="Pasta", parent_id=root.pk)
     retry_empty_completed_search(search_id=root.pk, user_id=u.pk)
     root.refresh_from_db()
     assert root.status == SearchStatus.PENDING
@@ -369,30 +319,6 @@ def test_retry_empty_completed_search_recipe_root_with_children_ok(mock_async):
         "groceries.scheduled_tasks.run_product_search_job",
         root.pk,
         task_name=f"groceries_product_search:{root.pk}",
-    )
-
-
-@pytest.mark.django_db
-@patch("groceries.services.async_task")
-def test_retry_empty_completed_search_child_enqueues_ingredient_worker(mock_async):
-    u = User.objects.create_user(username="retry2", password="pw")
-    root = Search.objects.create(user_id=u.pk, query="root")
-    child = Search.objects.create(
-        user_id=u.pk,
-        query="ing",
-        parent_id=root.pk,
-        status=SearchStatus.COMPLETED,
-        result_candidates=[],
-        completed_at=timezone.now(),
-    )
-    retry_empty_completed_search(search_id=child.pk, user_id=u.pk)
-    child.refresh_from_db()
-    assert child.status == SearchStatus.PENDING
-    assert child.completed_at is None
-    mock_async.assert_called_once_with(
-        "groceries.scheduled_tasks.run_ingredient_product_search_job",
-        child.pk,
-        task_name=f"groceries_ingredient_search:{child.pk}",
     )
 
 

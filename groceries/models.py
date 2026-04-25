@@ -28,13 +28,6 @@ class Search(models.Model):
         on_delete=models.CASCADE,
         related_name="groceries_searches",
     )
-    parent = models.ForeignKey(
-        "self",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="child_searches",
-    )
     query = models.TextField()
     emoji = models.CharField(
         max_length=64,
