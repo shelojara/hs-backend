@@ -199,36 +199,54 @@ class RecipeFullFromGemini:
 
 
 RECIPE_CHAT_ANSWER_MAX_CHARS = 800
+# Patch-style edits: smaller JSON than echoing full ingredients+steps.
+RECIPE_OPS_MAX = 30
 
 RECIPE_CHAT_JSON_SYSTEM_INSTRUCTION = (
     "You help a home cook in Chile chat about their saved recipe (title, notes, ingredients, steps). "
     "They may ask a short question, request substitutions, scaling, timing tips, or edits to ingredients/steps.\n"
+    "The current recipe text uses zero-based indices: each line starts with ing[N] for ingredients "
+    "and step[M] for steps. Use those N and M values in edits.\n"
     "The app never changes the saved recipe title or notes from your reply — only ingredients and steps "
-    "can be replaced when updating.\n"
+    "can change when updating.\n"
     "Respond with a single JSON object only — no markdown, no code fences, no other text.\n"
     "Required keys:\n"
     f'- "answer" (string: concise reply in Spanish Chile when the recipe is in Spanish; '
     f"at most {RECIPE_CHAT_ANSWER_MAX_CHARS} characters; practical and safe for cooking).\n"
     '- "update_recipe" (boolean): true only if the user asked to change the stored recipe '
-    "(ingredients and/or steps) and you can supply replacement lists below; "
-    "false for pure Q&A, tips, or when you should not rewrite ingredients/steps.\n"
-    '- When "update_recipe" is true, also include these keys (same ingredient/step shape as our recipe generator):\n'
-    f'  - "ingredients": JSON array of at most {RECIPE_FULL_INGREDIENTS_MAX} objects with '
-    '"name" and "amount" (strings; amount may be empty),\n'
-    f'  - "steps": JSON array of at most {RECIPE_FULL_STEPS_MAX} strings (ordered steps).\n'
-    'When "update_recipe" is false, omit "ingredients" and "steps" or set them to empty arrays — prefer omitting.\n'
-    "If update_recipe is true, ingredients and steps must be non-empty lists. "
-    "No duplicate ingredient names. Keep Chile-typical ingredients when the recipe is Chilean."
+    "(ingredients and/or steps) and you can describe the edits; "
+    "false for pure Q&A, tips, or when you should not change ingredients/steps.\n"
+    '- When "update_recipe" is true, prefer a compact "recipe_ops" array (at most '
+    f"{RECIPE_OPS_MAX} objects) instead of resending the full recipe. Apply ops in order; each op "
+    "sees the list state after previous ops. Valid op shapes (field \"op\" is required):\n"
+    '  - {"op": "replace_ingredient", "index": <int>, "name": <string>, "amount": <string optional>}\n'
+    '  - {"op": "remove_ingredient", "index": <int>}\n'
+    '  - {"op": "insert_ingredient", "index": <int>, "name": <string>, "amount": <string optional>} '
+    "— insert before current ingredient at index; index may equal current length to append.\n"
+    '  - {"op": "replace_step", "index": <int>, "text": <string>}\n'
+    '  - {"op": "remove_step", "index": <int>}\n'
+    '  - {"op": "insert_step", "index": <int>, "text": <string>} '
+    "— insert before current step at index; index may equal current length to append.\n"
+    "After all ops, the recipe must still have at least one ingredient and one step, unique ingredient "
+    "names (case-insensitive), and respect caps: at most "
+    f"{RECIPE_FULL_INGREDIENTS_MAX} ingredients and {RECIPE_FULL_STEPS_MAX} steps.\n"
+    'Legacy alternative when rewriting almost everything: omit "recipe_ops" and instead send full '
+    f'"ingredients" (array of {{name, amount}}) and "steps" (array of strings) as before — same limits '
+    "and non-empty when used.\n"
+    'When "update_recipe" is false, omit "recipe_ops", "ingredients", and "steps" (or use empty arrays) '
+    "— prefer omitting.\n"
+    'If "update_recipe" is true with "recipe_ops", omit full "ingredients" and "steps" when possible.'
 )
 
 
 @dataclass(frozen=True)
 class RecipeChatFromGemini:
-    """Model output: short reply plus optional ingredients+steps replacement."""
+    """Model output: short reply plus optional patch ops or full ingredients+steps replacement."""
 
     answer: str
     update_recipe: bool
     updated: RecipeFullFromGemini | None
+    recipe_ops: tuple[dict[str, Any], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -606,6 +624,122 @@ def _parse_recipe_full_chile_payload(
     )
 
 
+def _coerce_non_negative_int(raw: Any) -> int | None:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int) and raw >= 0:
+        return raw
+    if isinstance(raw, float) and raw.is_integer():
+        n = int(raw)
+        return n if n >= 0 else None
+    return None
+
+
+def apply_recipe_patch_ops(
+    *,
+    ingredients: list[tuple[str, str]],
+    steps: list[str],
+    ops: Sequence[dict[str, Any]],
+    max_ingredients: int,
+    max_steps: int,
+) -> RecipeFullFromGemini | None:
+    """Apply ordered patch ops to ingredient/step lists; return full recipe or None if invalid."""
+    if max_ingredients < 1 or max_steps < 1:
+        return None
+    ing: list[tuple[str, str]] = [
+        (_normalize_field(n, 255), _normalize_field(a, 255)) for n, a in ingredients
+    ]
+    st: list[str] = []
+    for t in steps:
+        u = _clip(_normalize_field(t, 4000), 4000)
+        if u:
+            st.append(u)
+    if not ing or not st:
+        return None
+
+    def ingredient_names_unique() -> bool:
+        seen: set[str] = set()
+        for n, _a in ing:
+            k = n.casefold()
+            if k in seen:
+                return False
+            seen.add(k)
+        return True
+
+    for raw_op in ops:
+        if not isinstance(raw_op, dict):
+            return None
+        kind = str(raw_op.get("op") or "").strip().lower()
+        if kind == "replace_ingredient":
+            idx = _coerce_non_negative_int(raw_op.get("index"))
+            if idx is None or idx >= len(ing):
+                return None
+            name = _normalize_field(raw_op.get("name"), 255)
+            if not name:
+                return None
+            amount = _normalize_field(raw_op.get("amount"), 255)
+            ing[idx] = (name, amount)
+            if not ingredient_names_unique():
+                return None
+        elif kind == "remove_ingredient":
+            idx = _coerce_non_negative_int(raw_op.get("index"))
+            if idx is None or idx >= len(ing):
+                return None
+            del ing[idx]
+            if len(ing) < 1:
+                return None
+        elif kind == "insert_ingredient":
+            idx = _coerce_non_negative_int(raw_op.get("index"))
+            if idx is None or idx > len(ing):
+                return None
+            if len(ing) >= max_ingredients:
+                return None
+            name = _normalize_field(raw_op.get("name"), 255)
+            if not name:
+                return None
+            amount = _normalize_field(raw_op.get("amount"), 255)
+            ing.insert(idx, (name, amount))
+            if not ingredient_names_unique():
+                return None
+        elif kind == "replace_step":
+            idx = _coerce_non_negative_int(raw_op.get("index"))
+            if idx is None or idx >= len(st):
+                return None
+            text = _normalize_field(raw_op.get("text"), 4000)
+            if not text:
+                return None
+            st[idx] = text
+        elif kind == "remove_step":
+            idx = _coerce_non_negative_int(raw_op.get("index"))
+            if idx is None or idx >= len(st):
+                return None
+            del st[idx]
+            if len(st) < 1:
+                return None
+        elif kind == "insert_step":
+            idx = _coerce_non_negative_int(raw_op.get("index"))
+            if idx is None or idx > len(st):
+                return None
+            if len(st) >= max_steps:
+                return None
+            text = _normalize_field(raw_op.get("text"), 4000)
+            if not text:
+                return None
+            st.insert(idx, text)
+        else:
+            return None
+
+        if len(ing) > max_ingredients or len(st) > max_steps:
+            return None
+
+    if not ing or not st or not ingredient_names_unique():
+        return None
+    return RecipeFullFromGemini(
+        ingredients=tuple(RecipeIngredientLine(name=n, amount=a) for n, a in ing),
+        steps=tuple(st),
+    )
+
+
 def _parse_recipe_chat_payload(
     raw: str | None,
     *,
@@ -635,6 +769,22 @@ def _parse_recipe_chat_payload(
             answer=answer,
             update_recipe=False,
             updated=None,
+            recipe_ops=None,
+        )
+    ops_raw = data.get("recipe_ops")
+    ops_list: list[dict[str, Any]] = []
+    if isinstance(ops_raw, list):
+        for item in ops_raw:
+            if len(ops_list) >= RECIPE_OPS_MAX:
+                break
+            if isinstance(item, dict):
+                ops_list.append(dict(item))
+    if ops_list:
+        return RecipeChatFromGemini(
+            answer=answer,
+            update_recipe=True,
+            updated=None,
+            recipe_ops=tuple(ops_list),
         )
     inner = json.dumps(
         {
@@ -654,6 +804,7 @@ def _parse_recipe_chat_payload(
         answer=answer,
         update_recipe=True,
         updated=full,
+        recipe_ops=None,
     )
 
 

@@ -21,6 +21,8 @@ from groceries.gemini_service import (
     MerchantProductInfo,
     PreferredMerchantContext,
     RecipeChatFromGemini,
+    RecipeFullFromGemini,
+    apply_recipe_patch_ops,
 )
 from groceries.url_page_context import fetch_page_text_for_product_context, is_http_https_url
 from groceries.models import (
@@ -1311,13 +1313,14 @@ def update_recipe(
 
 
 def _recipe_context_for_gemini_chat(recipe: Recipe) -> str:
-    """Plain-text snapshot of recipe for model context."""
+    """Plain-text snapshot of recipe for model context (zero-based indices for patch ops)."""
     ing_rows = sorted(recipe.ingredients.all(), key=lambda r: r.order)
     st_rows = sorted(recipe.steps.all(), key=lambda r: r.order)
     ing_block = "\n".join(
-        f"- {ing.name} | {(ing.amount or '').strip()}" for ing in ing_rows
+        f"ing[{i}] {ing.name} | {(ing.amount or '').strip()}"
+        for i, ing in enumerate(ing_rows)
     )
-    steps_block = "\n".join(f"{i + 1}. {st.text}" for i, st in enumerate(st_rows))
+    steps_block = "\n".join(f"step[{i}] {st.text}" for i, st in enumerate(st_rows))
     notes = (recipe.notes or "").strip()
     return (
         f"title: {recipe.title}\n"
@@ -1360,16 +1363,35 @@ def recipe_chat_about_recipe(
         )
 
     recipe_updated = False
-    if out.update_recipe and out.updated is not None:
+    if out.update_recipe:
+        resolved: RecipeFullFromGemini | None = None
+        if out.recipe_ops:
+            ing_rows = sorted(recipe.ingredients.all(), key=lambda r: r.order)
+            st_rows = sorted(recipe.steps.all(), key=lambda r: r.order)
+            base_ing = [(r.name, (r.amount or "").strip()) for r in ing_rows]
+            base_st = [r.text for r in st_rows]
+            resolved = apply_recipe_patch_ops(
+                ingredients=list(base_ing),
+                steps=list(base_st),
+                ops=out.recipe_ops,
+                max_ingredients=gemini_service.RECIPE_FULL_INGREDIENTS_MAX,
+                max_steps=gemini_service.RECIPE_FULL_STEPS_MAX,
+            )
+        elif out.updated is not None:
+            resolved = out.updated
+        if resolved is None:
+            raise RecipeGenerationFailedError(
+                "Could not apply recipe edits from the model. Try again.",
+            )
         update_recipe(
             recipe_id=recipe_id,
             user_id=user_id,
             title=recipe.title,
             notes=recipe.notes or "",
             ingredient_lines=[
-                (line.name, line.amount) for line in out.updated.ingredients
+                (line.name, line.amount) for line in resolved.ingredients
             ],
-            step_texts=list(out.updated.steps),
+            step_texts=list(resolved.steps),
         )
         recipe_updated = True
 

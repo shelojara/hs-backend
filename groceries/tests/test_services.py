@@ -1615,6 +1615,51 @@ def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch
 
 
 @pytest.mark.django_db
+@patch("groceries.services.gemini_service.fetch_recipe_chat_chile")
+def test_recipe_chat_about_recipe_persists_recipe_ops_patch(mock_fetch):
+    from groceries.gemini_service import RecipeChatFromGemini
+
+    u = _user(username="chat_ops")
+    r = Recipe.objects.create(user=u, title="Arroz", notes="")
+    RecipeIngredient.objects.create(recipe=r, order=0, name="Arroz", amount="1 taza")
+    RecipeIngredient.objects.create(recipe=r, order=1, name="Agua", amount="2 tazas")
+    RecipeStep.objects.create(recipe=r, order=0, text="Hervir.")
+    RecipeStep.objects.create(recipe=r, order=1, text="Reposar.")
+    mock_fetch.return_value = RecipeChatFromGemini(
+        answer="Agregué sal.",
+        update_recipe=True,
+        updated=None,
+        recipe_ops=(
+            {
+                "op": "insert_ingredient",
+                "index": 2,
+                "name": "Sal",
+                "amount": "1 pizca",
+            },
+        ),
+    )
+
+    out = recipe_chat_about_recipe(
+        recipe_id=r.pk,
+        user_id=u.pk,
+        message="Agrega sal al final de ingredientes",
+    )
+    assert out.recipe_updated is True
+    row = get_recipe(recipe_id=r.pk, user_id=u.pk)
+    assert list(
+        row.ingredients.order_by("order").values_list("name", "amount"),
+    ) == [
+        ("Arroz", "1 taza"),
+        ("Agua", "2 tazas"),
+        ("Sal", "1 pizca"),
+    ]
+    assert list(row.steps.order_by("order").values_list("text", flat=True)) == [
+        "Hervir.",
+        "Reposar.",
+    ]
+
+
+@pytest.mark.django_db
 def test_recipe_chat_about_recipe_empty_message_raises():
     u = _user(username="chat_u3")
     r = Recipe.objects.create(user=u, title="T", notes="")
