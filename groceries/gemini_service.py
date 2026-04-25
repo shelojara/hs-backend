@@ -497,47 +497,6 @@ def fetch_merchant_product_candidates(
     return _parse_merchant_product_list_payload(response.text, max_items=lim)
 
 
-def _parse_json_string_list(
-    raw: str | None,
-    *,
-    max_items: int,
-    dict_text_keys: tuple[str, ...],
-) -> list[str]:
-    """Parse JSON array of strings or single-key dicts; dedupe casefold; cap *max_items*."""
-    if not raw or max_items < 1:
-        return []
-    blob = _extract_json_array(raw)
-    if not blob:
-        return []
-    try:
-        data = json.loads(blob)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(data, list):
-        return []
-    out: list[str] = []
-    seen: set[str] = set()
-    for item in data:
-        if len(out) >= max_items:
-            break
-        text = ""
-        if isinstance(item, str):
-            text = item.strip()
-        elif isinstance(item, dict):
-            for k in dict_text_keys:
-                text = str(item.get(k) or "").strip()
-                if text:
-                    break
-        if not text:
-            continue
-        key = text.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(text)
-    return out
-
-
 def _parse_recipe_full_chile_payload(
     raw: str | None,
     *,
