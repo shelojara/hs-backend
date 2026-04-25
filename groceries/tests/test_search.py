@@ -19,7 +19,6 @@ from groceries.services import (
     load_user_catalog_standard_names_normalized,
     make_user_catalog_in_catalog_check,
     retry_empty_completed_search,
-    run_ingredient_product_search_job,
     run_product_search_job,
     search_result_candidates_as_product_schemas,
 )
@@ -157,20 +156,15 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini, _mock_k
 
 
 @pytest.mark.django_db
-@patch("groceries.services.async_task")
 @patch(
     "groceries.services.gemini_service.classify_search_query_kind",
     return_value="recipe",
 )
 @patch(
-    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
-    return_value=["Pasta seca"],
-)
-@patch(
     "groceries.services.gemini_service.fetch_merchant_product_candidates",
     return_value=[
         MerchantProductInfo(
-            display_name="Pasta penne 500 g",
+            display_name="Carbonara kit",
             standard_name="Pasta seca",
             brand="",
             price=None,
@@ -180,126 +174,21 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini, _mock_k
         ),
     ],
 )
-def test_recipe_search_enqueues_parallel_ingredient_jobs_then_child_completes_parent(
-    _mock_fetch,
-    _mock_ingredients,
+def test_run_product_search_job_recipe_kind_uses_merchant_product_search(
+    mock_fetch,
     _mock_kind,
-    mock_async,
 ):
-    u = User.objects.create_user(username="skind", password="pw")
+    u = User.objects.create_user(username="skind_recipe", password="pw")
     row = Search.objects.create(user_id=u.pk, query="carbonara")
     run_product_search_job(search_id=row.pk)
     row.refresh_from_db()
     assert row.kind == "recipe"
     assert row.status == SearchStatus.COMPLETED
-    assert row.result_candidates == []
-    assert row.completed_at is not None
-    _mock_ingredients.assert_called_once()
-    assert _mock_ingredients.call_args.kwargs["recipe_query"] == "carbonara"
-    children = list(Search.all_objects.filter(parent_id=row.pk).order_by("pk"))
-    assert len(children) == 1
-    assert children[0].query == "Pasta seca"
-    assert children[0].emoji == SEARCH_DEFAULT_EMOJI
-    assert children[0].status == SearchStatus.PENDING
-    mock_async.assert_called_once_with(
-        "groceries.scheduled_tasks.run_ingredient_product_search_job",
-        children[0].pk,
-        task_name=f"groceries_ingredient_search:{children[0].pk}",
-    )
-    _mock_fetch.assert_not_called()
-    run_ingredient_product_search_job(search_id=children[0].pk)
-    row.refresh_from_db()
-    children[0].refresh_from_db()
-    assert children[0].status == SearchStatus.COMPLETED
-    assert row.status == SearchStatus.COMPLETED
-    assert row.result_candidates == []
-    _mock_fetch.assert_called_once()
-    assert _mock_fetch.call_args.kwargs["query"] == "Pasta seca"
-    assert _mock_fetch.call_args.kwargs["max_products"] == 10
-    assert children[0].result_candidates == [
-        {
-            "display_name": "Pasta penne 500 g",
-            "standard_name": "Pasta seca",
-            "brand": "",
-            "price": None,
-            "format": "500 g",
-            "emoji": "🍝",
-            "merchant": "Lider",
-            "ingredient": "Pasta seca",
-        },
-    ]
-    assert children[0].emoji == "🍝"
-
-
-@pytest.mark.django_db
-@patch("groceries.services.async_task")
-@patch(
-    "groceries.services.gemini_service.classify_search_query_kind",
-    return_value="recipe",
-)
-@patch(
-    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
-    return_value=["Pasta seca"],
-)
-@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
-def test_recipe_root_skips_enqueue_when_all_ingredients_in_catalog(
-    mock_fetch,
-    _mock_ingredients,
-    _mock_kind,
-    _mock_async,
-):
-    u = User.objects.create_user(username="scat1", password="pw")
-    Product.objects.create(
-        user_id=u.pk,
-        name="Pasta",
-        standard_name="Pasta seca",
-    )
-    root = Search.objects.create(user_id=u.pk, query="carbonara")
-    run_product_search_job(search_id=root.pk)
-    root.refresh_from_db()
-    assert root.status == SearchStatus.COMPLETED
-    assert not Search.all_objects.filter(parent_id=root.pk).exists()
-    _mock_async.assert_not_called()
-    mock_fetch.assert_not_called()
-
-
-@pytest.mark.django_db
-@patch("groceries.services.async_task")
-@patch(
-    "groceries.services.gemini_service.classify_search_query_kind",
-    return_value="recipe",
-)
-@patch(
-    "groceries.services.gemini_service.fetch_recipe_common_ingredients_chile",
-    return_value=["Pasta seca", "Leche"],
-)
-@patch("groceries.services.gemini_service.fetch_merchant_product_candidates")
-def test_recipe_root_enqueues_only_ingredients_not_in_catalog(
-    mock_fetch,
-    _mock_ingredients,
-    _mock_kind,
-    mock_async,
-):
-    u = User.objects.create_user(username="scat_mix", password="pw")
-    Product.objects.create(
-        user_id=u.pk,
-        name="Pasta",
-        standard_name="Pasta seca",
-    )
-    root = Search.objects.create(user_id=u.pk, query="tarta")
-    run_product_search_job(search_id=root.pk)
-    children = list(Search.all_objects.filter(parent_id=root.pk).order_by("pk"))
-    assert len(children) == 1
-    assert children[0].query == "Leche"
-    mock_async.assert_called_once_with(
-        "groceries.scheduled_tasks.run_ingredient_product_search_job",
-        children[0].pk,
-        task_name=f"groceries_ingredient_search:{children[0].pk}",
-    )
-    mock_fetch.assert_not_called()
-    run_ingredient_product_search_job(search_id=children[0].pk)
-    assert mock_fetch.call_count == 1
-    assert mock_fetch.call_args.kwargs["query"] == "Leche"
+    assert row.emoji == "🍝"
+    assert row.result_candidates
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args.kwargs["query"] == "carbonara"
+    assert not Search.all_objects.filter(parent_id=row.pk).exists()
 
 
 @pytest.mark.django_db
@@ -543,6 +432,29 @@ def test_retry_empty_completed_search_root_enqueues_product_worker(mock_async):
 
 @pytest.mark.django_db
 @patch("groceries.services.async_task")
+def test_retry_empty_completed_search_recipe_root_with_children_ok(mock_async):
+    u = User.objects.create_user(username="retry5b", password="pw")
+    root = Search.objects.create(
+        user_id=u.pk,
+        query="carbonara",
+        kind="recipe",
+        status=SearchStatus.COMPLETED,
+        result_candidates=[],
+        completed_at=timezone.now(),
+    )
+    Search.objects.create(user_id=u.pk, query="Pasta", parent_id=root.pk)
+    retry_empty_completed_search(search_id=root.pk, user_id=u.pk)
+    root.refresh_from_db()
+    assert root.status == SearchStatus.PENDING
+    mock_async.assert_called_once_with(
+        "groceries.scheduled_tasks.run_product_search_job",
+        root.pk,
+        task_name=f"groceries_product_search:{root.pk}",
+    )
+
+
+@pytest.mark.django_db
+@patch("groceries.services.async_task")
 def test_retry_empty_completed_search_child_enqueues_ingredient_worker(mock_async):
     u = User.objects.create_user(username="retry2", password="pw")
     root = Search.objects.create(user_id=u.pk, query="root")
@@ -590,22 +502,6 @@ def test_retry_empty_completed_search_rejects_when_candidates_present():
     )
     with pytest.raises(ValueError, match="already has result"):
         retry_empty_completed_search(search_id=row.pk, user_id=u.pk)
-
-
-@pytest.mark.django_db
-def test_retry_empty_completed_search_recipe_root_blocks_while_children_exist():
-    u = User.objects.create_user(username="retry5", password="pw")
-    root = Search.objects.create(
-        user_id=u.pk,
-        query="carbonara",
-        kind="recipe",
-        status=SearchStatus.COMPLETED,
-        result_candidates=[],
-        completed_at=timezone.now(),
-    )
-    Search.objects.create(user_id=u.pk, query="Pasta", parent_id=root.pk)
-    with pytest.raises(ValueError, match="sub-searches"):
-        retry_empty_completed_search(search_id=root.pk, user_id=u.pk)
 
 
 @pytest.mark.django_db

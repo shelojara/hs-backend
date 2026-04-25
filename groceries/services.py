@@ -473,18 +473,6 @@ def make_user_catalog_in_catalog_check(*, user_id: int) -> CatalogInCatalogCheck
     return check
 
 
-def _ingredient_string_matches_user_catalog(
-    ingredient: str, *, catalog_standard_names: frozenset[str]
-) -> bool:
-    """True when *ingredient* matches *GetSearch* ``in_catalog`` rule (folded name/standard_name vs catalog ``standard_name``)."""
-    return candidate_in_user_catalog_by_standard_name(
-        name=ingredient,
-        standard_name=ingredient,
-        brand="",
-        catalog_standard_names=catalog_standard_names,
-    )
-
-
 def recipe_ingredient_in_catalog_flags(
     *, user_id: int, ingredient_names: list[str]
 ) -> dict[str, bool]:
@@ -1074,12 +1062,7 @@ def delete_search(*, search_id: int, user_id: int) -> None:
 
 
 def retry_empty_completed_search(*, search_id: int, user_id: int) -> None:
-    """Re-queue Gemini worker for *completed* row with empty ``result_candidates``.
-
-    Refuses recipe *root* rows while any active child search still exists
-    (avoids duplicate ingredient trees). Ingredient child rows always eligible when
-    completed and empty.
-    """
+    """Re-queue Gemini worker for *completed* row with empty ``result_candidates``."""
     row = Search.objects.get(pk=search_id, user_id=user_id)
     if row.status != SearchStatus.COMPLETED:
         msg = "Search is not completed; only completed empty-result searches can be retried."
@@ -1087,13 +1070,6 @@ def retry_empty_completed_search(*, search_id: int, user_id: int) -> None:
     if row.result_candidates:
         msg = "Search already has result candidates; retry is not allowed."
         raise ValueError(msg)
-    if row.parent_id is None and row.kind == SearchQueryKind.RECIPE.value:
-        if Search.objects.filter(parent_id=row.pk).exists():
-            msg = (
-                "Cannot retry this recipe search while sub-searches "
-                "still exist; retry a sub-search or delete sub-searches first."
-            )
-            raise ValueError(msg)
     row.status = SearchStatus.PENDING
     row.completed_at = None
     row.save(update_fields=["status", "completed_at"])
@@ -1203,61 +1179,6 @@ def run_product_search_job(*, search_id: int) -> None:
         page_context = fetch_page_text_for_product_context(q)
     preferred = _preferred_merchant_context_for_user(user_id)
     try:
-        if kind_val == SearchQueryKind.RECIPE.value:
-            ingredients = gemini_service.fetch_recipe_common_ingredients_chile(
-                recipe_query=q,
-            )
-            if not ingredients:
-                search.status = SearchStatus.FAILED
-                search.completed_at = timezone.now()
-                search.save(update_fields=["kind", "status", "completed_at"])
-                return
-            catalog_names = load_user_catalog_standard_names_normalized(user_id=user_id)
-            to_enqueue = [
-                line
-                for line in ingredients
-                if not _ingredient_string_matches_user_catalog(
-                    line, catalog_standard_names=catalog_names
-                )
-            ]
-            if not to_enqueue:
-                now = timezone.now()
-                search.result_candidates = []
-                search.status = SearchStatus.COMPLETED
-                search.completed_at = now
-                search.save(
-                    update_fields=[
-                        "kind",
-                        "result_candidates",
-                        "status",
-                        "completed_at",
-                    ],
-                )
-                return
-            for line in to_enqueue:
-                child = Search.objects.create(
-                    user_id=user_id,
-                    parent_id=search.pk,
-                    query=line,
-                )
-                async_task(
-                    "groceries.scheduled_tasks.run_ingredient_product_search_job",
-                    child.pk,
-                    task_name=f"groceries_ingredient_search:{child.pk}",
-                )
-            now = timezone.now()
-            search.result_candidates = []
-            search.status = SearchStatus.COMPLETED
-            search.completed_at = now
-            search.save(
-                update_fields=[
-                    "kind",
-                    "result_candidates",
-                    "status",
-                    "completed_at",
-                ],
-            )
-            return
         items = gemini_service.fetch_merchant_product_candidates(
             query=q,
             preferred_merchants=preferred,

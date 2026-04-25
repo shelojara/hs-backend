@@ -15,8 +15,6 @@ from groceries.models import SearchQueryKind
 logger = logging.getLogger(__name__)
 
 FIND_PRODUCTS_MAX = 10
-# Recipe flow: cap how many common ingredients we ask Gemini to list (Chile).
-RECIPE_INGREDIENT_LIST_MAX = 20
 # Full recipe (ingredients + steps) from title/notes.
 RECIPE_FULL_INGREDIENTS_MAX = 25
 RECIPE_FULL_STEPS_MAX = 35
@@ -36,9 +34,11 @@ SEARCH_QUERY_KIND_SYSTEM_INSTRUCTION = (
     "Decide the primary intent:\n"
     '- "product" — looking for a type of product to buy (e.g. "oat milk", "rice 1kg", "pasta").\n'
     '- "brand" — mainly a brand or manufacturer name (e.g. "Colún", "Nestlé", "Lider brand X").\n'
-    '- "recipe" — dish or meal to cook; ingredients implied (e.g. "carbonara", "chile con carne").\n'
+    '- "recipe" — dish or meal name the shopper might want ingredients for; still classify as recipe '
+    '(analytics only; search always runs as product lookup).\n'
+    '- "question" — general question rather than a product lookup.\n'
     "Respond with a single JSON object only — no markdown, no code fences, no other text. "
-    'Exactly one key: "kind" whose value is one of: "product", "brand", "recipe".'
+    'Exactly one key: "kind" whose value is one of: "product", "brand", "recipe", "question".'
 )
 
 RUNNING_LOW_MAX_SUGGESTIONS = 15
@@ -158,19 +158,6 @@ def merchant_product_find_system_instruction(
         f"{_MERCHANT_PRODUCT_JSON_KEYS_FIND}"
     )
 
-
-RECIPE_CHILE_INGREDIENT_LIST_SYSTEM_INSTRUCTION = (
-    "You help a grocery shopper in Chile. The user named a dish or recipe they want to cook.\n"
-    "List typical grocery-store ingredients needed to cook that dish in a Chile home kitchen "
-    "(proteins, produce, pantry, dairy, condiments — what one buys at Lider/Jumbo style supermarkets). "
-    "Use short Spanish Chile phrases (e.g. \"Pasta seca\", \"Crema para cocinar\", \"Queso parmesano rallado\"). "
-    "Do not list full recipes or cooking steps. Do not include brand names unless they are the usual way "
-    "the product is sold (e.g. \"Merkén\" is fine). "
-    f"Respond with a single JSON array only — no markdown, no code fences, no text before or after. "
-    f"At most {RECIPE_INGREDIENT_LIST_MAX} elements. "
-    'Each element is either a JSON string (the ingredient name) or a JSON object with one key "ingredient" '
-    'whose value is that string. No duplicate ingredients. Order from most central to the dish to supporting items.'
-)
 
 RECIPE_FULL_CHILE_JSON_SYSTEM_INSTRUCTION = (
     "You help a home cook in Chile. Given a dish name and optional cook notes, output a complete recipe "
@@ -565,45 +552,6 @@ def _parse_json_string_list(
         seen.add(key)
         out.append(text)
     return out
-
-
-def _parse_recipe_ingredient_string_list(
-    raw: str | None,
-    *,
-    max_items: int,
-) -> list[str]:
-    """Parse JSON array of strings or ``{{\"ingredient\": \"...\"}}`` objects; dedupe; cap *max_items*."""
-    return _parse_json_string_list(
-        raw,
-        max_items=max_items,
-        dict_text_keys=("ingredient", "name"),
-    )
-
-
-def fetch_recipe_common_ingredients_chile(
-    *,
-    recipe_query: str,
-    max_ingredients: int = RECIPE_INGREDIENT_LIST_MAX,
-) -> list[str]:
-    """Ask Gemini for typical grocery ingredients for *recipe_query* in Chile (no product/merchant rows)."""
-    name = (recipe_query or "").strip()
-    if not name:
-        return []
-    lim = max(1, min(max_ingredients, RECIPE_INGREDIENT_LIST_MAX))
-    prompt = (
-        f"Dish or recipe the shopper wants to cook (as entered): {name!r}\n\n"
-        f"Return at most {lim} ingredient lines as the JSON array described in the system instruction."
-    )
-    client = _get_client()
-    response = client.models.generate_content(
-        model=GEMINI_FIND_PRODUCTS_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=RECIPE_CHILE_INGREDIENT_LIST_SYSTEM_INSTRUCTION,
-            temperature=0.25,
-        ),
-    )
-    return _parse_recipe_ingredient_string_list(response.text, max_items=lim)
 
 
 def _parse_recipe_full_chile_payload(
