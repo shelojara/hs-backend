@@ -10,6 +10,7 @@ from groceries.models import (
     Product,
     Recipe,
     RecipeIngredient,
+    RecipeMessage,
     RecipeStep,
     Search,
 )
@@ -140,6 +141,36 @@ class RecipeAdmin(admin.ModelAdmin):
     search_fields = ("title", "notes")
     list_filter = ("user",)
     inlines = (RecipeIngredientInline, RecipeStepInline)
+
+
+@admin.register(RecipeMessage)
+class RecipeMessageAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "recipe",
+        "user_message_preview",
+        "assistant_answer_preview",
+        "recipe_updated",
+        "created_at",
+    )
+    list_filter = ("recipe_updated",)
+    search_fields = ("user_message", "assistant_answer", "recipe__title")
+    readonly_fields = ("created_at",)
+    date_hierarchy = "created_at"
+    show_full_result_count = False
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("recipe", "recipe__user")
+
+    @admin.display(description="User message")
+    def user_message_preview(self, obj: RecipeMessage) -> str:
+        t = (obj.user_message or "").strip().replace("\n", " ")
+        return t[:60] + ("…" if len(t) > 60 else "")
+
+    @admin.display(description="Assistant")
+    def assistant_answer_preview(self, obj: RecipeMessage) -> str:
+        t = (obj.assistant_answer or "").strip().replace("\n", " ")
+        return t[:60] + ("…" if len(t) > 60 else "")
 
 
 @admin.register(Merchant)
