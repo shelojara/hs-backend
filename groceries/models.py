@@ -135,6 +135,14 @@ class BasketProduct(models.Model):
         return f"BasketProduct(basket={self.basket_id}, product={self.product_id}, purchase={self.purchase})"
 
 
+class RecipeGenerationStatus(models.TextChoices):
+    """Async Gemini fill for *CreateRecipeFromGemini*; completed = normal saved recipe."""
+
+    PENDING = "pending", "Pending"
+    COMPLETED = "completed", "Completed"
+    FAILED = "failed", "Failed"
+
+
 class Recipe(models.Model):
     """User-owned saved recipe; ingredients and steps in related tables."""
 
@@ -147,6 +155,14 @@ class Recipe(models.Model):
     notes = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    generation_status = models.CharField(
+        max_length=16,
+        choices=RecipeGenerationStatus.choices,
+        default=RecipeGenerationStatus.COMPLETED,
+        db_index=True,
+    )
+    generation_failed_at = models.DateTimeField(null=True, blank=True)
+    generation_error_message = models.TextField(blank=True, default="")
 
     class Meta:
         ordering = ("-updated_at", "-id")

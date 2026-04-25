@@ -32,6 +32,7 @@ from groceries.models import (
     Merchant,
     Product,
     Recipe,
+    RecipeGenerationStatus,
     RecipeIngredient,
     RecipeMessage,
     RecipeStep,
@@ -70,15 +71,15 @@ class NoOpenBasketError(Exception):
         super().__init__(message)
 
 
-class RecipeGenerationFailedError(Exception):
-    """Gemini returned no usable full recipe (parse empty or API error)."""
-
-
 class InvalidRecipeListCursorError(Exception):
     """Cursor token invalid or used with wrong user."""
 
     def __init__(self, message: str = "Invalid cursor.") -> None:
         super().__init__(message)
+
+
+class RecipeGenerationFailedError(Exception):
+    """Gemini recipe chat returned no usable reply or API error."""
 
 
 @dataclass(frozen=True)
@@ -1157,40 +1158,107 @@ def create_recipe_from_title_and_notes(
     notes: str,
     user_id: int,
 ) -> Recipe:
-    """Persist recipe; fill ingredients and steps from Gemini (Chile-focused)."""
+    """Create recipe row (pending); enqueue worker to fill from Gemini (Chile-focused)."""
     t = (title or "").strip()
     if not t:
         msg = "Recipe title must not be empty."
         raise ValueError(msg)
     note_clean = (notes or "").strip()
 
+    recipe = Recipe.objects.create(
+        user_id=user_id,
+        title=t[:255],
+        notes=note_clean,
+        generation_status=RecipeGenerationStatus.PENDING,
+    )
+    async_task(
+        "groceries.scheduled_tasks.run_recipe_gemini_job",
+        recipe.pk,
+        task_name=f"groceries_recipe_gemini:{recipe.pk}",
+    )
+    return recipe
+
+
+def _fail_recipe_generation(
+    *,
+    recipe: Recipe,
+    message: str,
+    log_exc: bool = False,
+) -> None:
+    if log_exc:
+        logger.exception(
+            "run_recipe_gemini_job: Gemini failed (recipe id=%s)",
+            recipe.pk,
+        )
+    else:
+        logger.warning(
+            "run_recipe_gemini_job: generation failed (recipe id=%s): %s",
+            recipe.pk,
+            message[:200],
+        )
+    now = timezone.now()
+    recipe.generation_status = RecipeGenerationStatus.FAILED
+    recipe.generation_failed_at = now
+    recipe.generation_error_message = (message or "")[:4000]
+    recipe.save(
+        update_fields=[
+            "generation_status",
+            "generation_failed_at",
+            "generation_error_message",
+            "updated_at",
+        ],
+    )
+
+
+def run_recipe_gemini_job(*, recipe_id: int) -> None:
+    """Background worker: Gemini full recipe → ``Recipe`` ingredients and steps."""
+    try:
+        recipe = Recipe.objects.get(pk=recipe_id)
+    except Recipe.DoesNotExist:
+        logger.warning("run_recipe_gemini_job: missing Recipe id=%s", recipe_id)
+        return
+    if recipe.generation_status != RecipeGenerationStatus.PENDING:
+        logger.warning(
+            "run_recipe_gemini_job: Recipe id=%s not pending (status=%s); skipping.",
+            recipe_id,
+            recipe.generation_status,
+        )
+        return
+
+    t = (recipe.title or "").strip()
+    note_clean = (recipe.notes or "").strip()
+
     try:
         full = gemini_service.fetch_recipe_full_chile(title=t, notes=note_clean)
-    except RuntimeError as exc:
-        raise RecipeGenerationFailedError(
-            "Recipe generation is unavailable (missing API key).",
-        ) from exc
-    except Exception as exc:
-        logger.exception("create_recipe_from_title_and_notes: Gemini failed")
-        raise RecipeGenerationFailedError(
-            "Recipe generation failed. Try again later.",
-        ) from exc
+    except RuntimeError:
+        _fail_recipe_generation(
+            recipe=recipe,
+            message="Recipe generation is unavailable (missing API key).",
+        )
+        return
+    except Exception:
+        _fail_recipe_generation(
+            recipe=recipe,
+            message="Recipe generation failed. Try again later.",
+            log_exc=True,
+        )
+        return
 
     if full is None:
-        raise RecipeGenerationFailedError(
-            "Could not obtain a valid recipe from the model. Try again.",
+        _fail_recipe_generation(
+            recipe=recipe,
+            message="Could not obtain a valid recipe from the model. Try again.",
         )
+        return
 
     with transaction.atomic():
-        recipe = Recipe.objects.create(
-            user_id=user_id,
-            title=t[:255],
-            notes=note_clean,
-        )
+        locked = Recipe.objects.select_for_update().get(pk=recipe.pk)
+        if locked.generation_status != RecipeGenerationStatus.PENDING:
+            return
         RecipeIngredient.objects.bulk_create(
             [
                 RecipeIngredient(
-                    recipe=recipe,
+                    recipe=locked,
                     order=i,
                     name=line.name[:255],
                     amount=(line.amount or "")[:255],
@@ -1200,11 +1268,21 @@ def create_recipe_from_title_and_notes(
         )
         RecipeStep.objects.bulk_create(
             [
-                RecipeStep(recipe=recipe, order=i, text=text)
+                RecipeStep(recipe=locked, order=i, text=text)
                 for i, text in enumerate(full.steps)
             ],
         )
-    return recipe
+        locked.generation_status = RecipeGenerationStatus.COMPLETED
+        locked.generation_failed_at = None
+        locked.generation_error_message = ""
+        locked.save(
+            update_fields=[
+                "generation_status",
+                "generation_failed_at",
+                "generation_error_message",
+                "updated_at",
+            ],
+        )
 
 
 def get_recipe(*, recipe_id: int, user_id: int) -> Recipe:
@@ -1287,6 +1365,9 @@ def update_recipe(
 
     with transaction.atomic():
         recipe = Recipe.objects.select_for_update().get(pk=recipe_id, user_id=user_id)
+        if recipe.generation_status == RecipeGenerationStatus.PENDING:
+            msg = "Recipe generation is still in progress."
+            raise ValueError(msg)
         recipe.title = t[:255]
         recipe.notes = note_clean
         recipe.save(update_fields=["title", "notes", "updated_at"])
@@ -1341,6 +1422,11 @@ def recipe_chat_about_recipe(
     if not msg:
         raise ValueError("Message must not be empty.")
     recipe = get_recipe(recipe_id=recipe_id, user_id=user_id)
+    if recipe.generation_status == RecipeGenerationStatus.PENDING:
+        raise ValueError("Recipe generation is still in progress.")
+    if recipe.generation_status == RecipeGenerationStatus.FAILED:
+        err = (recipe.generation_error_message or "").strip()
+        raise ValueError(err if err else "Recipe generation failed.")
     ctx = _recipe_context_for_gemini_chat(recipe)
     try:
         out: RecipeChatFromGemini | None = gemini_service.fetch_recipe_chat_chile(
