@@ -53,7 +53,6 @@ class ProductCandidateSchema(Schema):
     brand: Annotated[str, BeforeValidator(_null_str_field_to_empty)]
     price: Decimal | None = None
     format: str
-    quantity: int = Field(default=1, ge=1)
     emoji: str
     merchant: str = ""
     ingredient: str = ""

@@ -425,25 +425,6 @@ def test_search_result_candidates_as_product_schemas_maps_stored_json():
     assert c.in_catalog is False
 
 
-def test_search_result_candidates_as_product_schemas_quantity_from_json():
-    rows = search_result_candidates_as_product_schemas(
-        [
-            {
-                "display_name": "Eggs",
-                "standard_name": "",
-                "brand": "",
-                "price": None,
-                "format": "dozen",
-                "quantity": 12,
-                "emoji": "",
-            },
-        ],
-        fallback_name="q",
-    )
-    assert len(rows) == 1
-    assert rows[0].quantity == 12
-
-
 def test_search_result_candidates_as_product_schemas_skips_non_dict_entries():
     rows = search_result_candidates_as_product_schemas(
         [None, "x", {"display_name": "A", "standard_name": "", "brand": "", "format": "", "emoji": ""}],

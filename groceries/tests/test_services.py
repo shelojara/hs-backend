@@ -112,24 +112,6 @@ def test_create_product_from_candidate_persists_without_gemini():
 
 
 @pytest.mark.django_db
-def test_create_product_from_candidate_explicit_quantity():
-    u = _user()
-    pid = create_product_from_candidate(
-        candidate=ProductCandidateSchema(
-            name="Pack",
-            standard_name="",
-            brand="",
-            price=None,
-            format="6 pack",
-            quantity=6,
-            emoji="",
-        ),
-        user_id=u.pk,
-    )
-    assert Product.objects.get(pk=pid).quantity == 6
-
-
-@pytest.mark.django_db
 @patch("groceries.services.gemini_service.suggest_product_emoji", return_value="")
 def test_create_product_from_candidate_sets_is_custom(_mock_emoji):
     u = _user()

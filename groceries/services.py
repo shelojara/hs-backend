@@ -166,7 +166,6 @@ def create_product_from_candidate(
         brand=(candidate.brand or "").strip(),
         price=candidate.price,
         format=candidate.format,
-        quantity=candidate.quantity,
         emoji=emoji,
         is_custom=is_custom,
         user_id=user_id,
@@ -1218,13 +1217,6 @@ def search_result_candidates_as_product_schemas(
         std = str(d.get("standard_name") or "").strip()
         brand = str(d.get("brand") or "").strip()
         fmt = str(d.get("format") or "").strip()
-        qty_raw = d.get("quantity", 1)
-        try:
-            qty = int(qty_raw)
-        except (TypeError, ValueError):
-            qty = 1
-        if qty < 1:
-            qty = 1
         emoji = str(d.get("emoji") or "").strip()
         merchant = str(d.get("merchant") or "").strip()
         ing = str(d.get("ingredient") or "").strip()
@@ -1247,7 +1239,6 @@ def search_result_candidates_as_product_schemas(
                 brand=brand,
                 price=price_out,
                 format=fmt,
-                quantity=qty,
                 emoji=emoji,
                 merchant=merchant,
                 ingredient=ing,
