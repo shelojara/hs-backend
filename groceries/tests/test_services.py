@@ -952,6 +952,55 @@ def test_delete_product_from_basket_raises_when_product_missing():
 
 
 @pytest.mark.django_db
+def test_delete_product_from_basket_purchased_basket_by_id_removes_line():
+    user = _user()
+    pid = _catalog_product("Past").pk
+    past = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    past.products.add(pid)
+    delete_product_from_basket(product_id=pid, user_id=user.pk, basket_id=past.pk)
+    past.refresh_from_db()
+    assert past.products.count() == 0
+
+
+@pytest.mark.django_db
+def test_delete_product_from_basket_purchased_noop_when_product_absent():
+    user = _user()
+    pid = _catalog_product("Solo").pk
+    past = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    delete_product_from_basket(product_id=pid, user_id=user.pk, basket_id=past.pk)
+    assert past.products.count() == 0
+
+
+@pytest.mark.django_db
+def test_delete_product_from_basket_by_id_raises_when_open_basket():
+    user = _user()
+    pid = _catalog_product("Open").pk
+    open_b = Basket.objects.create(owner=user)
+    open_b.products.add(pid)
+    with pytest.raises(ValueError, match="past \\(purchased\\)"):
+        delete_product_from_basket(
+            product_id=pid,
+            user_id=user.pk,
+            basket_id=open_b.pk,
+        )
+
+
+@pytest.mark.django_db
+def test_delete_product_from_basket_by_id_other_user_basket():
+    user = _user()
+    other = _user(username="u_other")
+    pid = _catalog_product("Mine").pk
+    past = Basket.objects.create(owner=other, purchased_at=timezone.now())
+    past.products.add(pid)
+    with pytest.raises(Basket.DoesNotExist):
+        delete_product_from_basket(
+            product_id=pid,
+            user_id=user.pk,
+            basket_id=past.pk,
+        )
+
+
+@pytest.mark.django_db
 def test_get_current_basket_with_products_none_when_empty():
     user = _user()
     assert get_current_basket_with_products(user_id=user.pk) is None

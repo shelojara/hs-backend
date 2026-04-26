@@ -694,13 +694,34 @@ def add_product_to_basket(*, product_id: int, user_id: int) -> Basket:
     return basket
 
 
-def delete_product_from_basket(*, product_id: int, user_id: int) -> None:
-    """Remove product from user's latest open basket. No-op if not in basket."""
+def delete_product_from_basket(
+    *,
+    product_id: int,
+    user_id: int,
+    basket_id: int | None = None,
+) -> None:
+    """Remove product from a basket line.
+
+    *basket_id* ``None``: latest open basket for *user_id* (raises
+    :class:`NoOpenBasketError` if none). No-op if product not in that basket.
+
+    *basket_id* set: that basket must belong to *user_id* and have
+    ``purchased_at`` set (past checkout). No-op if product not in that basket.
+    """
     product = Product.objects.get(pk=product_id)
     with transaction.atomic():
-        basket = get_current_basket(user_id=user_id, select_for_update=True)
-        if basket is None:
-            raise NoOpenBasketError()
+        if basket_id is None:
+            basket = get_current_basket(user_id=user_id, select_for_update=True)
+            if basket is None:
+                raise NoOpenBasketError()
+        else:
+            basket = Basket.objects.select_for_update().get(
+                pk=basket_id,
+                owner_id=user_id,
+            )
+            if basket.purchased_at is None:
+                msg = "Only past (purchased) baskets support delete by basket_id."
+                raise ValueError(msg)
         basket.products.remove(product)
 
 

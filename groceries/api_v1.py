@@ -71,7 +71,14 @@ from groceries.schemas import (
     UpdateRecipeRequest,
     UpdateRecipeResponse,
 )
-from groceries.models import SEARCH_DEFAULT_EMOJI, Merchant, Product, Recipe, Search
+from groceries.models import (
+    SEARCH_DEFAULT_EMOJI,
+    Basket,
+    Merchant,
+    Product,
+    Recipe,
+    Search,
+)
 from groceries.services import (
     InvalidProductListCursorError,
     InvalidRecipeListCursorError,
@@ -310,11 +317,16 @@ def delete_product_from_basket(request, payload: DeleteProductFromBasketRequest)
         services.delete_product_from_basket(
             product_id=payload.product_id,
             user_id=user.pk,
+            basket_id=payload.basket_id,
         )
     except Product.DoesNotExist as exc:
         raise HttpError(404, "Product not found.") from exc
+    except Basket.DoesNotExist as exc:
+        raise HttpError(404, "Basket not found.") from exc
     except NoOpenBasketError as exc:
         raise HttpError(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
     return DeleteProductFromBasketResponse()
 
 
