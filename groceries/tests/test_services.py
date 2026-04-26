@@ -57,6 +57,7 @@ from groceries.services import (
     recipe_chat_about_recipe,
     purchase_latest_open_basket,
     purchase_single_product,
+    recalculate_product_purchase_counts_from_baskets,
     set_product_purchase_in_open_basket,
     recheck_product_price,
     running_low_sync_user_ids,
@@ -1300,6 +1301,46 @@ def test_second_purchase_increments_again():
     purchase_latest_open_basket(user_id=user.pk)
     p.refresh_from_db()
     assert p.purchase_count == 2
+
+
+@pytest.mark.django_db
+def test_recalculate_purchase_counts_from_baskets_subset():
+    user = _user()
+    p = Product.objects.create(name="Milk", user=user, purchase_count=99)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(p)
+    Product.objects.filter(pk=p.pk).update(purchase_count=99)
+    recalculate_product_purchase_counts_from_baskets(product_ids=[p.pk])
+    p.refresh_from_db()
+    assert p.purchase_count == 1
+
+
+@pytest.mark.django_db
+def test_recalculate_purchase_counts_from_baskets_respects_purchase_false():
+    user = _user()
+    p = Product.objects.create(name="Defer", user=user, purchase_count=5)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(p, through_defaults={"purchase": False})
+    recalculate_product_purchase_counts_from_baskets(product_ids=[p.pk])
+    p.refresh_from_db()
+    assert p.purchase_count == 0
+
+
+@pytest.mark.django_db
+def test_recalculate_purchase_counts_from_baskets_global():
+    user = _user()
+    a = Product.objects.create(name="A", user=user, purchase_count=0)
+    b = Product.objects.create(name="B", user=user, purchase_count=9)
+    basket = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    basket.products.add(a)
+    basket2 = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    basket2.products.add(a)
+    n = recalculate_product_purchase_counts_from_baskets()
+    assert n == Product.all_objects.count()
+    a.refresh_from_db()
+    b.refresh_from_db()
+    assert a.purchase_count == 2
+    assert b.purchase_count == 0
 
 
 @pytest.mark.django_db

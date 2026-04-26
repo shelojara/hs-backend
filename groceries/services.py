@@ -4,14 +4,14 @@ import logging
 import unicodedata
 from dataclasses import dataclass
 from decimal import Decimal
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any, TypeAlias
 
 from datetime import datetime, timedelta
 
 from dateutil.relativedelta import relativedelta
 from django.db import transaction
-from django.db.models import F, Max, Prefetch, Q, QuerySet
+from django.db.models import Count, F, Max, Prefetch, Q, QuerySet
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django_q.tasks import async_task
@@ -838,6 +838,52 @@ def list_purchased_baskets_for_running_low(*, user_id: int) -> list[Basket]:
         )
         .order_by("-purchased_at", "-pk")
     )
+
+
+def recalculate_product_purchase_counts_from_baskets(
+    *,
+    product_ids: Iterable[int] | None = None,
+) -> int:
+    """Set ``purchase_count`` from ``BasketProduct`` rows where basket has ``purchased_at`` and ``purchase`` is True.
+
+    Matches checkout semantics in :func:`purchase_latest_open_basket` / migration backfill.
+
+    When *product_ids* is ``None``, every catalog row (including soft-deleted) is set:
+    products with no matching lines get ``purchase_count`` 0.
+
+    Returns number of ``Product`` rows updated (same as considered rows).
+    """
+    base = BasketProduct.objects.filter(
+        basket__purchased_at__isnull=False,
+        purchase=True,
+    )
+    if product_ids is not None:
+        id_set = list(product_ids)
+        if not id_set:
+            return 0
+        base = base.filter(product_id__in=id_set)
+        counts = {
+            row["product_id"]: row["n"]
+            for row in base.values("product_id").annotate(n=Count("id"))
+        }
+        products = list(Product.all_objects.filter(pk__in=id_set))
+        for p in products:
+            p.purchase_count = counts.get(p.pk, 0)
+        Product.all_objects.bulk_update(products, ["purchase_count"], batch_size=500)
+        return len(products)
+
+    counts = {
+        row["product_id"]: row["n"]
+        for row in base.values("product_id").annotate(n=Count("id"))
+    }
+    Product.all_objects.update(purchase_count=0)
+    if not counts:
+        return Product.all_objects.count()
+    products = list(Product.all_objects.filter(pk__in=counts))
+    for p in products:
+        p.purchase_count = counts[p.pk]
+    Product.all_objects.bulk_update(products, ["purchase_count"], batch_size=500)
+    return Product.all_objects.count()
 
 
 def purchase_latest_open_basket(*, user_id: int) -> Basket:

@@ -14,6 +14,7 @@ from groceries.models import (
     RecipeStep,
     Search,
 )
+from groceries.services import recalculate_product_purchase_counts_from_baskets
 
 
 @admin.action(description="Merge selected baskets into one (same owner only)")
@@ -64,6 +65,18 @@ def merge_baskets(modeladmin, request, queryset) -> None:
     )
 
 
+@admin.action(description="Recalculate purchase counts from basket history")
+def recalculate_purchase_counts(modeladmin, request, queryset) -> None:
+    """Align ``purchase_count`` with purchased-basket lines (``purchase`` true)."""
+    ids = list(queryset.values_list("pk", flat=True))
+    updated = recalculate_product_purchase_counts_from_baskets(product_ids=ids)
+    modeladmin.message_user(
+        request,
+        f"Updated purchase_count for {updated} product(s) from basket purchases.",
+        level=messages.SUCCESS,
+    )
+
+
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = (
@@ -80,6 +93,7 @@ class ProductAdmin(admin.ModelAdmin):
     )
     list_filter = (("deleted_at", admin.EmptyFieldListFilter),)
     show_full_result_count = False
+    actions = (recalculate_purchase_counts,)
 
     def get_queryset(self, request):
         return Product.all_objects.select_related("user")
