@@ -789,9 +789,13 @@ def list_purchased_baskets_for_running_low(*, user_id: int) -> list[Basket]:
 
     Used for Gemini running-low sync; no row cap (window bounds size).
     Prefetch uses active ``Product.objects`` only — soft-deleted catalog rows omitted from history.
+    Lines omit products with ``purchase_count`` below 2 so first-time buys never go to Gemini.
     """
     since = timezone.now() - relativedelta(months=2)
-    purchased_product_qs = Product.objects.order_by("name", "pk")
+    purchased_product_qs = Product.objects.filter(purchase_count__gte=2).order_by(
+        "name",
+        "pk",
+    )
     return list(
         Basket.objects.filter(
             owner_id=user_id,
@@ -896,6 +900,7 @@ def sync_running_low_flags_for_user(*, user_id: int) -> None:
     """
     Product.objects.filter(user_id=user_id).update(running_low=False)
     baskets = list_purchased_baskets_for_running_low(user_id=user_id)
+    baskets = [b for b in baskets if list(b.products.all())]
     if not baskets:
         return
     block = _format_purchased_baskets_for_running_low(baskets)

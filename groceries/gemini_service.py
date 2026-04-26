@@ -30,7 +30,8 @@ RUNNING_LOW_MAX_SUGGESTIONS = 15
 RUNNING_LOW_SYSTEM_INSTRUCTION = (
     "You help a household grocery shopper anywhere in the world. "
     "You receive purchase history: completed shopping baskets from roughly the last two months, newest first, "
-    "each with purchase timestamp and product lines. Each line starts with "
+    "each with purchase timestamp and product lines (only items bought at least twice in the app's lifetime — "
+    "one-off tries are omitted). Each line starts with "
     '"[product_id=N]" where N is that row’s database id — use these ids to tie suggestions to products. '
     "Infer which items the shopper is likely running low on soon, based on: "
     "typical consumption rates for those product types, time since last purchase in each basket, "

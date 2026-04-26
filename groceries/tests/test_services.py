@@ -1316,7 +1316,7 @@ def test_list_purchased_baskets_for_running_low_two_month_window(mock_now):
 @pytest.mark.django_db
 def test_list_purchased_baskets_for_running_low_prefetch_excludes_soft_deleted_products():
     user = _user()
-    p = Product.objects.create(name="Milk", user=user)
+    p = Product.objects.create(name="Milk", user=user, purchase_count=2)
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
     b.products.add(p)
     delete_product(product_id=p.pk, user_id=user.pk)
@@ -1327,20 +1327,51 @@ def test_list_purchased_baskets_for_running_low_prefetch_excludes_soft_deleted_p
 
 
 @pytest.mark.django_db
+def test_list_purchased_baskets_for_running_low_omits_single_purchase_products():
+    """Running-low history for Gemini excludes lines where purchase_count is 1."""
+    user = _user(username="rl_once")
+    once = Product.objects.create(name="Try once", user=user, purchase_count=1)
+    repeat = Product.objects.create(name="Staple", user=user, purchase_count=2)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(once, repeat)
+    rows = list_purchased_baskets_for_running_low(user_id=user.pk)
+    assert len(rows) == 1
+    names = {p.name for p in rows[0]._prefetched_objects_cache["products"]}
+    assert names == {"Staple"}
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+)
+def test_sync_running_low_skips_gemini_when_only_single_purchase_products(mock_suggest):
+    """No Gemini call when every line in window is a one-off buy (purchase_count < 2)."""
+    mock_suggest.return_value = []
+    user = _user(username="rl_only_once")
+    milk = _catalog_product("Milk", owner=user)
+    Product.objects.filter(pk=milk.pk).update(purchase_count=1)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(milk)
+    sync_running_low_flags_for_user(user_id=user.pk)
+    mock_suggest.assert_not_called()
+
+
+@pytest.mark.django_db
 @patch(
     "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
     return_value=[],
 )
 def test_sync_running_low_history_omits_soft_deleted_products(mock_suggest):
     user = _user(username="rl_soft")
-    p = Product.objects.create(name="Gone", user=user)
+    gone = Product.objects.create(name="Gone", user=user, purchase_count=2)
+    keep = Product.objects.create(name="Staple", user=user, purchase_count=2)
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
-    b.products.add(p)
-    delete_product(product_id=p.pk, user_id=user.pk)
+    b.products.add(gone, keep)
+    delete_product(product_id=gone.pk, user_id=user.pk)
     sync_running_low_flags_for_user(user_id=user.pk)
     md = mock_suggest.call_args.kwargs["history_markdown"]
     assert "Gone" not in md
-    assert "(empty)" in md
+    assert "Staple" in md
 
 
 @pytest.mark.django_db
@@ -1352,7 +1383,9 @@ def test_sync_running_low_uses_two_month_purchase_window_only(mock_suggest):
     mock_suggest.return_value = []
     user = _user(username="rl_sync_window")
     old_milk = _catalog_product("Old milk", owner=user)
+    Product.objects.filter(pk=old_milk.pk).update(purchase_count=2)
     new_jam = _catalog_product("Jam", owner=user)
+    Product.objects.filter(pk=new_jam.pk).update(purchase_count=2)
     with patch("groceries.services.timezone.now") as mock_now:
         mock_now.return_value = datetime(2026, 3, 15, 12, 0, 0, tzinfo=utc)
         b_old = Basket.objects.create(
@@ -1395,6 +1428,7 @@ def test_sync_running_low_calls_gemini_and_sets_flags(mock_suggest):
     ]
     user = _user(username="runlow")
     milk = _catalog_product("Leche entera", owner=user)
+    Product.objects.filter(pk=milk.pk).update(purchase_count=2)
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
     b.products.add(milk)
 
@@ -1428,6 +1462,7 @@ def test_sync_running_low_calls_gemini_and_sets_flags(mock_suggest):
 def test_sync_running_low_clears_when_gemini_unconfigured(_mock_suggest):
     user = _user(username="nokey")
     milk = _catalog_product("Leche", owner=user)
+    Product.objects.filter(pk=milk.pk).update(purchase_count=2)
     Product.objects.filter(pk=milk.pk).update(running_low=True)
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
     b.products.add(milk)
