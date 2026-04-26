@@ -560,6 +560,19 @@ def test_list_products_orders_by_purchase_count_desc():
 
 
 @pytest.mark.django_db
+def test_list_products_running_low_first_then_purchase_count():
+    owner = _catalog_owner_user()
+    hi = _catalog_product("Often bought", owner=owner)
+    Product.objects.filter(pk=hi.pk).update(purchase_count=5)
+    lo = _catalog_product("Rare", owner=owner)
+    Product.objects.filter(pk=lo.pk).update(purchase_count=1, running_low=True)
+    mid = _catalog_product("Medium", owner=owner)
+    Product.objects.filter(pk=mid.pk).update(purchase_count=3)
+    items, _ = list_products(user_id=owner.pk, limit=10)
+    assert [p.pk for p in items] == [lo.pk, hi.pk, mid.pk]
+
+
+@pytest.mark.django_db
 def test_list_products_search_rapidfuzz_orders_ratio_then_purchase_count():
     owner = _catalog_owner_user()
     flakes = _catalog_product("Whole oat flakes", owner=owner)
@@ -570,7 +583,20 @@ def test_list_products_search_rapidfuzz_orders_ratio_then_purchase_count():
     Product.objects.filter(pk=milk.pk).update(purchase_count=1)
     items, _ = list_products(user_id=owner.pk, search="oat", limit=10)
     # WRatio ties; partial_ratio ties; ``ratio("oat", hay)`` orders bar > milk > flakes. Rice milk out.
+    # ``running_low`` only breaks ties after fuzzy scores.
     assert [i.name for i in items] == ["Oat bar", "Oat milk", "Whole oat flakes"]
+
+
+@pytest.mark.django_db
+def test_list_products_search_running_low_after_identical_fuzzy_scores():
+    """Same haystack + purchase_count → ``running_low`` then ``pk``."""
+    owner = _catalog_owner_user()
+    a = _catalog_product("Oat dup", owner=owner)
+    b = _catalog_product("Oat dup", owner=owner)
+    Product.objects.filter(pk=a.pk).update(purchase_count=1)
+    Product.objects.filter(pk=b.pk).update(purchase_count=1, running_low=True)
+    items, _ = list_products(user_id=owner.pk, search="oat dup", limit=10)
+    assert [i.pk for i in items] == [b.pk, a.pk]
 
 
 @pytest.mark.django_db
