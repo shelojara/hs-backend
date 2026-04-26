@@ -186,6 +186,7 @@ class AddProductToBasketResponse(Schema):
 
 class DeleteProductFromBasketRequest(Schema):
     product_id: int
+    basket_id: int | None = None
 
 
 class DeleteProductFromBasketResponse(Schema):
