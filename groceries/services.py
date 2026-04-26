@@ -7,7 +7,7 @@ from decimal import Decimal
 from collections.abc import Callable
 from typing import Any, TypeAlias
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from dateutil.relativedelta import relativedelta
 from django.db import transaction
@@ -912,17 +912,39 @@ def mark_product_not_running_low(*, product_id: int, user_id: int) -> Product:
     return product
 
 
-def _format_purchased_baskets_for_running_low(baskets: list[Basket]) -> str:
-    """Build plain-text block of basket history for Gemini (newest first)."""
+def _format_purchased_baskets_for_running_low(
+    baskets: list[Basket],
+    *,
+    omit_snoozed_after: datetime | None = None,
+) -> str:
+    """Build plain-text block of basket history for Gemini (newest first).
+
+    When *omit_snoozed_after* is set, lines for products with
+    ``running_low_snoozed_until`` strictly after that instant are omitted (not sent
+    to Gemini). Basket sections are renumbered to include only baskets with at
+    least one visible line.
+    """
     lines: list[str] = []
-    for bi, basket in enumerate(baskets, start=1):
+    out_bi = 0
+    for basket in baskets:
+        raw = list(basket.products.all())
+        if omit_snoozed_after is not None:
+            products = [
+                p
+                for p in raw
+                if not (
+                    p.running_low_snoozed_until is not None
+                    and p.running_low_snoozed_until > omit_snoozed_after
+                )
+            ]
+        else:
+            products = raw
+        if not products:
+            continue
+        out_bi += 1
         ts = basket.purchased_at
         ts_label = ts.isoformat() if ts else ""
-        lines.append(f"## Basket {bi} (purchased_at: {ts_label})")
-        products = list(basket.products.all())
-        if not products:
-            lines.append("(empty)")
-            continue
+        lines.append(f"## Basket {out_bi} (purchased_at: {ts_label})")
         for p in products:
             fmt = (p.format or "").strip()
             em = (p.emoji or "").strip()
@@ -938,9 +960,10 @@ def _format_purchased_baskets_for_running_low(baskets: list[Basket]) -> str:
 def sync_running_low_flags_for_user(*, user_id: int) -> None:
     """Set ``Product.running_low`` from Gemini, using purchases from last two months.
 
-    Clears ``running_low`` for all of the user's products first, then sets it for ids
-    returned in model suggestions except rows with ``running_low_snoozed_until`` after *now*
-    (manual "not running low" keeps suggestions off for one week).
+    Clears ``running_low`` for all of the user's products first. Snoozed products
+    (``running_low_snoozed_until`` after *now*) are omitted from the history text
+    sent to Gemini. Suggested ids for snoozed rows are still ignored when applying
+    updates (defense in depth).
     """
     now = timezone.now()
     Product.objects.filter(user_id=user_id).update(running_low=False)
@@ -948,7 +971,12 @@ def sync_running_low_flags_for_user(*, user_id: int) -> None:
     baskets = [b for b in baskets if list(b.products.all())]
     if not baskets:
         return
-    block = _format_purchased_baskets_for_running_low(baskets)
+    block = _format_purchased_baskets_for_running_low(
+        baskets,
+        omit_snoozed_after=now,
+    )
+    if not block:
+        return
     try:
         suggestions = gemini_service.suggest_running_low_from_purchase_history(
             history_markdown=block,

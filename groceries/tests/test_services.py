@@ -937,8 +937,10 @@ def test_sync_running_low_skips_snoozed_product(mock_suggest):
     utc = ZoneInfo("UTC")
     user = _user(username="snooze_rl")
     milk = _catalog_product("Milk", owner=user)
+    jam = _catalog_product("Jam", owner=user)
+    Product.objects.filter(pk__in=[milk.pk, jam.pk]).update(purchase_count=2)
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
-    b.products.add(milk)
+    b.products.add(milk, jam)
     Product.objects.filter(pk=milk.pk).update(running_low=True)
     future = datetime(2026, 6, 1, 12, 0, 0, tzinfo=utc)
     Product.objects.filter(pk=milk.pk).update(running_low_snoozed_until=future)
@@ -953,7 +955,43 @@ def test_sync_running_low_skips_snoozed_product(mock_suggest):
             ),
         ]
         sync_running_low_flags_for_user(user_id=user.pk)
+    md = mock_suggest.call_args.kwargs["history_markdown"]
+    assert f"[product_id={milk.pk}]" not in md
+    assert "Jam" in md
     assert not Product.objects.get(pk=milk.pk).running_low
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    return_value=[],
+)
+def test_sync_running_low_renumbers_baskets_when_snoozed_lines_removed(mock_suggest):
+    utc = ZoneInfo("UTC")
+    user = _user(username="snooze_renum")
+    milk = _catalog_product("Milk", owner=user)
+    jam = _catalog_product("Jam", owner=user)
+    Product.objects.filter(pk__in=[milk.pk, jam.pk]).update(purchase_count=2)
+    future = datetime(2026, 6, 1, 12, 0, 0, tzinfo=utc)
+    Product.objects.filter(pk=milk.pk).update(running_low_snoozed_until=future)
+    with patch("groceries.services.timezone.now") as mock_now:
+        mock_now.return_value = datetime(2026, 5, 1, 12, 0, 0, tzinfo=utc)
+        b_old = Basket.objects.create(
+            owner=user,
+            purchased_at=datetime(2026, 5, 1, 10, 0, 0, tzinfo=utc),
+        )
+        b_old.products.add(milk)
+        b_new = Basket.objects.create(
+            owner=user,
+            purchased_at=datetime(2026, 5, 1, 11, 0, 0, tzinfo=utc),
+        )
+        b_new.products.add(jam)
+        sync_running_low_flags_for_user(user_id=user.pk)
+    md = mock_suggest.call_args.kwargs["history_markdown"]
+    assert "Basket 1" in md
+    assert "Basket 2" not in md
+    assert "Jam" in md
+    assert f"[product_id={milk.pk}]" not in md
 
 
 @pytest.mark.django_db
@@ -965,6 +1003,7 @@ def test_sync_running_low_clears_running_low_even_when_snoozed(mock_suggest):
     mock_suggest.return_value = []
     user = _user(username="snooze_clear")
     milk = _catalog_product("Milk", owner=user)
+    Product.objects.filter(pk=milk.pk).update(purchase_count=2)
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
     b.products.add(milk)
     future = datetime(2026, 6, 1, 12, 0, 0, tzinfo=utc)
@@ -977,6 +1016,7 @@ def test_sync_running_low_clears_running_low_even_when_snoozed(mock_suggest):
         sync_running_low_flags_for_user(user_id=user.pk)
     milk.refresh_from_db()
     assert not milk.running_low
+    mock_suggest.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -987,6 +1027,7 @@ def test_sync_running_low_flags_after_snooze_expires(mock_suggest):
     utc = ZoneInfo("UTC")
     user = _user(username="snooze_exp")
     milk = _catalog_product("Milk", owner=user)
+    Product.objects.filter(pk=milk.pk).update(purchase_count=2)
     b = Basket.objects.create(owner=user, purchased_at=timezone.now())
     b.products.add(milk)
     Product.objects.filter(pk=milk.pk).update(
