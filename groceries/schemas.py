@@ -176,6 +176,14 @@ class RecheckProductPriceResponse(Schema):
     product_id: int
 
 
+class MarkProductNotRunningLowRequest(Schema):
+    product_id: int
+
+
+class MarkProductNotRunningLowResponse(Schema):
+    product_id: int
+
+
 class AddProductToBasketRequest(Schema):
     product_id: int
 

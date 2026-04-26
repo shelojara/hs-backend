@@ -81,6 +81,11 @@ class Product(models.Model):
     is_custom = models.BooleanField(default=False)
     purchase_count = models.PositiveIntegerField(default=0)
     running_low = models.BooleanField(default=False)
+    running_low_snoozed_until = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When set, scheduled running-low sync skips re-flagging until this instant.",
+    )
     deleted_at = models.DateTimeField(null=True, blank=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

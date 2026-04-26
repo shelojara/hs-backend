@@ -7,6 +7,8 @@ from decimal import Decimal
 from collections.abc import Callable
 from typing import Any, TypeAlias
 
+from datetime import timedelta
+
 from dateutil.relativedelta import relativedelta
 from django.db import transaction
 from django.db.models import F, Max, Prefetch, Q, QuerySet
@@ -91,6 +93,7 @@ class RecipeChatResult:
 DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 100
 LIST_PURCHASED_BASKETS_LIMIT = 5
+RUNNING_LOW_MANUAL_SNOOZE_DAYS = 7
 
 
 def _fetch_merchant_product_info_by_identity_or_none(
@@ -229,15 +232,18 @@ def delete_product(*, product_id: int, user_id: int) -> None:
 
 
 def recheck_product_price(*, product_id: int, user_id: int) -> Product:
-    """Refresh *price* from Gemini using *product*'s standard_name, brand, format (identity prompt).
+    """Refresh *price* from Gemini using identity fields (standard_name or custom *name*).
 
     Does not change name, brand, format, emoji, or standard_name.
 
     Raises Product.DoesNotExist when no row matches *product_id* and *user_id*.
-    Raises ValueError when stored *standard_name* is blank (identity lookup needs it).
+    Raises ValueError when identity text blank: non-custom needs *standard_name*;
+    custom products may use *name* when *standard_name* empty.
     """
     product = Product.objects.get(pk=product_id, user_id=user_id)
     sn = (product.standard_name or "").strip()
+    if not sn and product.is_custom:
+        sn = (product.name or "").strip()
     if not sn:
         msg = "Product has no standard_name; cannot recheck price."
         raise ValueError(msg)
@@ -868,6 +874,7 @@ def purchase_latest_open_basket(*, user_id: int) -> Basket:
             Product.objects.filter(pk__in=purchase_ids).update(
                 purchase_count=F("purchase_count") + 1,
                 running_low=False,
+                running_low_snoozed_until=None,
             )
     return basket
 
@@ -890,8 +897,19 @@ def purchase_single_product(*, product_id: int, user_id: int) -> Basket:
         Product.objects.filter(pk=product.pk).update(
             purchase_count=F("purchase_count") + 1,
             running_low=False,
+            running_low_snoozed_until=None,
         )
     return basket
+
+
+def mark_product_not_running_low(*, product_id: int, user_id: int) -> Product:
+    """Clear ``running_low`` and snooze automated re-flagging for :data:`RUNNING_LOW_MANUAL_SNOOZE_DAYS`."""
+    product = Product.objects.get(pk=product_id, user_id=user_id)
+    until = timezone.now() + timedelta(days=RUNNING_LOW_MANUAL_SNOOZE_DAYS)
+    product.running_low = False
+    product.running_low_snoozed_until = until
+    product.save(update_fields=["running_low", "running_low_snoozed_until"])
+    return product
 
 
 def _format_purchased_baskets_for_running_low(baskets: list[Basket]) -> str:
@@ -921,8 +939,10 @@ def sync_running_low_flags_for_user(*, user_id: int) -> None:
     """Set ``Product.running_low`` from Gemini, using purchases from last two months.
 
     Clears ``running_low`` for all of the user's products first, then sets it for ids
-    returned in model suggestions (matched to this user's product rows).
+    returned in model suggestions except rows with ``running_low_snoozed_until`` after *now*
+    (manual "not running low" keeps suggestions off for one week).
     """
+    now = timezone.now()
     Product.objects.filter(user_id=user_id).update(running_low=False)
     baskets = list_purchased_baskets_for_running_low(user_id=user_id)
     baskets = [b for b in baskets if list(b.products.all())]
@@ -952,7 +972,9 @@ def sync_running_low_flags_for_user(*, user_id: int) -> None:
                 pids.add(pid)
     if not pids:
         return
-    Product.objects.filter(user_id=user_id, pk__in=pids).update(running_low=True)
+    Product.objects.filter(user_id=user_id, pk__in=pids).exclude(
+        running_low_snoozed_until__gt=now,
+    ).update(running_low=True)
 
 
 def running_low_sync_user_ids() -> list[int]:

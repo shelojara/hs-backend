@@ -46,6 +46,8 @@ from groceries.schemas import (
     ListRecipesResponse,
     ListRecipeMessagesRequest,
     ListRecipeMessagesResponse,
+    MarkProductNotRunningLowRequest,
+    MarkProductNotRunningLowResponse,
     MerchantSchema,
     RecipeIngredientSchema,
     RecipeMessageSchema,
@@ -293,6 +295,21 @@ def recheck_product_price(request, payload: RecheckProductPriceRequest):
     except Product.DoesNotExist as exc:
         raise HttpError(404, "Product not found.") from exc
     return RecheckProductPriceResponse(product_id=product.pk)
+
+
+@router.post(
+    "/v1.Groceries.MarkProductNotRunningLow",
+    response=MarkProductNotRunningLowResponse,
+)
+def mark_product_not_running_low(request, payload: MarkProductNotRunningLowRequest):
+    try:
+        product = services.mark_product_not_running_low(
+            product_id=payload.product_id,
+            user_id=request.auth.pk,
+        )
+    except Product.DoesNotExist as exc:
+        raise HttpError(404, "Product not found.") from exc
+    return MarkProductNotRunningLowResponse(product_id=product.pk)
 
 
 @router.post("/v1.Groceries.AddProductToBasket", response=AddProductToBasketResponse)

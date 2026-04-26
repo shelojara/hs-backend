@@ -74,6 +74,8 @@ class ProductAdmin(admin.ModelAdmin):
         "format",
         "is_custom",
         "purchase_count",
+        "running_low",
+        "running_low_snoozed_until",
         "deleted_at",
     )
     list_filter = (("deleted_at", admin.EmptyFieldListFilter),)
