@@ -286,6 +286,7 @@ def _decode_list_products_cursor(token: str) -> dict[str, Any]:
 
 # Keys in persisted list-products cursor payloads (short keys keep tokens small).
 _LIST_PRODUCTS_CURSOR_QUERY = "q"
+_LIST_PRODUCTS_CURSOR_RUNNING_LOW = "r"
 _LIST_PRODUCTS_CURSOR_PURCHASE_COUNT = "c"
 _LIST_PRODUCTS_CURSOR_NAME = "n"
 _LIST_PRODUCTS_CURSOR_PRODUCT_ID = "i"
@@ -337,8 +338,8 @@ def _parse_list_products_cursor_payload(
     *,
     expected_search_query: str,
     expected_user_id: int,
-) -> tuple[int, str, int]:
-    """Return (purchase_count, product_name, product_id) after validating query and user."""
+) -> tuple[bool, int, str, int]:
+    """Return (running_low, purchase_count, product_name, product_id) after validating query and user."""
     try:
         cursor_query = cursor_payload[_LIST_PRODUCTS_CURSOR_QUERY]
         purchase_count = int(cursor_payload[_LIST_PRODUCTS_CURSOR_PURCHASE_COUNT])
@@ -355,7 +356,9 @@ def _parse_list_products_cursor_payload(
         raise InvalidProductListCursorError(
             "Cursor does not match request parameters."
         )
-    return purchase_count, product_name, product_id
+    # Tokens before ``r`` was added omit key — treat as False for stable continuation.
+    running_low = bool(cursor_payload.get(_LIST_PRODUCTS_CURSOR_RUNNING_LOW))
+    return running_low, purchase_count, product_name, product_id
 
 
 def _strip_accents(text: str) -> str:
@@ -485,18 +488,19 @@ def recipe_ingredient_in_catalog_flags(
 
 @dataclass(frozen=True, slots=True)
 class _ProductFuzzySearchRank:
-    """Sort descending on ratio fields and purchase count; ascending on name and id for stability."""
+    """Sort descending on ratio fields, running_low, purchase count; ascending on name and id."""
 
     product: Product
     weighted_ratio: int
     partial_ratio_score: int
     ratio_score: int
 
-    def sort_tuple(self) -> tuple[int, int, int, int, str, int]:
+    def sort_tuple(self) -> tuple[int, int, int, int, int, int, str, int]:
         return (
             -self.weighted_ratio,
             -self.partial_ratio_score,
             -self.ratio_score,
+            -int(self.product.running_low),
             -self.product.purchase_count,
             self.product.name,
             self.product.pk,
@@ -550,16 +554,20 @@ def _list_products_with_fuzzy_search(
     slice_start_index = 0
     if cursor_token is not None:
         cursor_payload = _decode_list_products_cursor(cursor_token)
-        cursor_purchase_count, cursor_product_name, cursor_product_id = (
-            _parse_list_products_cursor_payload(
-                cursor_payload,
-                expected_search_query=search_query,
-                expected_user_id=user_id,
-            )
+        (
+            cursor_running_low,
+            cursor_purchase_count,
+            cursor_product_name,
+            cursor_product_id,
+        ) = _parse_list_products_cursor_payload(
+            cursor_payload,
+            expected_search_query=search_query,
+            expected_user_id=user_id,
         )
         for index, product in enumerate(products_sorted_by_score):
             if (
-                product.purchase_count == cursor_purchase_count
+                bool(product.running_low) == cursor_running_low
+                and product.purchase_count == cursor_purchase_count
                 and product.name == cursor_product_name
                 and product.pk == cursor_product_id
             ):
@@ -578,6 +586,7 @@ def _list_products_with_fuzzy_search(
         next_cursor = _encode_list_products_cursor(
             {
                 _LIST_PRODUCTS_CURSOR_QUERY: search_query,
+                _LIST_PRODUCTS_CURSOR_RUNNING_LOW: last_product.running_low,
                 _LIST_PRODUCTS_CURSOR_PURCHASE_COUNT: last_product.purchase_count,
                 _LIST_PRODUCTS_CURSOR_NAME: last_product.name,
                 _LIST_PRODUCTS_CURSOR_PRODUCT_ID: last_product.pk,
@@ -610,6 +619,9 @@ def list_products(
 
     Non-search: DB pagination, ``user_id`` scoped, same ordering.
 
+    Order: ``running_low`` descending (flagged first), then ``purchase_count`` descending,
+    then ``name`` and ``pk`` ascending.
+
     Excludes products already in *user_id*'s current open basket (same basket as add/remove).
     """
     page_size = _clamp_limit(limit)
@@ -623,7 +635,10 @@ def list_products(
         )
 
     user_product_queryset = Product.objects.filter(user_id=user_id).order_by(
-        "-purchase_count", "name", "pk"
+        "-running_low",
+        "-purchase_count",
+        "name",
+        "pk",
     )
 
     if trimmed_search_query:
@@ -644,20 +659,29 @@ def list_products(
 
     if cursor:
         cursor_payload = _decode_list_products_cursor(cursor)
-        cursor_purchase_count, cursor_product_name, cursor_product_id = (
-            _parse_list_products_cursor_payload(
-                cursor_payload,
-                expected_search_query=trimmed_search_query,
-                expected_user_id=user_id,
-            )
+        (
+            cursor_running_low,
+            cursor_purchase_count,
+            cursor_product_name,
+            cursor_product_id,
+        ) = _parse_list_products_cursor_payload(
+            cursor_payload,
+            expected_search_query=trimmed_search_query,
+            expected_user_id=user_id,
         )
         filtered_queryset = filtered_queryset.filter(
-            Q(purchase_count__lt=cursor_purchase_count)
+            Q(running_low__lt=cursor_running_low)
             | Q(
+                running_low=cursor_running_low,
+                purchase_count__lt=cursor_purchase_count,
+            )
+            | Q(
+                running_low=cursor_running_low,
                 purchase_count=cursor_purchase_count,
                 name__gt=cursor_product_name,
             )
             | Q(
+                running_low=cursor_running_low,
                 purchase_count=cursor_purchase_count,
                 name=cursor_product_name,
                 pk__gt=cursor_product_id,
@@ -674,6 +698,7 @@ def list_products(
         next_cursor = _encode_list_products_cursor(
             {
                 _LIST_PRODUCTS_CURSOR_QUERY: trimmed_search_query,
+                _LIST_PRODUCTS_CURSOR_RUNNING_LOW: last_product.running_low,
                 _LIST_PRODUCTS_CURSOR_PURCHASE_COUNT: last_product.purchase_count,
                 _LIST_PRODUCTS_CURSOR_NAME: last_product.name,
                 _LIST_PRODUCTS_CURSOR_PRODUCT_ID: last_product.pk,
