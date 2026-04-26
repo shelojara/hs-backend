@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Annotated, Any
 
 from ninja import Schema
-from pydantic import AfterValidator, BeforeValidator
+from pydantic import AfterValidator, BeforeValidator, Field
 
 
 def _null_str_field_to_empty(v: Any) -> Any:
@@ -53,6 +53,7 @@ class ProductCandidateSchema(Schema):
     brand: Annotated[str, BeforeValidator(_null_str_field_to_empty)]
     price: Decimal | None = None
     format: str
+    quantity: int = Field(default=1, ge=1)
     emoji: str
     merchant: str = ""
     ingredient: str = ""
@@ -129,6 +130,7 @@ class UpdateProductRequest(Schema):
     brand: Annotated[str, BeforeValidator(_null_str_field_to_empty)]
     format: str
     price: Decimal | None = None
+    quantity: int = Field(ge=1)
     emoji: str
 
 
@@ -157,6 +159,7 @@ class ProductSchema(Schema):
     brand: str
     price: Decimal | None
     format: str
+    quantity: int
     emoji: str
     is_custom: bool
     purchase_count: int

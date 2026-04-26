@@ -85,6 +85,7 @@ class ProductAdmin(admin.ModelAdmin):
         "brand",
         "price",
         "format",
+        "quantity",
         "is_custom",
         "purchase_count",
         "running_low",
