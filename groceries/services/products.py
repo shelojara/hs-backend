@@ -13,8 +13,8 @@ from django.db.models import Q, QuerySet
 from django.utils import timezone
 from rapidfuzz import fuzz
 
-from groceries import gemini_service
-from groceries.gemini_service import MerchantProductInfo
+from . import gemini_service
+from .gemini_service import MerchantProductInfo
 from groceries.models import Product
 from groceries.schemas import ProductCandidateSchema
 

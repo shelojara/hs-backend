@@ -5,8 +5,8 @@ from typing import Any
 from django.utils import timezone
 from django_q.tasks import async_task
 
-from groceries import gemini_service
-from groceries.gemini_service import MerchantProductInfo
+from . import gemini_service
+from .gemini_service import MerchantProductInfo
 from groceries.models import SEARCH_DEFAULT_EMOJI, Search, SearchStatus
 from groceries.schemas import SearchResultCandidateSchema
 from groceries.url_page_context import fetch_page_text_for_product_context, is_http_https_url

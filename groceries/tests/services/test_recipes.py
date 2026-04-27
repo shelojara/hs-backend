@@ -8,7 +8,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
-from groceries.gemini_service import (
+from groceries.services.gemini_service import (
     RecipeFullFromGemini,
     RecipeIngredientLine,
 )
@@ -257,7 +257,7 @@ def test_delete_recipe_removes_row_and_children():
 @pytest.mark.django_db
 @patch("groceries.services.gemini_service.fetch_recipe_chat_chile")
 def test_recipe_chat_about_recipe_answer_only_no_db_change(mock_fetch):
-    from groceries.gemini_service import RecipeChatFromGemini
+    from groceries.services.gemini_service import RecipeChatFromGemini
 
     u = _user(username="chat_u1")
     r = Recipe.objects.create(user=u, title="Sopa", notes="")
@@ -294,7 +294,7 @@ def test_recipe_chat_about_recipe_answer_only_no_db_change(mock_fetch):
 @pytest.mark.django_db
 @patch("groceries.services.gemini_service.fetch_recipe_chat_chile")
 def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch):
-    from groceries.gemini_service import RecipeChatFromGemini, RecipeFullFromGemini
+    from groceries.services.gemini_service import RecipeChatFromGemini, RecipeFullFromGemini
 
     u = _user(username="chat_u2")
     r = Recipe.objects.create(user=u, title="Viejo", notes="notas fijas")
@@ -339,7 +339,7 @@ def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch
 @pytest.mark.django_db
 @patch("groceries.services.gemini_service.fetch_recipe_chat_chile")
 def test_recipe_chat_about_recipe_persists_recipe_ops_patch(mock_fetch):
-    from groceries.gemini_service import RecipeChatFromGemini
+    from groceries.services.gemini_service import RecipeChatFromGemini
 
     u = _user(username="chat_ops")
     r = Recipe.objects.create(user=u, title="Arroz", notes="")

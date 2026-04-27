@@ -9,7 +9,7 @@ import httpx
 from bs4 import BeautifulSoup
 from django.db.models import Max
 
-from groceries.gemini_service import PreferredMerchantContext
+from .gemini_service import PreferredMerchantContext
 from groceries.models import Merchant
 
 logger = logging.getLogger(__name__)

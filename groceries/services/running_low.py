@@ -5,8 +5,8 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from backend.email_services import send_email_via_gmail
-from groceries import gemini_service
-from groceries.gemini_service import RunningLowSuggestion
+from . import gemini_service
+from .gemini_service import RunningLowSuggestion
 from groceries.models import Basket, Product
 
 from .baskets import list_purchased_baskets_for_running_low

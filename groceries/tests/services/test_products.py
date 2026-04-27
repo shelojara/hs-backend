@@ -6,7 +6,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from groceries.gemini_service import (
+from groceries.services.gemini_service import (
     MerchantProductInfo,
     PreferredMerchantContext,
 )

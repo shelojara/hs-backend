@@ -6,7 +6,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from groceries.gemini_service import MerchantProductInfo
+from groceries.services.gemini_service import MerchantProductInfo
 from groceries.models import SEARCH_DEFAULT_EMOJI, Product, Search, SearchStatus
 from groceries.services import (
     candidate_in_user_catalog_by_standard_name,
