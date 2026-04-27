@@ -77,6 +77,7 @@ def test_run_product_search_job_marks_completed_with_candidates(_mock_gemini):
         },
     ]
     assert row.emoji == "🥛"
+    assert row.failure_message == ""
 
 
 @pytest.mark.django_db
@@ -131,6 +132,21 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini):
     assert row.completed_at is not None
     assert row.completed_at >= before
     assert row.result_candidates == []
+    assert row.failure_message == "no key"
+
+
+@pytest.mark.django_db
+@patch(
+    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    side_effect=ValueError("bad response"),
+)
+def test_run_product_search_job_exception_marks_failed_with_message(_mock_gemini):
+    u = User.objects.create_user(username="s3b", password="pw")
+    row = Search.objects.create(user_id=u.pk, query="x")
+    run_product_search_job(search_id=row.pk)
+    row.refresh_from_db()
+    assert row.status == SearchStatus.FAILED
+    assert row.failure_message == "bad response"
 
 
 @pytest.mark.django_db
@@ -222,6 +238,7 @@ def test_retry_empty_terminal_search_enqueues_worker(mock_async, query):
     row.refresh_from_db()
     assert row.status == SearchStatus.PENDING
     assert row.completed_at is None
+    assert row.failure_message == ""
     mock_async.assert_called_once_with(
         "groceries.scheduled_tasks.run_product_search_job",
         row.pk,

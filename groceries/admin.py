@@ -128,6 +128,7 @@ class SearchAdmin(admin.ModelAdmin):
         "user",
         "status",
         "query_preview",
+        "failure_message_preview",
         "created_at",
         "completed_at",
     )
@@ -138,6 +139,13 @@ class SearchAdmin(admin.ModelAdmin):
     def query_preview(self, obj: Search) -> str:
         q = (obj.query or "").strip()
         return q[:80] + ("…" if len(q) > 80 else "")
+
+    @admin.display(description="Failure")
+    def failure_message_preview(self, obj: Search) -> str:
+        m = (obj.failure_message or "").strip()
+        if not m:
+            return "—"
+        return m[:80] + ("…" if len(m) > 80 else "")
 
 
 class RecipeIngredientInline(admin.TabularInline):

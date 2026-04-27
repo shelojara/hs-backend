@@ -83,6 +83,7 @@ class SearchSchema(Schema):
     emoji: str
     status: str
     completed_at: datetime | None
+    failure_message: str = ""
     result_candidates: list[SearchResultCandidateSchema]
 
 

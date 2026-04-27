@@ -44,6 +44,7 @@ class Search(models.Model):
     )
     result_candidates = models.JSONField(default=list)
     completed_at = models.DateTimeField(null=True, blank=True)
+    failure_message = models.TextField(blank=True, default="")
     deleted_at = models.DateTimeField(null=True, blank=True)
 
     all_objects = models.Manager()
