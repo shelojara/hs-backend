@@ -119,6 +119,7 @@ def _product_schema(p: Product) -> ProductSchema:
         brand=p.brand,
         price=p.price,
         format=p.format,
+        quantity=p.quantity,
         emoji=p.emoji,
         is_custom=p.is_custom,
         purchase_count=p.purchase_count,
@@ -233,6 +234,7 @@ def update_product(request, payload: UpdateProductRequest):
             brand=payload.brand,
             format=payload.format,
             price=payload.price,
+            quantity=payload.quantity,
             emoji=payload.emoji,
         )
     except Product.DoesNotExist as exc:
@@ -272,6 +274,7 @@ def list_products(request, payload: ListProductsRequest):
                 brand=p.brand,
                 price=p.price,
                 format=p.format,
+                quantity=p.quantity,
                 emoji=p.emoji,
                 is_custom=p.is_custom,
                 purchase_count=p.purchase_count,

@@ -108,6 +108,7 @@ def test_create_product_from_candidate_persists_without_gemini():
     assert row.brand == "Colún"
     assert row.price == Decimal("2590.00")
     assert row.is_custom is False
+    assert row.quantity == 1
 
 
 @pytest.mark.django_db
@@ -286,6 +287,7 @@ def test_update_product_persists_fields_without_gemini():
         brand="Colún",
         format="1 L",
         price=Decimal("2590"),
+        quantity=3,
         emoji="🐄",
     )
     assert out.pk == p.pk
@@ -295,6 +297,7 @@ def test_update_product_persists_fields_without_gemini():
     assert p.brand == "Colún"
     assert p.format == "1 L"
     assert p.price == Decimal("2590.00")
+    assert p.quantity == 3
     assert p.emoji == "🐄"
 
 
@@ -317,6 +320,7 @@ def test_update_product_blank_brand_stores_empty_string():
         brand="   ",
         format="1",
         price=Decimal("1.00"),
+        quantity=1,
         emoji="🥛",
     )
     p.refresh_from_db()
@@ -342,6 +346,7 @@ def test_update_product_null_price_clears_price():
         brand="B",
         format="1",
         price=None,
+        quantity=1,
         emoji="🧀",
     )
     p.refresh_from_db()
@@ -369,6 +374,7 @@ def test_update_product_custom_blank_emoji_uses_gemini(mock_emoji):
         brand="",
         format="100 g",
         price=Decimal("1.00"),
+        quantity=1,
         emoji="",
     )
     p.refresh_from_db()
@@ -402,6 +408,7 @@ def test_update_product_custom_nonempty_emoji_skips_gemini(mock_emoji):
         brand="",
         format="1",
         price=Decimal("1.00"),
+        quantity=1,
         emoji="🧀",
     )
     p.refresh_from_db()
@@ -430,6 +437,7 @@ def test_update_product_non_custom_blank_emoji_uses_gemini(mock_emoji):
         brand="",
         format="1 kg",
         price=Decimal("1.00"),
+        quantity=1,
         emoji="",
     )
     p.refresh_from_db()
@@ -467,6 +475,7 @@ def test_update_product_blank_emoji_gemini_unconfigured_empty(_mock_emoji, is_cu
         brand="",
         format="1",
         price=Decimal("1.00"),
+        quantity=1,
         emoji="",
     )
     p.refresh_from_db()
@@ -486,6 +495,7 @@ def test_update_product_raises_when_wrong_user():
             brand="",
             format="",
             price=Decimal("0"),
+            quantity=1,
             emoji="",
         )
 

@@ -181,6 +181,7 @@ def update_product(
     brand: str,
     format: str,
     price: Decimal | None,
+    quantity: int,
     emoji: str,
 ) -> Product:
     """Update persisted merchant fields.
@@ -212,9 +213,10 @@ def update_product(
     product.brand = br
     product.format = format
     product.price = price
+    product.quantity = quantity
     product.emoji = em
     product.save(
-        update_fields=["standard_name", "brand", "format", "price", "emoji"],
+        update_fields=["standard_name", "brand", "format", "price", "quantity", "emoji"],
     )
     return product
 

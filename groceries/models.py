@@ -77,6 +77,7 @@ class Product(models.Model):
         default=Decimal("0"),
     )
     format = models.CharField(max_length=255, blank=True, default="")
+    quantity = models.PositiveIntegerField(default=1)
     emoji = models.CharField(max_length=64, blank=True, default="")
     is_custom = models.BooleanField(default=False)
     purchase_count = models.PositiveIntegerField(default=0)
