@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction
@@ -27,11 +28,16 @@ from groceries.models import (
 from .constants import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 from .exceptions import (
     InvalidRecipeListCursorError,
-    RecipeChatResult,
     RecipeGenerationFailedError,
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class RecipeChatResult:
+    answer: str
+    recipe_updated: bool
 
 
 def _clamp_limit(limit: int) -> int:

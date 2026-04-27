@@ -1,6 +1,3 @@
-from dataclasses import dataclass
-
-
 class InvalidProductListCursorError(Exception):
     """Cursor token invalid or used with wrong parameters."""
 
@@ -24,9 +21,3 @@ class InvalidRecipeListCursorError(Exception):
 
 class RecipeGenerationFailedError(Exception):
     """Gemini recipe chat returned no usable reply or API error."""
-
-
-@dataclass(frozen=True)
-class RecipeChatResult:
-    answer: str
-    recipe_updated: bool

@@ -30,7 +30,6 @@ from .exceptions import (
     InvalidProductListCursorError,
     InvalidRecipeListCursorError,
     NoOpenBasketError,
-    RecipeChatResult,
     RecipeGenerationFailedError,
 )
 from .merchants import (
@@ -54,6 +53,7 @@ from .products import (
     update_product,
 )
 from .recipes import (
+    RecipeChatResult,
     create_recipe_from_title_and_notes,
     delete_recipe,
     get_recipe,
