@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import httpx
 from bs4 import BeautifulSoup
 
-from groceries.services.favicon_service import USER_AGENT, normalize_website_url
+from groceries.services.merchants import USER_AGENT, normalize_website_url
 
 logger = logging.getLogger(__name__)
 

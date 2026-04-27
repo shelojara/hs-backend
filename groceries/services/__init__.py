@@ -5,7 +5,6 @@ from django.utils import timezone
 from django_q.tasks import async_task
 
 from groceries import gemini_service
-from .favicon_service import fetch_favicon_url
 
 from .baskets import (
     add_product_to_basket,
@@ -35,6 +34,7 @@ from .exceptions import (
 from .merchants import (
     create_user_merchant,
     delete_user_merchant,
+    fetch_favicon_url,
     list_user_merchants,
     update_user_merchant,
 )
