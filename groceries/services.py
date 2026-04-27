@@ -1290,8 +1290,8 @@ def delete_search(*, search_id: int, user_id: int) -> None:
     row.save(update_fields=["deleted_at"])
 
 
-def retry_empty_completed_search(*, search_id: int, user_id: int) -> None:
-    """Re-queue Gemini worker for *completed* or *failed* row with empty ``result_candidates``."""
+def retry_empty_terminal_search(*, search_id: int, user_id: int) -> None:
+    """Re-queue Gemini worker when search ended (completed or failed) with empty ``result_candidates``."""
     row = Search.objects.get(pk=search_id, user_id=user_id)
     if row.status not in (SearchStatus.COMPLETED, SearchStatus.FAILED):
         msg = (
