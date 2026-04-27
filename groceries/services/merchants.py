@@ -1,6 +1,6 @@
 from django.db.models import Max
 
-from groceries.favicon_service import fetch_favicon_url, normalize_website_url
+from groceries.services.favicon_service import fetch_favicon_url, normalize_website_url
 from groceries.gemini_service import PreferredMerchantContext
 from groceries.models import Merchant
 

@@ -5,7 +5,7 @@ from django.utils import timezone
 from django_q.tasks import async_task
 
 from groceries import gemini_service
-from groceries.favicon_service import fetch_favicon_url
+from .favicon_service import fetch_favicon_url
 
 from .baskets import (
     add_product_to_basket,
