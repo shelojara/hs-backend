@@ -138,62 +138,6 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini):
     "groceries.services.gemini_service.fetch_merchant_product_candidates",
     return_value=[
         MerchantProductInfo(
-            display_name="Carbonara kit",
-            standard_name="Pasta seca",
-            brand="",
-            price=None,
-            format="500 g",
-            emoji="🍝",
-            merchant="Lider",
-        ),
-    ],
-)
-def test_run_product_search_job_recipe_query_uses_merchant_product_search(mock_fetch):
-    u = User.objects.create_user(username="skind_recipe", password="pw")
-    row = Search.objects.create(user_id=u.pk, query="carbonara")
-    run_product_search_job(search_id=row.pk)
-    row.refresh_from_db()
-    assert row.status == SearchStatus.COMPLETED
-    assert row.emoji == "🍝"
-    assert row.result_candidates
-    mock_fetch.assert_called_once()
-    assert mock_fetch.call_args.kwargs["query"] == "carbonara"
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_candidates",
-    return_value=[
-        MerchantProductInfo(
-            display_name="Leche 1 L",
-            standard_name="Leche entera",
-            brand="Colún",
-            price=Decimal("1990"),
-            format="1 L",
-            emoji="🥛",
-            merchant="Lider",
-        ),
-    ],
-)
-def test_run_product_search_job_question_like_query_uses_merchant_product_search(
-    mock_fetch,
-):
-    u = User.objects.create_user(username="sq_merch", password="pw")
-    row = Search.objects.create(user_id=u.pk, query="is oat milk healthy")
-    run_product_search_job(search_id=row.pk)
-    row.refresh_from_db()
-    assert row.status == SearchStatus.COMPLETED
-    assert row.emoji == "🥛"
-    assert row.result_candidates
-    mock_fetch.assert_called_once()
-    assert mock_fetch.call_args.kwargs["query"] == "is oat milk healthy"
-
-
-@pytest.mark.django_db
-@patch(
-    "groceries.services.gemini_service.fetch_merchant_product_candidates",
-    return_value=[
-        MerchantProductInfo(
             display_name="X",
             standard_name="",
             brand="",
@@ -214,23 +158,6 @@ def test_run_product_search_job_skips_soft_deleted_search(_mock_gemini):
     assert row.result_candidates == []
     assert row.completed_at is None
     _mock_gemini.assert_not_called()
-
-
-@pytest.mark.django_db
-def test_list_searches_returns_latest_ten_newest_first_ordered_by_pk():
-    u = User.objects.create_user(username="ls1", password="pw")
-    other = User.objects.create_user(username="ls2", password="pw")
-    ids = []
-    for i in range(12):
-        row = Search.objects.create(user_id=u.pk, query=f"q{i}")
-        ids.append(row.pk)
-    for i in range(3):
-        Search.objects.create(user_id=other.pk, query=f"other{i}")
-    rows = list_searches(user_id=u.pk)
-    assert len(rows) == 10
-    want = list(reversed(ids[-10:]))
-    assert [r.pk for r in rows] == want
-    assert all(r.user_id == u.pk for r in rows)
 
 
 @pytest.mark.django_db
@@ -280,12 +207,13 @@ def test_delete_search_wrong_user_raises():
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("query", ["xyz", "carbonara"])
 @patch("groceries.services.async_task")
-def test_retry_empty_completed_search_root_enqueues_product_worker(mock_async):
+def test_retry_empty_completed_search_enqueues_worker(mock_async, query):
     u = User.objects.create_user(username="retry1", password="pw")
     row = Search.objects.create(
         user_id=u.pk,
-        query="xyz",
+        query=query,
         status=SearchStatus.COMPLETED,
         result_candidates=[],
         completed_at=timezone.now(),
@@ -298,27 +226,6 @@ def test_retry_empty_completed_search_root_enqueues_product_worker(mock_async):
         "groceries.scheduled_tasks.run_product_search_job",
         row.pk,
         task_name=f"groceries_product_search:{row.pk}",
-    )
-
-
-@pytest.mark.django_db
-@patch("groceries.services.async_task")
-def test_retry_empty_completed_search_recipe_root_ok(mock_async):
-    u = User.objects.create_user(username="retry5b", password="pw")
-    root = Search.objects.create(
-        user_id=u.pk,
-        query="carbonara",
-        status=SearchStatus.COMPLETED,
-        result_candidates=[],
-        completed_at=timezone.now(),
-    )
-    retry_empty_completed_search(search_id=root.pk, user_id=u.pk)
-    root.refresh_from_db()
-    assert root.status == SearchStatus.PENDING
-    mock_async.assert_called_once_with(
-        "groceries.scheduled_tasks.run_product_search_job",
-        root.pk,
-        task_name=f"groceries_product_search:{root.pk}",
     )
 
 
@@ -365,16 +272,24 @@ def test_retry_empty_completed_search_wrong_user_raises():
 
 
 @pytest.mark.django_db
-def test_list_searches_orders_by_created_at_newest_first():
-    u = User.objects.create_user(username="ls3", password="pw")
+def test_list_searches_caps_at_ten_newest_first_other_users_isolated():
+    u = User.objects.create_user(username="ls_merge", password="pw")
+    other = User.objects.create_user(username="ls_merge_o", password="pw")
+    for i in range(3):
+        Search.objects.create(user_id=other.pk, query=f"other{i}")
     base = timezone.now()
-    older = Search.objects.create(user_id=u.pk, query="older")
-    newer = Search.objects.create(user_id=u.pk, query="newer")
-    Search.objects.filter(pk=older.pk).update(created_at=base - timedelta(hours=2))
-    Search.objects.filter(pk=newer.pk).update(created_at=base - timedelta(hours=1))
-    assert older.pk < newer.pk
+    ids_chrono = []
+    for i in range(11):
+        row = Search.objects.create(user_id=u.pk, query=f"q{i}")
+        ids_chrono.append(row.pk)
+        Search.objects.filter(pk=row.pk).update(
+            created_at=base - timedelta(hours=11 - i),
+        )
+    want = list(reversed(ids_chrono))[:10]
     rows = list_searches(user_id=u.pk)
-    assert [r.pk for r in rows] == [newer.pk, older.pk]
+    assert len(rows) == 10
+    assert [r.pk for r in rows] == want
+    assert all(r.user_id == u.pk for r in rows)
 
 
 def test_search_result_candidates_as_product_schemas_null_brand_becomes_empty():
