@@ -1291,10 +1291,13 @@ def delete_search(*, search_id: int, user_id: int) -> None:
 
 
 def retry_empty_completed_search(*, search_id: int, user_id: int) -> None:
-    """Re-queue Gemini worker for *completed* row with empty ``result_candidates``."""
+    """Re-queue Gemini worker for *completed* or *failed* row with empty ``result_candidates``."""
     row = Search.objects.get(pk=search_id, user_id=user_id)
-    if row.status != SearchStatus.COMPLETED:
-        msg = "Search is not completed; only completed empty-result searches can be retried."
+    if row.status not in (SearchStatus.COMPLETED, SearchStatus.FAILED):
+        msg = (
+            "Search is not in a retriable state; only completed or failed "
+            "empty-result searches can be retried."
+        )
         raise ValueError(msg)
     if row.result_candidates:
         msg = "Search already has result candidates; retry is not allowed."

@@ -230,6 +230,28 @@ def test_retry_empty_completed_search_enqueues_worker(mock_async, query):
 
 
 @pytest.mark.django_db
+@patch("groceries.services.async_task")
+def test_retry_empty_completed_search_failed_empty_enqueues_worker(mock_async):
+    u = User.objects.create_user(username="retry_fail", password="pw")
+    row = Search.objects.create(
+        user_id=u.pk,
+        query="q",
+        status=SearchStatus.FAILED,
+        result_candidates=[],
+        completed_at=timezone.now(),
+    )
+    retry_empty_completed_search(search_id=row.pk, user_id=u.pk)
+    row.refresh_from_db()
+    assert row.status == SearchStatus.PENDING
+    assert row.completed_at is None
+    mock_async.assert_called_once_with(
+        "groceries.scheduled_tasks.run_product_search_job",
+        row.pk,
+        task_name=f"groceries_product_search:{row.pk}",
+    )
+
+
+@pytest.mark.django_db
 def test_retry_empty_completed_search_rejects_non_completed():
     u = User.objects.create_user(username="retry3", password="pw")
     row = Search.objects.create(
@@ -238,7 +260,7 @@ def test_retry_empty_completed_search_rejects_non_completed():
         status=SearchStatus.PENDING,
         result_candidates=[],
     )
-    with pytest.raises(ValueError, match="not completed"):
+    with pytest.raises(ValueError, match="not in a retriable state"):
         retry_empty_completed_search(search_id=row.pk, user_id=u.pk)
 
 
@@ -249,6 +271,20 @@ def test_retry_empty_completed_search_rejects_when_candidates_present():
         user_id=u.pk,
         query="q",
         status=SearchStatus.COMPLETED,
+        result_candidates=[{"display_name": "A", "standard_name": "", "brand": "", "format": "", "emoji": ""}],
+        completed_at=timezone.now(),
+    )
+    with pytest.raises(ValueError, match="already has result"):
+        retry_empty_completed_search(search_id=row.pk, user_id=u.pk)
+
+
+@pytest.mark.django_db
+def test_retry_empty_completed_search_rejects_failed_when_candidates_present():
+    u = User.objects.create_user(username="retry4b", password="pw")
+    row = Search.objects.create(
+        user_id=u.pk,
+        query="q",
+        status=SearchStatus.FAILED,
         result_candidates=[{"display_name": "A", "standard_name": "", "brand": "", "format": "", "emoji": ""}],
         completed_at=timezone.now(),
     )
