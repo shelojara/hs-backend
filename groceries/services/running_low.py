@@ -4,7 +4,7 @@ from datetime import datetime
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from . import _email
+from backend.email_services import send_email_via_gmail
 from groceries import gemini_service
 from groceries.gemini_service import RunningLowSuggestion
 from groceries.models import Basket, Product
@@ -135,7 +135,7 @@ def _send_running_low_digest_email(
     )
     subject = "Groceries: products running low"
     try:
-        _email.send_email_via_gmail(to_addrs=recipients, subject=subject, body=body)
+        send_email_via_gmail(to_addrs=recipients, subject=subject, body=body)
     except Exception:
         logger.exception("Running-low digest email failed for user id=%s", user_id)
 

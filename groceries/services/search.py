@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Any
 
 from django.utils import timezone
-from . import _q
+from django_q.tasks import async_task
 
 from groceries import gemini_service
 from groceries.gemini_service import MerchantProductInfo
@@ -54,7 +54,7 @@ def create_search(*, query: str, user_id: int) -> int:
         msg = "Query must not be empty."
         raise ValueError(msg)
     row = Search.objects.create(user_id=user_id, query=normalized)
-    _q.async_task(
+    async_task(
         "groceries.scheduled_tasks.run_product_search_job",
         row.pk,
         task_name=f"groceries_product_search:{row.pk}",
@@ -94,7 +94,7 @@ def retry_empty_completed_search(*, search_id: int, user_id: int) -> None:
     row.status = SearchStatus.PENDING
     row.completed_at = None
     row.save(update_fields=["status", "completed_at"])
-    _q.async_task(
+    async_task(
         "groceries.scheduled_tasks.run_product_search_job",
         row.pk,
         task_name=f"groceries_product_search:{row.pk}",

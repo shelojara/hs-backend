@@ -40,7 +40,7 @@ User = get_user_model()
 
 
 @pytest.mark.django_db
-@patch("groceries.services.recipes._q.async_task")
+@patch("groceries.services.recipes.async_task")
 @patch("groceries.services.gemini_service.suggest_product_emoji", return_value="")
 @patch("groceries.services.gemini_service.fetch_recipe_full_chile")
 def test_create_recipe_from_title_and_notes_persists_gemini_output(
@@ -87,7 +87,7 @@ def test_create_recipe_from_title_and_notes_persists_gemini_output(
 
 
 @pytest.mark.django_db
-@patch("groceries.services.recipes._q.async_task")
+@patch("groceries.services.recipes.async_task")
 @patch("groceries.services.gemini_service.fetch_recipe_full_chile", return_value=None)
 def test_run_recipe_gemini_job_marks_failed_when_gemini_empty(_mock_fetch, _mock_async):
     u = _user()
@@ -107,7 +107,7 @@ def test_create_recipe_from_title_and_notes_empty_title_raises():
 
 
 @pytest.mark.django_db
-@patch("groceries.services.recipes._q.async_task")
+@patch("groceries.services.recipes.async_task")
 def test_create_recipe_placeholder_notes_stored_empty(_mock_async):
     u = _user()
     r = create_recipe_from_title_and_notes(
@@ -119,7 +119,7 @@ def test_create_recipe_placeholder_notes_stored_empty(_mock_async):
 
 
 @pytest.mark.django_db
-@patch("groceries.services.recipes._q.async_task")
+@patch("groceries.services.recipes.async_task")
 def test_create_recipe_from_title_sets_default_emoji_before_generation(_mock_async):
     u = _user()
     r = create_recipe_from_title_and_notes(title="Tortilla", notes="", user_id=u.pk)
@@ -129,7 +129,7 @@ def test_create_recipe_from_title_sets_default_emoji_before_generation(_mock_asy
 
 
 @pytest.mark.django_db
-@patch("groceries.services.recipes._q.async_task")
+@patch("groceries.services.recipes.async_task")
 @patch("groceries.services.gemini_service.suggest_product_emoji", return_value="🧄")
 @patch("groceries.services.gemini_service.fetch_recipe_full_chile")
 def test_run_recipe_gemini_job_uses_suggest_emoji_when_json_omits_emoji(
@@ -150,7 +150,7 @@ def test_run_recipe_gemini_job_uses_suggest_emoji_when_json_omits_emoji(
 
 
 @pytest.mark.django_db
-@patch("groceries.services.recipes._q.async_task")
+@patch("groceries.services.recipes.async_task")
 @patch("groceries.services.gemini_service.suggest_product_emoji", return_value="")
 @patch("groceries.services.gemini_service.fetch_recipe_full_chile")
 def test_get_recipe_returns_row_for_owner(mock_fetch, _mock_suggest, _mock_async):
@@ -436,7 +436,7 @@ def test_delete_recipe_wrong_user_raises():
 
 
 @pytest.mark.django_db
-@patch("groceries.services.recipes._q.async_task")
+@patch("groceries.services.recipes.async_task")
 def test_update_recipe_rejects_while_generation_pending(_mock_async):
     u = _user()
     r = create_recipe_from_title_and_notes(title="T", notes="", user_id=u.pk)

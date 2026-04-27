@@ -7,7 +7,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from . import _q
+from django_q.tasks import async_task
 
 from groceries import gemini_service
 from groceries.gemini_service import (
@@ -129,7 +129,7 @@ def create_recipe_from_title_and_notes(
         emoji=SEARCH_DEFAULT_EMOJI,
         generation_status=RecipeGenerationStatus.PENDING,
     )
-    _q.async_task(
+    async_task(
         "groceries.scheduled_tasks.run_recipe_gemini_job",
         recipe.pk,
         task_name=f"groceries_recipe_gemini:{recipe.pk}",

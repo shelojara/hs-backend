@@ -1,8 +1,6 @@
 from django.db.models import Max
 
-from groceries.favicon_service import normalize_website_url
-
-from . import _favicon
+from groceries.favicon_service import fetch_favicon_url, normalize_website_url
 from groceries.gemini_service import PreferredMerchantContext
 from groceries.models import Merchant
 
@@ -32,7 +30,7 @@ def create_user_merchant(*, user_id: int, name: str, website: str) -> Merchant:
         msg = "Merchant name must not be empty."
         raise ValueError(msg)
     normalized = normalize_website_url(website)
-    fav = _favicon.fetch_favicon_url(website) or ""
+    fav = fetch_favicon_url(website) or ""
     agg = Merchant.objects.filter(user_id=user_id).aggregate(m=Max("preference_order"))
     next_order = (agg["m"] if agg["m"] is not None else -1) + 1
     return Merchant.objects.create(
@@ -60,7 +58,7 @@ def update_user_merchant(
     normalized = normalize_website_url(website)
     merchant.name = label
     merchant.website = normalized
-    merchant.favicon_url = _favicon.fetch_favicon_url(website) or ""
+    merchant.favicon_url = fetch_favicon_url(website) or ""
     merchant.save()
     return merchant
 

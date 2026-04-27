@@ -315,7 +315,7 @@ def test_sync_running_low_calls_gemini_and_sets_flags(mock_suggest):
 
 
 @pytest.mark.django_db
-@patch("groceries.services.running_low._email.send_email_via_gmail")
+@patch("groceries.services.running_low.send_email_via_gmail")
 @patch(
     "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
 )
@@ -358,7 +358,7 @@ def test_sync_running_low_sends_digest_email_still_and_new(mock_suggest, mock_ma
 
 
 @pytest.mark.django_db
-@patch("groceries.services.running_low._email.send_email_via_gmail")
+@patch("groceries.services.running_low.send_email_via_gmail")
 @patch(
     "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
 )

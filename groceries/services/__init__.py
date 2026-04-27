@@ -1,12 +1,11 @@
 """Groceries domain services (split by area; import from ``groceries.services``)."""
 
+from backend.email_services import send_email_via_gmail
 from django.utils import timezone
+from django_q.tasks import async_task
 
 from groceries import gemini_service
-
-from ._email import send_email_via_gmail
-from ._favicon import fetch_favicon_url
-from ._q import async_task
+from groceries.favicon_service import fetch_favicon_url
 
 from .baskets import (
     add_product_to_basket,
