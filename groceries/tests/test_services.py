@@ -1708,6 +1708,74 @@ def test_sync_running_low_calls_gemini_and_sets_flags(mock_suggest):
 
 
 @pytest.mark.django_db
+@patch("groceries.services.send_email_via_gmail")
+@patch(
+    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+)
+def test_sync_running_low_sends_digest_email_still_and_new(mock_suggest, mock_mail):
+    user = _user(username="digest", email="shopper@example.com")
+    milk = _catalog_product("Leche entera", owner=user)
+    bread = _catalog_product("Pan integral", owner=user)
+    Product.objects.filter(pk__in=[milk.pk, bread.pk]).update(purchase_count=2)
+    Product.objects.filter(pk=milk.pk).update(running_low=True)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(milk, bread)
+    mock_suggest.return_value = [
+        RunningLowSuggestion(
+            product_name="Leche",
+            reason="Última compra hace tiempo.",
+            urgency="medium",
+            product_ids=(milk.pk,),
+        ),
+        RunningLowSuggestion(
+            product_name="Pan",
+            reason="Compras frecuentes.",
+            urgency="high",
+            product_ids=(bread.pk,),
+        ),
+    ]
+
+    sync_running_low_flags_for_user(user_id=user.pk)
+
+    mock_mail.assert_called_once()
+    kw = mock_mail.call_args.kwargs
+    assert kw["to_addrs"] == ["shopper@example.com"]
+    assert kw["subject"] == "Groceries: products running low"
+    body = kw["body"]
+    assert "Still running low" in body
+    assert "Newly flagged" in body
+    assert f"[product_id={milk.pk}]" in body
+    assert f"[product_id={bread.pk}]" in body
+    assert "Última compra hace tiempo." in body
+    assert "Compras frecuentes." in body
+
+
+@pytest.mark.django_db
+@patch("groceries.services.send_email_via_gmail")
+@patch(
+    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+)
+def test_sync_running_low_skips_email_when_user_has_no_email(mock_suggest, mock_mail):
+    user = _user(username="noaddr", email="")
+    milk = _catalog_product("Leche", owner=user)
+    Product.objects.filter(pk=milk.pk).update(purchase_count=2)
+    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b.products.add(milk)
+    mock_suggest.return_value = [
+        RunningLowSuggestion(
+            product_name="Leche",
+            reason="x.",
+            urgency="medium",
+            product_ids=(milk.pk,),
+        ),
+    ]
+
+    sync_running_low_flags_for_user(user_id=user.pk)
+
+    mock_mail.assert_not_called()
+
+
+@pytest.mark.django_db
 @patch(
     "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
     side_effect=RuntimeError("no key"),
