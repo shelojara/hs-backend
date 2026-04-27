@@ -20,7 +20,7 @@ def _user():
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.fetch_favicon_url",
+    "groceries.services.merchants._favicon.fetch_favicon_url",
     return_value="https://example.com/favicon.ico",
 )
 def test_create_merchant_normalizes_website_and_stores_favicon(_mock_fav):
@@ -36,7 +36,7 @@ def test_create_merchant_normalizes_website_and_stores_favicon(_mock_fav):
 
 
 @pytest.mark.django_db
-@patch("groceries.services.fetch_favicon_url", return_value="")
+@patch("groceries.services.merchants._favicon.fetch_favicon_url", return_value="")
 def test_list_merchants_ordered_by_preference_order(_mock_fav):
     u = _user()
     first = create_user_merchant(user_id=u.pk, name="Zed", website="https://z.com")
@@ -48,7 +48,10 @@ def test_list_merchants_ordered_by_preference_order(_mock_fav):
 
 
 @pytest.mark.django_db
-@patch("groceries.services.fetch_favicon_url", return_value="https://x/f.ico")
+@patch(
+    "groceries.services.merchants._favicon.fetch_favicon_url",
+    return_value="https://x/f.ico",
+)
 def test_update_merchant(_mock_fav):
     u = _user()
     m = create_user_merchant(user_id=u.pk, name="Old", website="https://old.com")
@@ -64,7 +67,7 @@ def test_update_merchant(_mock_fav):
 
 
 @pytest.mark.django_db
-@patch("groceries.services.fetch_favicon_url", return_value="")
+@patch("groceries.services.merchants._favicon.fetch_favicon_url", return_value="")
 def test_delete_merchant(_mock_fav):
     u = _user()
     m = create_user_merchant(user_id=u.pk, name="X", website="https://x.com")

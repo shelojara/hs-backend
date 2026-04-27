@@ -25,7 +25,7 @@ User = get_user_model()
 
 
 @pytest.mark.django_db
-@patch("groceries.services.async_task")
+@patch("groceries.services.search._q.async_task")
 def test_create_search_persists_pending_and_enqueues_worker(mock_async):
     u = User.objects.create_user(username="s1", password="pw")
     sid = create_search(query="  leche  ", user_id=u.pk)
@@ -208,7 +208,7 @@ def test_delete_search_wrong_user_raises():
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("query", ["xyz", "carbonara"])
-@patch("groceries.services.async_task")
+@patch("groceries.services.search._q.async_task")
 def test_retry_empty_completed_search_enqueues_worker(mock_async, query):
     u = User.objects.create_user(username="retry1", password="pw")
     row = Search.objects.create(
