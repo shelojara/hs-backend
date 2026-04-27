@@ -1,4 +1,4 @@
-from groceries.url_page_context import html_to_plain_text, is_http_https_url
+from groceries.services.search import html_to_plain_text, is_http_https_url
 
 
 def test_is_http_https_url_recognizes_full_urls():
