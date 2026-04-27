@@ -10,6 +10,7 @@ from typing import Any, TypeAlias
 from datetime import datetime, timedelta
 
 from dateutil.relativedelta import relativedelta
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Count, F, Max, Prefetch, Q, QuerySet
 from django.utils import timezone
@@ -17,6 +18,7 @@ from django.utils.dateparse import parse_datetime
 from django_q.tasks import async_task
 from rapidfuzz import fuzz
 
+from backend.email_services import send_email_via_gmail
 from groceries import gemini_service
 from groceries.favicon_service import fetch_favicon_url, normalize_website_url
 from groceries.gemini_service import (
@@ -24,6 +26,7 @@ from groceries.gemini_service import (
     PreferredMerchantContext,
     RecipeChatFromGemini,
     RecipeFullFromGemini,
+    RunningLowSuggestion,
     apply_recipe_patch_ops,
 )
 from groceries.url_page_context import fetch_page_text_for_product_context, is_http_https_url
@@ -1005,15 +1008,103 @@ def _format_purchased_baskets_for_running_low(
     return "\n".join(lines).strip()
 
 
+def _running_low_report_recipient_emails(*, user_id: int) -> list[str]:
+    """Distinct non-blank emails for *user_id* when user active (stable order)."""
+    User = get_user_model()
+    ordered: list[str] = []
+    seen: set[str] = set()
+    qs = (
+        User.objects.filter(pk=user_id, is_active=True)
+        .exclude(email__isnull=True)
+        .exclude(email="")
+        .order_by("id")
+        .values_list("email", flat=True)
+    )
+    for raw in qs:
+        addr = str(raw).strip()
+        if addr and addr not in seen:
+            seen.add(addr)
+            ordered.append(addr)
+    return ordered
+
+
+def _format_running_low_digest_email_body(
+    *,
+    still_low: list[Product],
+    newly_low: list[Product],
+    pid_to_suggestion: dict[int, RunningLowSuggestion],
+) -> str:
+    def line_for(p: Product) -> str:
+        em = (p.emoji or "").strip()
+        name = (p.name or "").strip()
+        fmt = (p.format or "").strip()
+        bit = f"- [product_id={p.pk}] {em + ' ' if em else ''}{name}"
+        if fmt:
+            bit += f" — {fmt}"
+        sug = pid_to_suggestion.get(p.pk)
+        if sug is not None and (sug.reason or "").strip():
+            bit += f"\n  {sug.reason.strip()}"
+        return bit
+
+    parts = [
+        "Groceries — products running low",
+        "",
+        "Still running low (from before this sync):",
+    ]
+    if still_low:
+        parts.extend(line_for(p) for p in still_low)
+    else:
+        parts.append("(none)")
+    parts.extend(["", "Newly flagged this sync:"])
+    if newly_low:
+        parts.extend(line_for(p) for p in newly_low)
+    else:
+        parts.append("(none)")
+    return "\n".join(parts)
+
+
+def _send_running_low_digest_email(
+    *,
+    user_id: int,
+    still_low: list[Product],
+    newly_low: list[Product],
+    pid_to_suggestion: dict[int, RunningLowSuggestion],
+) -> None:
+    recipients = _running_low_report_recipient_emails(user_id=user_id)
+    if not recipients:
+        logger.warning(
+            "Running-low digest not emailed: user id=%s has no email or inactive.",
+            user_id,
+        )
+        return
+    body = _format_running_low_digest_email_body(
+        still_low=still_low,
+        newly_low=newly_low,
+        pid_to_suggestion=pid_to_suggestion,
+    )
+    subject = "Groceries: products running low"
+    try:
+        send_email_via_gmail(to_addrs=recipients, subject=subject, body=body)
+    except Exception:
+        logger.exception("Running-low digest email failed for user id=%s", user_id)
+
+
 def sync_running_low_flags_for_user(*, user_id: int) -> None:
     """Set ``Product.running_low`` from Gemini, using purchases from last two months.
 
     Clears ``running_low`` for all of the user's products first. Snoozed products
     (``running_low_snoozed_until`` after *now*) are omitted from the history text
     sent to Gemini. Suggested ids for snoozed rows are still ignored when applying
-    updates (defense in depth).
+    updates (defense in depth). After a successful sync that flags at least one
+    product, emails the user a digest (still low vs newly flagged).
     """
     now = timezone.now()
+    before_running_low_ids = set(
+        Product.objects.filter(user_id=user_id, running_low=True).values_list(
+            "pk",
+            flat=True,
+        ),
+    )
     Product.objects.filter(user_id=user_id).update(running_low=False)
     baskets = list_purchased_baskets_for_running_low(user_id=user_id)
     baskets = [b for b in baskets if list(b.products.all())]
@@ -1048,9 +1139,28 @@ def sync_running_low_flags_for_user(*, user_id: int) -> None:
                 pids.add(pid)
     if not pids:
         return
-    Product.objects.filter(user_id=user_id, pk__in=pids).exclude(
+    eligible = Product.objects.filter(user_id=user_id, pk__in=pids).exclude(
         running_low_snoozed_until__gt=now,
-    ).update(running_low=True)
+    )
+    final_running_low_ids = set(eligible.values_list("pk", flat=True))
+    if not final_running_low_ids:
+        return
+    pid_to_suggestion: dict[int, RunningLowSuggestion] = {}
+    for s in suggestions:
+        for pid in s.product_ids:
+            if pid > 0 and pid not in pid_to_suggestion:
+                pid_to_suggestion[pid] = s
+    eligible.update(running_low=True)
+    still_ids = sorted(before_running_low_ids & final_running_low_ids)
+    new_ids = sorted(final_running_low_ids - before_running_low_ids)
+    still_low = list(Product.objects.filter(pk__in=still_ids).order_by("name", "pk"))
+    newly_low = list(Product.objects.filter(pk__in=new_ids).order_by("name", "pk"))
+    _send_running_low_digest_email(
+        user_id=user_id,
+        still_low=still_low,
+        newly_low=newly_low,
+        pid_to_suggestion=pid_to_suggestion,
+    )
 
 
 def running_low_sync_user_ids() -> list[int]:
