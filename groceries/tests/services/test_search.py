@@ -6,7 +6,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from groceries.services.gemini_service import MerchantProductInfo
+from groceries.services.gemini import MerchantProductInfo
 from groceries.models import SEARCH_DEFAULT_EMOJI, Product, Search, SearchStatus
 from groceries.services import (
     candidate_in_user_catalog_by_standard_name,
@@ -44,7 +44,7 @@ def test_create_search_persists_pending_and_enqueues_worker(mock_async):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    "groceries.services.gemini.fetch_merchant_product_candidates",
     return_value=[
         MerchantProductInfo(
             display_name="Leche 1 L",
@@ -81,7 +81,7 @@ def test_run_product_search_job_marks_completed_with_candidates(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    "groceries.services.gemini.fetch_merchant_product_candidates",
     return_value=[
         MerchantProductInfo(
             display_name="A",
@@ -118,7 +118,7 @@ def test_run_product_search_job_search_emoji_defaults_when_first_candidate_blank
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    "groceries.services.gemini.fetch_merchant_product_candidates",
     side_effect=RuntimeError("no key"),
 )
 def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini):
@@ -135,7 +135,7 @@ def test_run_product_search_job_runtime_error_marks_failed(_mock_gemini):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_merchant_product_candidates",
+    "groceries.services.gemini.fetch_merchant_product_candidates",
     return_value=[
         MerchantProductInfo(
             display_name="X",

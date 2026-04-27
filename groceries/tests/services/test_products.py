@@ -6,7 +6,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from groceries.services.gemini_service import (
+from groceries.services.gemini import (
     MerchantProductInfo,
     PreferredMerchantContext,
 )
@@ -58,7 +58,7 @@ def test_create_product_from_candidate_persists_without_gemini():
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="")
+@patch("groceries.services.gemini.suggest_product_emoji", return_value="")
 def test_create_product_from_candidate_sets_is_custom(_mock_emoji):
     u = _user()
     pid = create_product_from_candidate(
@@ -112,7 +112,7 @@ def test_create_product_from_candidate_assigns_user():
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="🌿")
+@patch("groceries.services.gemini.suggest_product_emoji", return_value="🌿")
 def test_create_product_from_candidate_custom_blank_emoji_uses_gemini(mock_emoji):
     u = _user()
     pid = create_product_from_candidate(
@@ -138,7 +138,7 @@ def test_create_product_from_candidate_custom_blank_emoji_uses_gemini(mock_emoji
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.suggest_product_emoji")
+@patch("groceries.services.gemini.suggest_product_emoji")
 def test_create_product_from_candidate_custom_nonempty_emoji_skips_gemini(mock_emoji):
     u = _user()
     pid = create_product_from_candidate(
@@ -159,7 +159,7 @@ def test_create_product_from_candidate_custom_nonempty_emoji_skips_gemini(mock_e
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.suggest_product_emoji",
+    "groceries.services.gemini.suggest_product_emoji",
     side_effect=RuntimeError("no key"),
 )
 def test_create_product_from_candidate_custom_blank_emoji_gemini_unconfigured_empty(
@@ -182,7 +182,7 @@ def test_create_product_from_candidate_custom_blank_emoji_gemini_unconfigured_em
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.suggest_product_emoji")
+@patch("groceries.services.gemini.suggest_product_emoji")
 def test_create_product_from_candidate_non_custom_blank_emoji_skips_gemini(mock_emoji):
     u = _user()
     create_product_from_candidate(
@@ -286,7 +286,7 @@ def test_update_product_null_price_clears_price():
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="🌿")
+@patch("groceries.services.gemini.suggest_product_emoji", return_value="🌿")
 def test_update_product_custom_blank_emoji_uses_gemini(mock_emoji):
     u = _user()
     p = Product.objects.create(
@@ -320,7 +320,7 @@ def test_update_product_custom_blank_emoji_uses_gemini(mock_emoji):
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.suggest_product_emoji")
+@patch("groceries.services.gemini.suggest_product_emoji")
 def test_update_product_custom_nonempty_emoji_skips_gemini(mock_emoji):
     u = _user()
     p = Product.objects.create(
@@ -349,7 +349,7 @@ def test_update_product_custom_nonempty_emoji_skips_gemini(mock_emoji):
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="🌾")
+@patch("groceries.services.gemini.suggest_product_emoji", return_value="🌾")
 def test_update_product_non_custom_blank_emoji_uses_gemini(mock_emoji):
     u = _user()
     p = Product.objects.create(
@@ -385,7 +385,7 @@ def test_update_product_non_custom_blank_emoji_uses_gemini(mock_emoji):
 @pytest.mark.django_db
 @pytest.mark.parametrize("is_custom", [True, False])
 @patch(
-    "groceries.services.gemini_service.suggest_product_emoji",
+    "groceries.services.gemini.suggest_product_emoji",
     side_effect=RuntimeError("no key"),
 )
 def test_update_product_blank_emoji_gemini_unconfigured_empty(_mock_emoji, is_custom):
@@ -667,7 +667,7 @@ def test_list_products_rejects_cursor_from_different_user_context():
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info_by_identity",
+    "groceries.services.gemini.fetch_merchant_product_info_by_identity",
     return_value=MerchantProductInfo(
         display_name="Colún Leche 1 L",
         standard_name="Leche entera",
@@ -698,7 +698,7 @@ def test_recheck_product_price_updates_price_only(_mock_identity):
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.fetch_merchant_product_info_by_identity")
+@patch("groceries.services.gemini.fetch_merchant_product_info_by_identity")
 def test_recheck_product_price_passes_preferred_merchants(mock_identity):
     mock_identity.return_value = None
     owner = catalog_owner_user()
@@ -727,7 +727,7 @@ def test_recheck_product_price_passes_preferred_merchants(mock_identity):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info_by_identity",
+    "groceries.services.gemini.fetch_merchant_product_info_by_identity",
     return_value=None,
 )
 def test_recheck_product_price_noop_when_gemini_returns_none(_mock_identity):
@@ -747,7 +747,7 @@ def test_recheck_product_price_noop_when_gemini_returns_none(_mock_identity):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info_by_identity",
+    "groceries.services.gemini.fetch_merchant_product_info_by_identity",
     return_value=MerchantProductInfo(
         display_name="X",
         standard_name="Arroz",
@@ -775,7 +775,7 @@ def test_recheck_product_price_noop_when_merchant_price_null(_mock_identity):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info_by_identity",
+    "groceries.services.gemini.fetch_merchant_product_info_by_identity",
     return_value=None,
 )
 def test_recheck_product_price_raises_when_missing_product(_mock_identity):
@@ -786,7 +786,7 @@ def test_recheck_product_price_raises_when_missing_product(_mock_identity):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.fetch_merchant_product_info_by_identity",
+    "groceries.services.gemini.fetch_merchant_product_info_by_identity",
     return_value=None,
 )
 def test_recheck_product_price_raises_when_not_owner(_mock_identity):
@@ -818,7 +818,7 @@ def test_recheck_product_price_raises_when_standard_name_blank():
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.fetch_merchant_product_info_by_identity")
+@patch("groceries.services.gemini.fetch_merchant_product_info_by_identity")
 def test_recheck_product_price_custom_uses_display_name_when_standard_name_blank(
     mock_identity,
 ):

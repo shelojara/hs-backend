@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 from google.genai import types
 
 from groceries.services import gemini_service
-from groceries.services.gemini_service import (
+from groceries.services.gemini import (
     RECIPE_OPS_MAX,
     MerchantProductInfo,
     PreferredMerchantContext,
@@ -22,7 +22,7 @@ from groceries.services.gemini_service import (
 )
 
 
-@patch("groceries.services.gemini_service._get_client")
+@patch("groceries.services.gemini._get_client")
 def test_suggest_product_emoji_strips_and_truncates(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = "  🥛  "
@@ -41,7 +41,7 @@ def test_suggest_product_emoji_strips_and_truncates(mock_get_client):
     )
 
 
-@patch("groceries.services.gemini_service._get_client")
+@patch("groceries.services.gemini._get_client")
 def test_suggest_product_emoji_empty_response_uses_fallback(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = ""
@@ -52,7 +52,7 @@ def test_suggest_product_emoji_empty_response_uses_fallback(mock_get_client):
     assert gemini_service.suggest_product_emoji(name="Misc item") == "📦"
 
 
-@patch("groceries.services.gemini_service._get_client")
+@patch("groceries.services.gemini._get_client")
 def test_fetch_merchant_product_info_by_identity_empty_standard_name_returns_none(
     mock_get_client,
 ):
@@ -67,7 +67,7 @@ def test_fetch_merchant_product_info_by_identity_empty_standard_name_returns_non
     mock_get_client.assert_not_called()
 
 
-@patch("groceries.services.gemini_service._get_client")
+@patch("groceries.services.gemini._get_client")
 def test_fetch_merchant_product_info_by_identity_parses_json(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = (
@@ -102,7 +102,7 @@ def test_fetch_merchant_product_info_by_identity_parses_json(mock_get_client):
     assert "Colún" in call_kw["contents"]
 
 
-@patch("groceries.services.gemini_service._get_client")
+@patch("groceries.services.gemini._get_client")
 def test_fetch_merchant_product_info_by_identity_strips_json_fence(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = """```json
@@ -180,7 +180,7 @@ def test_parse_merchant_product_list_payload_wraps_single_object():
     assert out[0].display_name == "Solo"
 
 
-@patch("groceries.services.gemini_service._get_client")
+@patch("groceries.services.gemini._get_client")
 def test_fetch_merchant_product_candidates_returns_list(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = (
@@ -204,7 +204,7 @@ def test_fetch_merchant_product_candidates_returns_list(mock_get_client):
     assert "array" in (cfg.system_instruction or "").lower()
 
 
-@patch("groceries.services.gemini_service._get_client")
+@patch("groceries.services.gemini._get_client")
 def test_fetch_merchant_product_candidates_includes_page_context_in_prompt(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = (
@@ -239,7 +239,7 @@ def test_merchant_product_instructions_include_preferred_merchant():
     assert "Chile" in gemini_service.RECIPE_FULL_CHILE_JSON_SYSTEM_INSTRUCTION
 
 
-@patch("groceries.services.gemini_service._get_client")
+@patch("groceries.services.gemini._get_client")
 def test_fetch_recipe_full_chile_passes_google_search_grounding(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = (
@@ -256,7 +256,7 @@ def test_fetch_recipe_full_chile_passes_google_search_grounding(mock_get_client)
     assert cfg.tools == [types.Tool(google_search=types.GoogleSearch())]
 
 
-@patch("groceries.services.gemini_service._get_client")
+@patch("groceries.services.gemini._get_client")
 def test_fetch_recipe_chat_chile_system_instruction_spanish_chile_humor(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = '{"answer": "Listo.", "update_recipe": false}'
@@ -484,7 +484,7 @@ def test_parse_running_low_suggestions_product_ids():
     assert out[1].product_ids == (3,)
 
 
-@patch("groceries.services.gemini_service._get_client")
+@patch("groceries.services.gemini._get_client")
 def test_suggest_running_low_from_purchase_history(mock_get_client):
     mock_response = MagicMock()
     mock_response.text = (

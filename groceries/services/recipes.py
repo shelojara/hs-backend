@@ -10,8 +10,8 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django_q.tasks import async_task
 
-from . import gemini_service
-from .gemini_service import (
+from . import gemini as gemini_service
+from .gemini import (
     RecipeChatFromGemini,
     RecipeFullFromGemini,
     apply_recipe_patch_ops,

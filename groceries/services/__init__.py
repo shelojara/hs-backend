@@ -4,7 +4,7 @@ from backend.email_services import send_email_via_gmail
 from django.utils import timezone
 from django_q.tasks import async_task
 
-from . import gemini_service
+from . import gemini as gemini_service
 
 from .baskets import (
     add_product_to_basket,

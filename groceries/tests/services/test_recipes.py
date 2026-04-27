@@ -8,7 +8,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
-from groceries.services.gemini_service import (
+from groceries.services.gemini import (
     RecipeFullFromGemini,
     RecipeIngredientLine,
 )
@@ -41,8 +41,8 @@ User = get_user_model()
 
 @pytest.mark.django_db
 @patch("groceries.services.recipes.async_task")
-@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="")
-@patch("groceries.services.gemini_service.fetch_recipe_full_chile")
+@patch("groceries.services.gemini.suggest_product_emoji", return_value="")
+@patch("groceries.services.gemini.fetch_recipe_full_chile")
 def test_create_recipe_from_title_and_notes_persists_gemini_output(
     mock_fetch,
     _mock_suggest,
@@ -88,7 +88,7 @@ def test_create_recipe_from_title_and_notes_persists_gemini_output(
 
 @pytest.mark.django_db
 @patch("groceries.services.recipes.async_task")
-@patch("groceries.services.gemini_service.fetch_recipe_full_chile", return_value=None)
+@patch("groceries.services.gemini.fetch_recipe_full_chile", return_value=None)
 def test_run_recipe_gemini_job_marks_failed_when_gemini_empty(_mock_fetch, _mock_async):
     u = _user()
     r = create_recipe_from_title_and_notes(title="X", notes="", user_id=u.pk)
@@ -130,8 +130,8 @@ def test_create_recipe_from_title_sets_default_emoji_before_generation(_mock_asy
 
 @pytest.mark.django_db
 @patch("groceries.services.recipes.async_task")
-@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="🧄")
-@patch("groceries.services.gemini_service.fetch_recipe_full_chile")
+@patch("groceries.services.gemini.suggest_product_emoji", return_value="🧄")
+@patch("groceries.services.gemini.fetch_recipe_full_chile")
 def test_run_recipe_gemini_job_uses_suggest_emoji_when_json_omits_emoji(
     mock_fetch,
     mock_suggest,
@@ -151,8 +151,8 @@ def test_run_recipe_gemini_job_uses_suggest_emoji_when_json_omits_emoji(
 
 @pytest.mark.django_db
 @patch("groceries.services.recipes.async_task")
-@patch("groceries.services.gemini_service.suggest_product_emoji", return_value="")
-@patch("groceries.services.gemini_service.fetch_recipe_full_chile")
+@patch("groceries.services.gemini.suggest_product_emoji", return_value="")
+@patch("groceries.services.gemini.fetch_recipe_full_chile")
 def test_get_recipe_returns_row_for_owner(mock_fetch, _mock_suggest, _mock_async):
     u = _user(username="chef2")
     u2 = _user(username="other")
@@ -255,9 +255,9 @@ def test_delete_recipe_removes_row_and_children():
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.fetch_recipe_chat_chile")
+@patch("groceries.services.gemini.fetch_recipe_chat_chile")
 def test_recipe_chat_about_recipe_answer_only_no_db_change(mock_fetch):
-    from groceries.services.gemini_service import RecipeChatFromGemini
+    from groceries.services.gemini import RecipeChatFromGemini
 
     u = _user(username="chat_u1")
     r = Recipe.objects.create(user=u, title="Sopa", notes="")
@@ -292,9 +292,9 @@ def test_recipe_chat_about_recipe_answer_only_no_db_change(mock_fetch):
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.fetch_recipe_chat_chile")
+@patch("groceries.services.gemini.fetch_recipe_chat_chile")
 def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch):
-    from groceries.services.gemini_service import RecipeChatFromGemini, RecipeFullFromGemini
+    from groceries.services.gemini import RecipeChatFromGemini, RecipeFullFromGemini
 
     u = _user(username="chat_u2")
     r = Recipe.objects.create(user=u, title="Viejo", notes="notas fijas")
@@ -337,9 +337,9 @@ def test_recipe_chat_about_recipe_persists_when_model_requests_update(mock_fetch
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.fetch_recipe_chat_chile")
+@patch("groceries.services.gemini.fetch_recipe_chat_chile")
 def test_recipe_chat_about_recipe_persists_recipe_ops_patch(mock_fetch):
-    from groceries.services.gemini_service import RecipeChatFromGemini
+    from groceries.services.gemini import RecipeChatFromGemini
 
     u = _user(username="chat_ops")
     r = Recipe.objects.create(user=u, title="Arroz", notes="")
@@ -399,7 +399,7 @@ def test_recipe_chat_about_recipe_empty_message_raises():
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.fetch_recipe_chat_chile")
+@patch("groceries.services.gemini.fetch_recipe_chat_chile")
 def test_recipe_chat_about_recipe_wrong_user_raises(mock_fetch):
     u = _user(username="owner_chat")
     other = _user(username="other_chat")
@@ -412,7 +412,7 @@ def test_recipe_chat_about_recipe_wrong_user_raises(mock_fetch):
 
 
 @pytest.mark.django_db
-@patch("groceries.services.gemini_service.fetch_recipe_chat_chile", return_value=None)
+@patch("groceries.services.gemini.fetch_recipe_chat_chile", return_value=None)
 def test_recipe_chat_about_recipe_raises_when_gemini_empty(_mock):
     u = _user(username="chat_u4")
     r = Recipe.objects.create(user=u, title="T", notes="")

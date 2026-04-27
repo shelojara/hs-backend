@@ -6,7 +6,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from groceries.services.gemini_service import (
+from groceries.services.gemini import (
     RunningLowSuggestion,
 )
 from groceries.models import (
@@ -26,7 +26,7 @@ User = get_user_model()
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    "groceries.services.gemini.suggest_running_low_from_purchase_history",
 )
 def test_sync_running_low_skips_snoozed_product(mock_suggest):
     utc = ZoneInfo("UTC")
@@ -58,7 +58,7 @@ def test_sync_running_low_skips_snoozed_product(mock_suggest):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    "groceries.services.gemini.suggest_running_low_from_purchase_history",
     return_value=[],
 )
 def test_sync_running_low_renumbers_baskets_when_snoozed_lines_removed(mock_suggest):
@@ -91,7 +91,7 @@ def test_sync_running_low_renumbers_baskets_when_snoozed_lines_removed(mock_sugg
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    "groceries.services.gemini.suggest_running_low_from_purchase_history",
 )
 def test_sync_running_low_clears_running_low_even_when_snoozed(mock_suggest):
     utc = ZoneInfo("UTC")
@@ -116,7 +116,7 @@ def test_sync_running_low_clears_running_low_even_when_snoozed(mock_suggest):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    "groceries.services.gemini.suggest_running_low_from_purchase_history",
 )
 def test_sync_running_low_flags_after_snooze_expires(mock_suggest):
     utc = ZoneInfo("UTC")
@@ -202,7 +202,7 @@ def test_list_purchased_baskets_for_running_low_omits_single_purchase_products()
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    "groceries.services.gemini.suggest_running_low_from_purchase_history",
 )
 def test_sync_running_low_skips_gemini_when_only_single_purchase_products(mock_suggest):
     """No Gemini call when every line in window is a one-off buy (purchase_count < 2)."""
@@ -218,7 +218,7 @@ def test_sync_running_low_skips_gemini_when_only_single_purchase_products(mock_s
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    "groceries.services.gemini.suggest_running_low_from_purchase_history",
     return_value=[],
 )
 def test_sync_running_low_history_omits_soft_deleted_products(mock_suggest):
@@ -236,7 +236,7 @@ def test_sync_running_low_history_omits_soft_deleted_products(mock_suggest):
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    "groceries.services.gemini.suggest_running_low_from_purchase_history",
 )
 def test_sync_running_low_uses_two_month_purchase_window_only(mock_suggest):
     utc = ZoneInfo("UTC")
@@ -275,7 +275,7 @@ def test_sync_running_low_clears_when_no_purchased_baskets():
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    "groceries.services.gemini.suggest_running_low_from_purchase_history",
 )
 def test_sync_running_low_calls_gemini_and_sets_flags(mock_suggest):
     mock_suggest.return_value = [
@@ -317,7 +317,7 @@ def test_sync_running_low_calls_gemini_and_sets_flags(mock_suggest):
 @pytest.mark.django_db
 @patch("groceries.services.running_low.send_email_via_gmail")
 @patch(
-    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    "groceries.services.gemini.suggest_running_low_from_purchase_history",
 )
 def test_sync_running_low_sends_digest_email_still_and_new(mock_suggest, mock_mail):
     user = _user(username="digest", email="shopper@example.com")
@@ -360,7 +360,7 @@ def test_sync_running_low_sends_digest_email_still_and_new(mock_suggest, mock_ma
 @pytest.mark.django_db
 @patch("groceries.services.running_low.send_email_via_gmail")
 @patch(
-    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    "groceries.services.gemini.suggest_running_low_from_purchase_history",
 )
 def test_sync_running_low_skips_email_when_user_has_no_email(mock_suggest, mock_mail):
     user = _user(username="noaddr", email="")
@@ -384,7 +384,7 @@ def test_sync_running_low_skips_email_when_user_has_no_email(mock_suggest, mock_
 
 @pytest.mark.django_db
 @patch(
-    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+    "groceries.services.gemini.suggest_running_low_from_purchase_history",
     side_effect=RuntimeError("no key"),
 )
 def test_sync_running_low_clears_when_gemini_unconfigured(_mock_suggest):
