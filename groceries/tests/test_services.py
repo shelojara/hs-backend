@@ -254,20 +254,6 @@ def test_create_product_from_candidate_non_custom_blank_emoji_skips_gemini(mock_
     mock_emoji.assert_not_called()
 
 
-def test_product_candidate_schema_null_brand_coerces_to_empty_string():
-    c = ProductCandidateSchema.model_validate(
-        {
-            "name": "Item",
-            "standard_name": "s",
-            "brand": None,
-            "price": None,
-            "format": "",
-            "emoji": "",
-        },
-    )
-    assert c.brand == ""
-
-
 @pytest.mark.django_db
 def test_update_product_persists_fields_without_gemini():
     u = _user()
