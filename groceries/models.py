@@ -42,7 +42,8 @@ class Search(models.Model):
         default=SearchStatus.PENDING,
         db_index=True,
     )
-    result_candidates = models.JSONField(default=list)
+    # blank=True: admin ModelForm treats [] as "empty"; without blank, save fails as "required"
+    result_candidates = models.JSONField(default=list, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     failure_message = models.TextField(null=True, blank=True)
     deleted_at = models.DateTimeField(null=True, blank=True)

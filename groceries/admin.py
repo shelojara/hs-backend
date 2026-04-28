@@ -123,6 +123,17 @@ class BasketProductAdmin(admin.ModelAdmin):
 
 @admin.register(Search)
 class SearchAdmin(admin.ModelAdmin):
+    # Expose JSON so staff can clear candidates; ModelForm needs blank=True on field for [].
+    fields = (
+        "user",
+        "query",
+        "emoji",
+        "status",
+        "result_candidates",
+        "completed_at",
+        "failure_message",
+        "deleted_at",
+    )
     list_display = (
         "id",
         "user",

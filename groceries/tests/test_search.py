@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.forms import modelform_factory
 from django.utils import timezone
 
 from groceries.gemini_service import MerchantProductInfo
@@ -510,3 +511,39 @@ def test_candidate_in_user_catalog_false_when_standard_name_differs():
         brand="",
         catalog_standard_names=catalog,
     )
+
+
+@pytest.mark.django_db
+def test_search_modelform_accepts_empty_result_candidates():
+    """Admin uses ModelForm; JSONField treats [] as empty — needs blank=True on model."""
+    SearchForm = modelform_factory(Search, fields="__all__")
+    u = User.objects.create_user(username="admin_json_empty", password="pw")
+    row = Search.objects.create(
+        user_id=u.pk,
+        query="milk",
+        status=SearchStatus.COMPLETED,
+        result_candidates=[
+            {
+                "display_name": "A",
+                "standard_name": "",
+                "brand": "",
+                "format": "",
+                "emoji": "",
+            }
+        ],
+    )
+    data = {
+        "user": str(u.pk),
+        "query": "milk",
+        "emoji": row.emoji,
+        "status": SearchStatus.COMPLETED,
+        "result_candidates": "[]",
+        "completed_at": "",
+        "failure_message": "",
+        "deleted_at": "",
+    }
+    form = SearchForm(data, instance=row)
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    saved.refresh_from_db()
+    assert saved.result_candidates == []
