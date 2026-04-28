@@ -103,6 +103,9 @@ def _search_schema(
         emoji=(s.emoji or "").strip() or SEARCH_DEFAULT_EMOJI,
         status=s.status,
         completed_at=s.completed_at,
+        failure_message=(
+            (s.failure_message or "").strip() or None
+        ),
         result_candidates=services.search_result_candidates_as_product_schemas(
             s.result_candidates,
             fallback_name=s.query,

@@ -1304,7 +1304,8 @@ def retry_empty_terminal_search(*, search_id: int, user_id: int) -> None:
         raise ValueError(msg)
     row.status = SearchStatus.PENDING
     row.completed_at = None
-    row.save(update_fields=["status", "completed_at"])
+    row.failure_message = None
+    row.save(update_fields=["status", "completed_at", "failure_message"])
     async_task(
         "groceries.scheduled_tasks.run_product_search_job",
         row.pk,
@@ -1391,27 +1392,31 @@ def run_product_search_job(*, search_id: int) -> None:
         search.emoji = _search_emoji_from_first_result_candidate(candidates_json)
         search.status = SearchStatus.COMPLETED
         search.completed_at = timezone.now()
+        search.failure_message = None
         search.save(
             update_fields=[
                 "result_candidates",
                 "status",
                 "completed_at",
                 "emoji",
+                "failure_message",
             ],
         )
-    except RuntimeError:
+    except RuntimeError as exc:
         logger.warning(
             "run_product_search_job: GEMINI_API_KEY unset (search id=%s).",
             search_id,
         )
         search.status = SearchStatus.FAILED
         search.completed_at = timezone.now()
-        search.save(update_fields=["status", "completed_at"])
-    except Exception:
+        search.failure_message = str(exc) or "GEMINI_API_KEY unset."
+        search.save(update_fields=["status", "completed_at", "failure_message"])
+    except Exception as exc:
         logger.exception("run_product_search_job failed (search id=%s)", search_id)
         search.status = SearchStatus.FAILED
         search.completed_at = timezone.now()
-        search.save(update_fields=["status", "completed_at"])
+        search.failure_message = str(exc) or exc.__class__.__name__
+        search.save(update_fields=["status", "completed_at", "failure_message"])
 
 
 def _normalize_user_recipe_notes(notes: str | None) -> str:
