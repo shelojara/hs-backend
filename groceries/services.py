@@ -1304,7 +1304,7 @@ def retry_empty_terminal_search(*, search_id: int, user_id: int) -> None:
         raise ValueError(msg)
     row.status = SearchStatus.PENDING
     row.completed_at = None
-    row.failure_message = ""
+    row.failure_message = None
     row.save(update_fields=["status", "completed_at", "failure_message"])
     async_task(
         "groceries.scheduled_tasks.run_product_search_job",
@@ -1392,7 +1392,7 @@ def run_product_search_job(*, search_id: int) -> None:
         search.emoji = _search_emoji_from_first_result_candidate(candidates_json)
         search.status = SearchStatus.COMPLETED
         search.completed_at = timezone.now()
-        search.failure_message = ""
+        search.failure_message = None
         search.save(
             update_fields=[
                 "result_candidates",

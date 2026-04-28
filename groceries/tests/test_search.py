@@ -77,7 +77,7 @@ def test_run_product_search_job_marks_completed_with_candidates(_mock_gemini):
         },
     ]
     assert row.emoji == "🥛"
-    assert row.failure_message == ""
+    assert row.failure_message is None
 
 
 @pytest.mark.django_db
@@ -238,7 +238,7 @@ def test_retry_empty_terminal_search_enqueues_worker(mock_async, query):
     row.refresh_from_db()
     assert row.status == SearchStatus.PENDING
     assert row.completed_at is None
-    assert row.failure_message == ""
+    assert row.failure_message is None
     mock_async.assert_called_once_with(
         "groceries.scheduled_tasks.run_product_search_job",
         row.pk,
