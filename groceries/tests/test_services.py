@@ -1496,7 +1496,7 @@ def test_list_purchased_baskets_prefetch_includes_soft_deleted_products():
 
 
 @pytest.mark.django_db
-def test_list_purchased_baskets_caps_at_five_newest_by_purchased_at():
+def test_list_purchased_baskets_caps_at_limit_newest_by_purchased_at():
     user = _user()
     base = timezone.now()
     created = []
