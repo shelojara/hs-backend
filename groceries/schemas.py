@@ -106,11 +106,11 @@ class DeleteSearchResponse(Schema):
     pass
 
 
-class RetryEmptyCompletedSearchRequest(Schema):
+class RetryEmptyTerminalSearchRequest(Schema):
     search_id: int
 
 
-class RetryEmptyCompletedSearchResponse(Schema):
+class RetryEmptyTerminalSearchResponse(Schema):
     pass
 
 

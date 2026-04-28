@@ -54,8 +54,8 @@ from groceries.schemas import (
     RecipeSchema,
     RecipeSummarySchema,
     RecipeStepSchema,
-    RetryEmptyCompletedSearchRequest,
-    RetryEmptyCompletedSearchResponse,
+    RetryEmptyTerminalSearchRequest,
+    RetryEmptyTerminalSearchResponse,
     ProductSchema,
     SearchSchema,
     PurchaseBasketRequest,
@@ -192,12 +192,12 @@ def delete_search(request, payload: DeleteSearchRequest):
 
 
 @router.post(
-    "/v1.Groceries.RetryEmptyCompletedSearch",
-    response=RetryEmptyCompletedSearchResponse,
+    "/v1.Groceries.RetryEmptyTerminalSearch",
+    response=RetryEmptyTerminalSearchResponse,
 )
-def retry_empty_completed_search(request, payload: RetryEmptyCompletedSearchRequest):
+def retry_empty_terminal_search(request, payload: RetryEmptyTerminalSearchRequest):
     try:
-        services.retry_empty_completed_search(
+        services.retry_empty_terminal_search(
             search_id=payload.search_id,
             user_id=request.auth.pk,
         )
@@ -205,7 +205,7 @@ def retry_empty_completed_search(request, payload: RetryEmptyCompletedSearchRequ
         raise HttpError(404, "Search not found.") from exc
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    return RetryEmptyCompletedSearchResponse()
+    return RetryEmptyTerminalSearchResponse()
 
 
 @router.post(

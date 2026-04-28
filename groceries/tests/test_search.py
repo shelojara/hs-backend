@@ -16,7 +16,7 @@ from groceries.services import (
     list_searches,
     load_user_catalog_standard_names_normalized,
     make_user_catalog_in_catalog_check,
-    retry_empty_completed_search,
+    retry_empty_terminal_search,
     run_product_search_job,
     search_result_candidates_as_product_schemas,
 )
@@ -209,7 +209,7 @@ def test_delete_search_wrong_user_raises():
 @pytest.mark.django_db
 @pytest.mark.parametrize("query", ["xyz", "carbonara"])
 @patch("groceries.services.async_task")
-def test_retry_empty_completed_search_enqueues_worker(mock_async, query):
+def test_retry_empty_terminal_search_enqueues_worker(mock_async, query):
     u = User.objects.create_user(username="retry1", password="pw")
     row = Search.objects.create(
         user_id=u.pk,
@@ -218,7 +218,7 @@ def test_retry_empty_completed_search_enqueues_worker(mock_async, query):
         result_candidates=[],
         completed_at=timezone.now(),
     )
-    retry_empty_completed_search(search_id=row.pk, user_id=u.pk)
+    retry_empty_terminal_search(search_id=row.pk, user_id=u.pk)
     row.refresh_from_db()
     assert row.status == SearchStatus.PENDING
     assert row.completed_at is None
@@ -230,7 +230,29 @@ def test_retry_empty_completed_search_enqueues_worker(mock_async, query):
 
 
 @pytest.mark.django_db
-def test_retry_empty_completed_search_rejects_non_completed():
+@patch("groceries.services.async_task")
+def test_retry_empty_terminal_search_failed_empty_enqueues_worker(mock_async):
+    u = User.objects.create_user(username="retry_fail", password="pw")
+    row = Search.objects.create(
+        user_id=u.pk,
+        query="q",
+        status=SearchStatus.FAILED,
+        result_candidates=[],
+        completed_at=timezone.now(),
+    )
+    retry_empty_terminal_search(search_id=row.pk, user_id=u.pk)
+    row.refresh_from_db()
+    assert row.status == SearchStatus.PENDING
+    assert row.completed_at is None
+    mock_async.assert_called_once_with(
+        "groceries.scheduled_tasks.run_product_search_job",
+        row.pk,
+        task_name=f"groceries_product_search:{row.pk}",
+    )
+
+
+@pytest.mark.django_db
+def test_retry_empty_terminal_search_rejects_non_terminal():
     u = User.objects.create_user(username="retry3", password="pw")
     row = Search.objects.create(
         user_id=u.pk,
@@ -238,12 +260,12 @@ def test_retry_empty_completed_search_rejects_non_completed():
         status=SearchStatus.PENDING,
         result_candidates=[],
     )
-    with pytest.raises(ValueError, match="not completed"):
-        retry_empty_completed_search(search_id=row.pk, user_id=u.pk)
+    with pytest.raises(ValueError, match="not in a retriable state"):
+        retry_empty_terminal_search(search_id=row.pk, user_id=u.pk)
 
 
 @pytest.mark.django_db
-def test_retry_empty_completed_search_rejects_when_candidates_present():
+def test_retry_empty_terminal_search_rejects_when_candidates_present():
     u = User.objects.create_user(username="retry4", password="pw")
     row = Search.objects.create(
         user_id=u.pk,
@@ -253,11 +275,25 @@ def test_retry_empty_completed_search_rejects_when_candidates_present():
         completed_at=timezone.now(),
     )
     with pytest.raises(ValueError, match="already has result"):
-        retry_empty_completed_search(search_id=row.pk, user_id=u.pk)
+        retry_empty_terminal_search(search_id=row.pk, user_id=u.pk)
 
 
 @pytest.mark.django_db
-def test_retry_empty_completed_search_wrong_user_raises():
+def test_retry_empty_terminal_search_rejects_failed_when_candidates_present():
+    u = User.objects.create_user(username="retry4b", password="pw")
+    row = Search.objects.create(
+        user_id=u.pk,
+        query="q",
+        status=SearchStatus.FAILED,
+        result_candidates=[{"display_name": "A", "standard_name": "", "brand": "", "format": "", "emoji": ""}],
+        completed_at=timezone.now(),
+    )
+    with pytest.raises(ValueError, match="already has result"):
+        retry_empty_terminal_search(search_id=row.pk, user_id=u.pk)
+
+
+@pytest.mark.django_db
+def test_retry_empty_terminal_search_wrong_user_raises():
     u = User.objects.create_user(username="retry6", password="pw")
     other = User.objects.create_user(username="retry7", password="pw")
     row = Search.objects.create(
@@ -268,7 +304,7 @@ def test_retry_empty_completed_search_wrong_user_raises():
         completed_at=timezone.now(),
     )
     with pytest.raises(Search.DoesNotExist):
-        retry_empty_completed_search(search_id=row.pk, user_id=other.pk)
+        retry_empty_terminal_search(search_id=row.pk, user_id=other.pk)
 
 
 @pytest.mark.django_db
