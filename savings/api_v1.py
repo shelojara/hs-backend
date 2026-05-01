@@ -115,7 +115,9 @@ def update_distribution_notes(
         )
     except DistributionMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
-    return UpdateDistributionNotesResponse()
+    return UpdateDistributionNotesResponse(
+        distribution_id=payload.distribution_id,
+    )
 
 
 @router.post("/v1.Savings.ListAssets", response=ListAssetsResponse)

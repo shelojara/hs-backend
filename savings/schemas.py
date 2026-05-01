@@ -174,7 +174,7 @@ class UpdateDistributionNotesRequest(Schema):
 
 
 class UpdateDistributionNotesResponse(Schema):
-    ok: bool = True
+    distribution_id: int
 
 
 class ListAssetsRequest(Schema):
