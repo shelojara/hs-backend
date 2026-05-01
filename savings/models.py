@@ -13,6 +13,54 @@ class SavingsScope(models.TextChoices):
     FAMILY = "FAMILY", "Family"
 
 
+class Family(models.Model):
+    """Shared savings bucket for multiple users (family scope)."""
+
+    name = models.CharField(max_length=255, blank=True, default="")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="savings_families_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "families"
+
+    def __str__(self) -> str:
+        label = self.name.strip() or f"Family #{self.pk}"
+        return label
+
+
+class FamilyMembership(models.Model):
+    """User belongs to a family (shared access to FAMILY-scoped savings rows)."""
+
+    family = models.ForeignKey(
+        Family,
+        on_delete=models.CASCADE,
+        related_name="memberships",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="savings_family_memberships",
+    )
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("family", "user"),
+                name="savings_family_membership_uniq",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"FamilyMembership(family={self.family_id} user={self.user_id})"
+
+
 class SavingsAsset(models.Model):
     """Savings goal / asset with weight for pro-rata distribution."""
 
@@ -25,6 +73,13 @@ class SavingsAsset(models.Model):
         max_length=16,
         choices=SavingsScope.choices,
         db_index=True,
+    )
+    family = models.ForeignKey(
+        Family,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="savings_assets",
     )
     name = models.CharField(max_length=255)
     weight = models.DecimalField(
@@ -55,8 +110,21 @@ class SavingsAsset(models.Model):
         ordering = ("scope", "name", "id")
         constraints = [
             models.UniqueConstraint(
-                fields=("owner", "scope", "name"),
-                name="savings_asset_owner_scope_name_uniq",
+                fields=("owner", "name"),
+                condition=models.Q(scope=SavingsScope.PERSONAL),
+                name="savings_asset_personal_owner_name_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=("family", "name"),
+                condition=models.Q(scope=SavingsScope.FAMILY),
+                name="savings_asset_family_name_uniq",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(scope=SavingsScope.PERSONAL, family__isnull=True)
+                    | models.Q(scope=SavingsScope.FAMILY, family__isnull=False)
+                ),
+                name="savings_asset_scope_family_consistent",
             ),
         ]
 
@@ -77,6 +145,13 @@ class DistributionSession(models.Model):
         choices=SavingsScope.choices,
         db_index=True,
     )
+    family = models.ForeignKey(
+        Family,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="distribution_sessions",
+    )
     budget_amount = models.DecimalField(
         max_digits=14,
         decimal_places=2,
@@ -87,6 +162,15 @@ class DistributionSession(models.Model):
 
     class Meta:
         ordering = ("-created_at", "-id")
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(scope=SavingsScope.PERSONAL, family__isnull=True)
+                    | models.Q(scope=SavingsScope.FAMILY, family__isnull=False)
+                ),
+                name="savings_session_scope_family_consistent",
+            ),
+        ]
 
     def __str__(self) -> str:
         return (

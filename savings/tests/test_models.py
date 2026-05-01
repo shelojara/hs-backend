@@ -8,6 +8,8 @@ from django.contrib.auth import get_user_model
 from savings.models import (
     DistributionLine,
     DistributionSession,
+    Family,
+    FamilyMembership,
     SavingsAsset,
     SavingsScope,
 )
@@ -43,3 +45,26 @@ def test_create_asset_session_and_line() -> None:
     )
     assert line.session.budget_amount == Decimal("50000")
     assert asset.distribution_lines.count() == 1
+
+
+@pytest.mark.django_db
+def test_family_membership_and_family_scoped_asset() -> None:
+    user = User.objects.create_user(username="u2", password="x")
+    family = Family.objects.create(name="Home", created_by=user)
+    FamilyMembership.objects.create(family=family, user=user)
+    asset = SavingsAsset.objects.create(
+        owner=user,
+        scope=SavingsScope.FAMILY,
+        family=family,
+        name="Yoshi",
+        weight=Decimal("10"),
+    )
+    session = DistributionSession.objects.create(
+        owner=user,
+        scope=SavingsScope.FAMILY,
+        family=family,
+        budget_amount=Decimal("10000"),
+    )
+    assert asset.family_id == family.id
+    assert session.family_id == family.id
+    assert family.memberships.count() == 1
