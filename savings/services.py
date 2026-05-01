@@ -108,6 +108,33 @@ def list_assets(*, user_id: int, scope: str) -> list[Asset]:
     return list(qs)
 
 
+def list_distributions(*, user_id: int, scope: str) -> list[Distribution]:
+    """List distributions for scope with lines prefetched (caller validates ``scope``)."""
+    if scope == SavingsScope.PERSONAL:
+        qs = (
+            Distribution.objects.filter(
+                owner_id=user_id,
+                scope=SavingsScope.PERSONAL,
+            )
+            .prefetch_related("lines")
+            .order_by("-created_at", "-id")
+        )
+        return list(qs)
+
+    membership = FamilyMembership.objects.filter(user_id=user_id).first()
+    if membership is None:
+        return []
+    qs = (
+        Distribution.objects.filter(
+            scope=SavingsScope.FAMILY,
+            family_id=membership.family_id,
+        )
+        .prefetch_related("lines")
+        .order_by("-created_at", "-id")
+    )
+    return list(qs)
+
+
 def get_asset_for_user(*, user_id: int, asset_id: int) -> Asset | None:
     """Return asset row if ``user_id`` may read it (same rules as ``list_assets``)."""
     personal = Asset.objects.filter(

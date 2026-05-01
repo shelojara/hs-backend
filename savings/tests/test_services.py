@@ -20,6 +20,7 @@ from savings.services import (
     create_distribution,
     delete_asset,
     list_assets,
+    list_distributions,
     update_asset,
 )
 
@@ -252,6 +253,124 @@ def test_list_assets_personal_excludes_family_rows():
     personal = list_assets(user_id=user.pk, scope=SavingsScope.PERSONAL)
     assert len(personal) == 1
     assert personal[0].name == "Solo"
+
+
+@pytest.mark.django_db
+def test_list_distributions_personal_with_lines():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Pot",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    did = create_distribution(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        budget_amount=Decimal("100"),
+        currency="CLP",
+        family_id=None,
+        asset_ids=[aid],
+    )
+    rows = list_distributions(user_id=user.pk, scope=SavingsScope.PERSONAL)
+    assert len(rows) == 1
+    d = rows[0]
+    assert d.pk == did
+    assert d.budget_amount == Decimal("100")
+    line_list = list(d.lines.all())
+    assert len(line_list) == 1
+    assert line_list[0].asset_id == aid
+    assert line_list[0].allocated_amount == Decimal("100")
+
+
+@pytest.mark.django_db
+def test_list_distributions_family_visible_to_member():
+    owner = _user("owner")
+    member = _user("member")
+    fam = Family.objects.create(created_by=owner)
+    FamilyMembership.objects.create(family=fam, user=owner)
+    FamilyMembership.objects.create(family=fam, user=member)
+
+    aid = create_asset(
+        user_id=owner.pk,
+        scope=SavingsScope.FAMILY,
+        name="Shared",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=fam.pk,
+    )
+    did = create_distribution(
+        user_id=owner.pk,
+        scope=SavingsScope.FAMILY,
+        budget_amount=Decimal("50"),
+        currency="CLP",
+        family_id=fam.pk,
+        asset_ids=[aid],
+    )
+    member_rows = list_distributions(user_id=member.pk, scope=SavingsScope.FAMILY)
+    assert len(member_rows) == 1
+    assert member_rows[0].pk == did
+    assert list(member_rows[0].lines.all())[0].allocated_amount == Decimal("50")
+
+
+@pytest.mark.django_db
+def test_list_distributions_family_hidden_from_non_member():
+    owner = _user("owner")
+    outsider = _user("outsider")
+    fam = Family.objects.create(created_by=owner)
+    FamilyMembership.objects.create(family=fam, user=owner)
+
+    aid = create_asset(
+        user_id=owner.pk,
+        scope=SavingsScope.FAMILY,
+        name="Fam goal",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=fam.pk,
+    )
+    create_distribution(
+        user_id=owner.pk,
+        scope=SavingsScope.FAMILY,
+        budget_amount=Decimal("10"),
+        currency="CLP",
+        family_id=fam.pk,
+        asset_ids=[aid],
+    )
+    assert list_distributions(user_id=outsider.pk, scope=SavingsScope.FAMILY) == []
+
+
+@pytest.mark.django_db
+def test_list_distributions_personal_excludes_family():
+    user = _user()
+    fam = Family.objects.create(created_by=user)
+    FamilyMembership.objects.create(family=fam, user=user)
+    fam_aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.FAMILY,
+        name="Joint",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=fam.pk,
+    )
+    create_distribution(
+        user_id=user.pk,
+        scope=SavingsScope.FAMILY,
+        budget_amount=Decimal("20"),
+        currency="CLP",
+        family_id=fam.pk,
+        asset_ids=[fam_aid],
+    )
+    assert list_distributions(user_id=user.pk, scope=SavingsScope.PERSONAL) == []
 
 
 @pytest.mark.django_db

@@ -12,6 +12,8 @@ from savings.schemas import (
     DeleteAssetResponse,
     ListAssetsRequest,
     ListAssetsResponse,
+    ListDistributionsRequest,
+    ListDistributionsResponse,
     PingSavingsRequest,
     PingSavingsResponse,
     UpdateAssetRequest,
@@ -71,6 +73,15 @@ def list_assets(request, payload: ListAssetsRequest) -> ListAssetsResponse:
     user = request.auth
     rows = services.list_assets(user_id=user.pk, scope=payload.scope)
     return ListAssetsResponse(assets=rows)
+
+
+@router.post("/v1.Savings.ListDistributions", response=ListDistributionsResponse)
+def list_distributions(
+    request, payload: ListDistributionsRequest
+) -> ListDistributionsResponse:
+    user = request.auth
+    rows = services.list_distributions(user_id=user.pk, scope=payload.scope)
+    return ListDistributionsResponse(distributions=rows)
 
 
 @router.post("/v1.Savings.UpdateAsset", response=UpdateAssetResponse)

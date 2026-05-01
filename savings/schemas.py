@@ -170,6 +170,47 @@ class ListAssetsResponse(Schema):
     assets: list[AssetSchema]
 
 
+class ListDistributionsRequest(Schema):
+    scope: str
+
+    @field_validator("scope", mode="before")
+    @classmethod
+    def validate_scope(cls, v: object) -> str:
+        if not isinstance(v, str):
+            msg = "scope must be a string."
+            raise TypeError(msg)
+        s = v.strip().upper()
+        if s not in (SavingsScope.PERSONAL, SavingsScope.FAMILY):
+            msg = "Invalid scope; use PERSONAL or FAMILY."
+            raise ValueError(msg)
+        return s
+
+
+class DistributionLineSchema(Schema):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    asset_id: int
+    allocated_amount: Decimal
+
+
+class DistributionWithLinesSchema(Schema):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    owner_id: int
+    scope: str
+    family_id: int | None
+    budget_amount: Decimal
+    currency: str
+    created_at: datetime
+    lines: list[DistributionLineSchema]
+
+
+class ListDistributionsResponse(Schema):
+    distributions: list[DistributionWithLinesSchema]
+
+
 class UpdateAssetRequest(Schema):
     asset_id: int
     name: str
