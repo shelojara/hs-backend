@@ -485,13 +485,17 @@ def rush_asset(*, user_id: int, beneficiary_asset_id: int) -> tuple[int, Asset]:
 
     with transaction.atomic():
         beneficiary_locked = Asset.objects.select_for_update().get(pk=beneficiary.pk)
+        rush_notes = (
+            f'Rush toward target for "{beneficiary_locked.name}" '
+            f"(asset_id={beneficiary_locked.pk})"
+        )
         dist = Distribution.objects.create(
             owner_id=user_id,
             scope=beneficiary_locked.scope,
             family=beneficiary_locked.family,
             budget_amount=total_to_beneficiary,
             currency=currency,
-            notes="",
+            notes=rush_notes,
         )
         DistributionLine.objects.create(
             distribution=dist,
