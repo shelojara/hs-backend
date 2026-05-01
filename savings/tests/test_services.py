@@ -288,6 +288,63 @@ def test_list_assets_personal_excludes_family_rows():
 
 
 @pytest.mark.django_db
+def test_list_assets_orders_by_completion_then_completed_last():
+    user = _user()
+    # completed last
+    done = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Z_done",
+        weight=Decimal("1"),
+        current_amount=Decimal("100"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    set_asset_completion(user_id=user.pk, asset_id=done, completed=True)
+    # high ratio first among active
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Almost",
+        weight=Decimal("1"),
+        current_amount=Decimal("90"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Mid",
+        weight=Decimal("1"),
+        current_amount=Decimal("50"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Low",
+        weight=Decimal("1"),
+        current_amount=Decimal("10"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="No target",
+        weight=Decimal("1"),
+        current_amount=Decimal("999"),
+        target_amount=None,
+        currency="CLP",
+    )
+
+    rows = list_assets(user_id=user.pk, scope=SavingsScope.PERSONAL)
+    names = [r.name for r in rows]
+    assert names == ["Almost", "Mid", "Low", "No target", "Z_done"]
+
+
+@pytest.mark.django_db
 def test_list_distributions_personal_with_lines():
     user = _user()
     aid = create_asset(
