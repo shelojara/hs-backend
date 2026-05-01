@@ -61,8 +61,17 @@ def create_asset(
     if scope == SavingsScope.PERSONAL:
         fam = None
     else:
+        resolved_family_id = family_id
+        if resolved_family_id is None:
+            membership = FamilyMembership.objects.filter(user_id=user_id).first()
+            if membership is None:
+                raise AssetMutationError(
+                    "Not in a family; join or create a family first.",
+                    status_code=400,
+                )
+            resolved_family_id = membership.family_id
         try:
-            fam = Family.objects.get(pk=family_id)
+            fam = Family.objects.get(pk=resolved_family_id)
         except Family.DoesNotExist as exc:
             raise AssetMutationError("Family not found.", status_code=404) from exc
         if not FamilyMembership.objects.filter(

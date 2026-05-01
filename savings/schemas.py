@@ -72,9 +72,6 @@ class CreateAssetRequest(Schema):
             if self.family_id is not None:
                 msg = "Personal assets must not set family_id."
                 raise ValueError(msg)
-        elif self.family_id is None:
-            msg = "Family assets require family_id."
-            raise ValueError(msg)
         return self
 
 

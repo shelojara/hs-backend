@@ -170,6 +170,44 @@ def test_create_asset_family_ok():
 
 
 @pytest.mark.django_db
+def test_create_asset_family_omit_family_id_uses_membership():
+    user = _user()
+    fam = Family.objects.create(created_by=user)
+    FamilyMembership.objects.create(family=fam, user=user)
+
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.FAMILY,
+        name="No explicit family",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=Decimal("1"),
+        currency="CLP",
+        family_id=None,
+    )
+    row = Asset.objects.get(pk=aid)
+    assert row.family_id == fam.pk
+
+
+@pytest.mark.django_db
+def test_create_asset_family_without_membership_rejected():
+    user = _user()
+    with pytest.raises(AssetMutationError) as ei:
+        create_asset(
+            user_id=user.pk,
+            scope=SavingsScope.FAMILY,
+            name="Orphan",
+            weight=Decimal("1"),
+            current_amount=Decimal("0"),
+            target_amount=None,
+            currency="CLP",
+            family_id=None,
+        )
+    assert ei.value.status_code == 400
+    assert "Not in a family" in str(ei.value)
+
+
+@pytest.mark.django_db
 def test_create_asset_duplicate_name_personal():
     user = _user()
     create_asset(
