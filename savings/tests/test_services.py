@@ -639,7 +639,7 @@ def test_delete_asset_ok():
 
 
 @pytest.mark.django_db
-def test_delete_asset_blocked_when_distribution_line_exists():
+def test_delete_asset_removes_distribution_lines_then_row():
     user = _user()
     aid = create_asset(
         user_id=user.pk,
@@ -663,9 +663,10 @@ def test_delete_asset_blocked_when_distribution_line_exists():
         asset_id=aid,
         allocated_amount=Decimal("10"),
     )
-    with pytest.raises(AssetMutationError) as ei:
-        delete_asset(user_id=user.pk, asset_id=aid)
-    assert ei.value.status_code == 409
+    delete_asset(user_id=user.pk, asset_id=aid)
+    assert not Asset.objects.filter(pk=aid).exists()
+    assert not DistributionLine.objects.filter(asset_id=aid).exists()
+    assert Distribution.objects.filter(pk=dist.pk).exists()
 
 
 @pytest.mark.django_db
