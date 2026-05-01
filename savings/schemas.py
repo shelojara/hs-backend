@@ -88,6 +88,17 @@ class CreateDistributionRequest(Schema):
     currency: str = "CLP"
     family_id: int | None = None
     asset_ids: list[int]
+    notes: str = ""
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def validate_notes(cls, v: object) -> str:
+        if v is None:
+            return ""
+        if not isinstance(v, str):
+            msg = "notes must be a string."
+            raise TypeError(msg)
+        return v
 
     @field_validator("scope", mode="before")
     @classmethod
@@ -205,6 +216,7 @@ class DistributionWithLinesSchema(Schema):
     family_id: int | None
     budget_amount: Decimal
     currency: str
+    notes: str
     created_at: datetime
     lines: list[DistributionLineSchema]
 

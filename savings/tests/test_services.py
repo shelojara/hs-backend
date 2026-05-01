@@ -592,6 +592,33 @@ def test_update_asset_duplicate_name_conflict():
 
 
 @pytest.mark.django_db
+def test_update_asset_rejects_target_below_current():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Goal",
+        weight=Decimal("1"),
+        current_amount=Decimal("50"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+        family_id=None,
+    )
+    with pytest.raises(AssetMutationError) as ei:
+        update_asset(
+            user_id=user.pk,
+            asset_id=aid,
+            name="Goal",
+            weight=Decimal("1"),
+            current_amount=Decimal("50"),
+            target_amount=Decimal("40"),
+            currency="CLP",
+        )
+    assert ei.value.status_code == 400
+    assert "Target amount cannot be below current amount." in str(ei.value)
+
+
+@pytest.mark.django_db
 def test_delete_asset_ok():
     user = _user()
     aid = create_asset(
@@ -677,6 +704,31 @@ def test_create_distribution_personal_updates_balances():
     assert sum(line.allocated_amount for line in lines) == Decimal("30")
     assert Asset.objects.get(pk=a1).current_amount == Decimal("115")
     assert Asset.objects.get(pk=a2).current_amount == Decimal("65")
+
+
+@pytest.mark.django_db
+def test_create_distribution_stores_notes():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="A",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    did = create_distribution(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        budget_amount=Decimal("10"),
+        currency="CLP",
+        family_id=None,
+        asset_ids=[aid],
+        notes="payroll May",
+    )
+    assert Distribution.objects.get(pk=did).notes == "payroll May"
 
 
 @pytest.mark.django_db

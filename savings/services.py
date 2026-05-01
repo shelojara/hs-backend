@@ -183,6 +183,11 @@ def update_asset(
 
     row.name = name
     row.weight = weight
+    if target_amount is not None and target_amount < current_amount:
+        raise AssetMutationError(
+            "Target amount cannot be below current amount.",
+            status_code=400,
+        )
     row.current_amount = current_amount
     row.target_amount = target_amount
     row.currency = currency
@@ -286,6 +291,7 @@ def create_distribution(
     currency: str,
     family_id: int | None,
     asset_ids: list[int],
+    notes: str = "",
 ) -> int:
     """Persist distribution, lines, and bump asset balances. Amounts from asset weights (pro-rata)."""
     if scope == SavingsScope.PERSONAL:
@@ -350,6 +356,7 @@ def create_distribution(
             family=fam,
             budget_amount=budget_amount,
             currency=currency,
+            notes=notes,
         )
         for asset_row, amt in zip(resolved_assets, allocated_amounts, strict=True):
             DistributionLine.objects.create(
@@ -484,6 +491,7 @@ def rush_asset(*, user_id: int, beneficiary_asset_id: int) -> tuple[int, Asset]:
             family=beneficiary_locked.family,
             budget_amount=total_to_beneficiary,
             currency=currency,
+            notes="",
         )
         DistributionLine.objects.create(
             distribution=dist,
