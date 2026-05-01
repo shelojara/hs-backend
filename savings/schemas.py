@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from ninja import Schema
 
 
@@ -9,3 +11,17 @@ class PingSavingsRequest(Schema):
 
 class PingSavingsResponse(Schema):
     ok: bool = True
+
+
+class CreateAssetRequest(Schema):
+    scope: str
+    name: str
+    weight: Decimal = Decimal("1")
+    current_amount: Decimal = Decimal("0")
+    target_amount: Decimal = Decimal("0")
+    currency: str = "CLP"
+    family_id: int | None = None
+
+
+class CreateAssetResponse(Schema):
+    asset_id: int
