@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 
 from savings.models import Asset, Family, FamilyMembership, SavingsScope
 
@@ -70,3 +71,16 @@ def create_asset(
         ) from exc
 
     return row.pk
+
+
+def list_assets(*, user_id: int) -> list[Asset]:
+    """Assets visible to user: owned personal/family rows plus FAMILY rows for joined families."""
+    family_ids = FamilyMembership.objects.filter(user_id=user_id).values_list(
+        "family_id",
+        flat=True,
+    )
+    qs = Asset.objects.filter(
+        Q(owner_id=user_id)
+        | Q(scope=SavingsScope.FAMILY, family_id__in=family_ids),
+    ).order_by("scope", "name", "id")
+    return list(qs)

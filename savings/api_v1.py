@@ -6,6 +6,8 @@ from savings import services
 from savings.schemas import (
     CreateAssetRequest,
     CreateAssetResponse,
+    ListAssetsRequest,
+    ListAssetsResponse,
     PingSavingsRequest,
     PingSavingsResponse,
 )
@@ -37,3 +39,10 @@ def create_asset(request, payload: CreateAssetRequest) -> CreateAssetResponse:
     except AssetCreateError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
     return CreateAssetResponse(asset_id=asset_id)
+
+
+@router.post("/v1.Savings.ListAssets", response=ListAssetsResponse)
+def list_assets(request, payload: ListAssetsRequest) -> ListAssetsResponse:
+    user = request.auth
+    rows = services.list_assets(user_id=user.pk)
+    return ListAssetsResponse(assets=rows)
