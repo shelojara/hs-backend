@@ -25,7 +25,6 @@ class CreateAssetRequest(Schema):
     current_amount: Decimal = Field(default=Decimal("0"), ge=0)
     target_amount: Optional[Decimal] = Field(default=None, ge=0)
     currency: str = "CLP"
-    family_id: int | None = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -66,17 +65,6 @@ class CreateAssetRequest(Schema):
             raise ValueError(msg)
         return cur
 
-    @model_validator(mode="after")
-    def family_matches_scope(self) -> "CreateAssetRequest":
-        if self.scope == SavingsScope.PERSONAL:
-            if self.family_id is not None:
-                msg = "Personal assets must not set family_id."
-                raise ValueError(msg)
-        elif self.family_id is None:
-            msg = "Family assets require family_id."
-            raise ValueError(msg)
-        return self
-
 
 class CreateAssetResponse(Schema):
     asset_id: int
@@ -86,7 +74,6 @@ class CreateDistributionRequest(Schema):
     scope: str
     budget_amount: Decimal
     currency: str = "CLP"
-    family_id: int | None = None
     asset_ids: list[int]
     notes: str = ""
 
@@ -125,14 +112,7 @@ class CreateDistributionRequest(Schema):
         return cur
 
     @model_validator(mode="after")
-    def family_matches_scope(self) -> "CreateDistributionRequest":
-        if self.scope == SavingsScope.PERSONAL:
-            if self.family_id is not None:
-                msg = "Personal distributions must not set family_id."
-                raise ValueError(msg)
-        elif self.family_id is None:
-            msg = "Family distributions require family_id."
-            raise ValueError(msg)
+    def clp_budget_whole(self) -> "CreateDistributionRequest":
         if self.currency == "CLP":
             q = self.budget_amount.quantize(Decimal("1"))
             if self.budget_amount != q:

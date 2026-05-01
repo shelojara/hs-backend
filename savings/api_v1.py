@@ -49,7 +49,6 @@ def create_asset(request, payload: CreateAssetRequest) -> CreateAssetResponse:
             current_amount=payload.current_amount,
             target_amount=payload.target_amount,
             currency=payload.currency,
-            family_id=payload.family_id,
         )
     except AssetMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
@@ -67,7 +66,6 @@ def create_distribution(
             scope=payload.scope,
             budget_amount=payload.budget_amount,
             currency=payload.currency,
-            family_id=payload.family_id,
             asset_ids=payload.asset_ids,
             notes=payload.notes,
         )
@@ -87,7 +85,6 @@ def simulate_distribution(
             scope=payload.scope,
             budget_amount=payload.budget_amount,
             currency=payload.currency,
-            family_id=payload.family_id,
             asset_ids=payload.asset_ids,
         )
     except DistributionMutationError as exc:

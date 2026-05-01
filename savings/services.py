@@ -43,6 +43,12 @@ def ping() -> dict[str, bool]:
     return {"ok": True}
 
 
+def _family_for_user(user_id: int) -> Family | None:
+    """User has at most one family membership."""
+    m = FamilyMembership.objects.filter(user_id=user_id).first()
+    return m.family if m is not None else None
+
+
 def create_asset(
     *,
     user_id: int,
@@ -52,7 +58,6 @@ def create_asset(
     current_amount: Decimal,
     target_amount: Decimal | None,
     currency: str,
-    family_id: int | None,
 ) -> int:
     """Create asset for authenticated user. Returns new asset primary key.
 
@@ -61,17 +66,11 @@ def create_asset(
     if scope == SavingsScope.PERSONAL:
         fam = None
     else:
-        try:
-            fam = Family.objects.get(pk=family_id)
-        except Family.DoesNotExist as exc:
-            raise AssetMutationError("Family not found.", status_code=404) from exc
-        if not FamilyMembership.objects.filter(
-            family_id=fam.pk,
-            user_id=user_id,
-        ).exists():
+        fam = _family_for_user(user_id)
+        if fam is None:
             raise AssetMutationError(
-                "Not a member of this family.",
-                status_code=403,
+                "Family scope requires family membership.",
+                status_code=400,
             )
 
     emoji = ""
@@ -448,24 +447,17 @@ def _resolve_assets_for_distribution(
     user_id: int,
     scope: str,
     currency: str,
-    family_id: int | None,
     asset_ids: list[int],
 ) -> tuple[Family | None, list[Asset]]:
     """Validate scope/family membership and assets; return family (if any) and rows in ``asset_ids`` order."""
     if scope == SavingsScope.PERSONAL:
         fam = None
     else:
-        try:
-            fam = Family.objects.get(pk=family_id)
-        except Family.DoesNotExist as exc:
-            raise DistributionMutationError("Family not found.", status_code=404) from exc
-        if not FamilyMembership.objects.filter(
-            family_id=fam.pk,
-            user_id=user_id,
-        ).exists():
+        fam = _family_for_user(user_id)
+        if fam is None:
             raise DistributionMutationError(
-                "Not a member of this family.",
-                status_code=403,
+                "Family scope requires family membership.",
+                status_code=400,
             )
 
     if not asset_ids:
@@ -513,7 +505,6 @@ def simulate_distribution(
     scope: str,
     budget_amount: Decimal,
     currency: str,
-    family_id: int | None,
     asset_ids: list[int],
 ) -> list[tuple[int, Decimal]]:
     """Compute splits without persisting. Same cap-and-redistribute rules as ``create_distribution``."""
@@ -521,7 +512,6 @@ def simulate_distribution(
         user_id=user_id,
         scope=scope,
         currency=currency,
-        family_id=family_id,
         asset_ids=asset_ids,
     )
     allocated_amounts = _allocate_budget_respecting_targets(
@@ -539,7 +529,6 @@ def create_distribution(
     scope: str,
     budget_amount: Decimal,
     currency: str,
-    family_id: int | None,
     asset_ids: list[int],
     notes: str = "",
 ) -> int:
@@ -554,7 +543,6 @@ def create_distribution(
         user_id=user_id,
         scope=scope,
         currency=currency,
-        family_id=family_id,
         asset_ids=asset_ids,
     )
 

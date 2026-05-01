@@ -48,7 +48,6 @@ def test_create_asset_persists_gemini_emoji(mock_emoji):
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     row = Asset.objects.get(pk=aid)
     assert row.emoji == "💸"
@@ -70,7 +69,6 @@ def test_create_asset_unconfigured_gemini_emoji_empty(_mock_emoji):
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     assert Asset.objects.get(pk=aid).emoji == ""
 
@@ -86,7 +84,6 @@ def test_create_asset_personal():
             "current_amount": Decimal("10.50"),
             "target_amount": Decimal("100"),
             "currency": "clp",
-            "family_id": None,
         }
     )
     aid = create_asset(
@@ -97,7 +94,6 @@ def test_create_asset_personal():
         current_amount=payload.current_amount,
         target_amount=payload.target_amount,
         currency=payload.currency,
-        family_id=payload.family_id,
     )
     row = Asset.objects.get(pk=aid)
     assert row.owner_id == user.pk
@@ -121,7 +117,6 @@ def test_create_asset_null_target():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     row = Asset.objects.get(pk=aid)
     assert row.target_amount is None
@@ -143,9 +138,8 @@ def test_create_asset_family_requires_membership():
             current_amount=Decimal("0"),
             target_amount=Decimal("0"),
             currency="CLP",
-            family_id=fam.pk,
         )
-    assert ei.value.status_code == 403
+    assert ei.value.status_code == 400
 
 
 @pytest.mark.django_db
@@ -162,7 +156,6 @@ def test_create_asset_family_ok():
         current_amount=Decimal("0"),
         target_amount=Decimal("500"),
         currency="USD",
-        family_id=fam.pk,
     )
     row = Asset.objects.get(pk=aid)
     assert row.scope == SavingsScope.FAMILY
@@ -180,7 +173,6 @@ def test_create_asset_duplicate_name_personal():
         current_amount=Decimal("0"),
         target_amount=Decimal("0"),
         currency="CLP",
-        family_id=None,
     )
     with pytest.raises(AssetMutationError) as ei:
         create_asset(
@@ -191,7 +183,6 @@ def test_create_asset_duplicate_name_personal():
             current_amount=Decimal("0"),
             target_amount=Decimal("0"),
             currency="CLP",
-            family_id=None,
         )
     assert ei.value.status_code == 409
 
@@ -207,7 +198,6 @@ def test_list_assets_personal_only():
         current_amount=Decimal("5"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     rows = list_assets(user_id=user.pk, scope=SavingsScope.PERSONAL)
     assert len(rows) == 1
@@ -231,7 +221,6 @@ def test_list_assets_family_visible_to_other_member():
         current_amount=Decimal("0"),
         target_amount=Decimal("100"),
         currency="CLP",
-        family_id=fam.pk,
     )
 
     member_rows = list_assets(user_id=member.pk, scope=SavingsScope.FAMILY)
@@ -256,7 +245,6 @@ def test_list_assets_family_hidden_from_non_member():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=fam.pk,
     )
 
     rows = list_assets(user_id=outsider.pk, scope=SavingsScope.FAMILY)
@@ -282,7 +270,6 @@ def test_list_assets_personal_excludes_family_rows():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     create_asset(
         user_id=user.pk,
@@ -292,7 +279,6 @@ def test_list_assets_personal_excludes_family_rows():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=fam.pk,
     )
     personal = list_assets(user_id=user.pk, scope=SavingsScope.PERSONAL)
     assert len(personal) == 1
@@ -310,14 +296,12 @@ def test_list_distributions_personal_with_lines():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     did = create_distribution(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
         budget_amount=Decimal("100"),
         currency="CLP",
-        family_id=None,
         asset_ids=[aid],
     )
     rows = list_distributions(user_id=user.pk, scope=SavingsScope.PERSONAL)
@@ -347,14 +331,12 @@ def test_list_distributions_family_visible_to_member():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=fam.pk,
     )
     did = create_distribution(
         user_id=owner.pk,
         scope=SavingsScope.FAMILY,
         budget_amount=Decimal("50"),
         currency="CLP",
-        family_id=fam.pk,
         asset_ids=[aid],
     )
     member_rows = list_distributions(user_id=member.pk, scope=SavingsScope.FAMILY)
@@ -378,14 +360,12 @@ def test_list_distributions_family_hidden_from_non_member():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=fam.pk,
     )
     create_distribution(
         user_id=owner.pk,
         scope=SavingsScope.FAMILY,
         budget_amount=Decimal("10"),
         currency="CLP",
-        family_id=fam.pk,
         asset_ids=[aid],
     )
     assert list_distributions(user_id=outsider.pk, scope=SavingsScope.FAMILY) == []
@@ -404,14 +384,12 @@ def test_list_distributions_personal_excludes_family():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=fam.pk,
     )
     create_distribution(
         user_id=user.pk,
         scope=SavingsScope.FAMILY,
         budget_amount=Decimal("20"),
         currency="CLP",
-        family_id=fam.pk,
         asset_ids=[fam_aid],
     )
     assert list_distributions(user_id=user.pk, scope=SavingsScope.PERSONAL) == []
@@ -428,7 +406,6 @@ def test_list_distributions_pagination_offset_limit():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     budgets = [Decimal("10"), Decimal("20"), Decimal("30")]
     ids: list[int] = []
@@ -439,7 +416,6 @@ def test_list_distributions_pagination_offset_limit():
                 scope=SavingsScope.PERSONAL,
                 budget_amount=b,
                 currency="CLP",
-                family_id=None,
                 asset_ids=[aid],
             )
         )
@@ -473,7 +449,6 @@ def test_list_distributions_clamps_limit_in_service():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     for i in range(3):
         create_distribution(
@@ -481,7 +456,6 @@ def test_list_distributions_clamps_limit_in_service():
             scope=SavingsScope.PERSONAL,
             budget_amount=Decimal(i + 1),
             currency="CLP",
-            family_id=None,
             asset_ids=[aid],
         )
     rows = list_distributions(
@@ -512,7 +486,6 @@ def test_update_asset_renames_refreshes_emoji(mock_emoji):
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     row = update_asset(
         user_id=user.pk,
@@ -545,7 +518,6 @@ def test_update_asset_same_name_preserves_emoji(mock_emoji):
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     Asset.objects.filter(pk=aid).update(emoji="🔒")
     update_asset(
@@ -572,7 +544,6 @@ def test_update_asset_personal():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     payload = UpdateAssetRequest.model_validate(
         {
@@ -617,7 +588,6 @@ def test_update_asset_family_member_can_edit():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=fam.pk,
     )
     row = update_asset(
         user_id=member.pk,
@@ -644,7 +614,6 @@ def test_update_asset_not_found_for_other_user():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     with pytest.raises(AssetMutationError) as ei:
         update_asset(
@@ -670,7 +639,6 @@ def test_update_asset_duplicate_name_conflict():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     aid2 = create_asset(
         user_id=user.pk,
@@ -680,7 +648,6 @@ def test_update_asset_duplicate_name_conflict():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     with pytest.raises(AssetMutationError) as ei:
         update_asset(
@@ -706,7 +673,6 @@ def test_update_asset_rejects_target_below_current():
         current_amount=Decimal("50"),
         target_amount=Decimal("100"),
         currency="CLP",
-        family_id=None,
     )
     with pytest.raises(AssetMutationError) as ei:
         update_asset(
@@ -733,7 +699,6 @@ def test_delete_asset_ok():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     delete_asset(user_id=user.pk, asset_id=aid)
     assert not Asset.objects.filter(pk=aid).exists()
@@ -750,7 +715,6 @@ def test_delete_asset_removes_distribution_lines_then_row():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     dist = Distribution.objects.create(
         owner_id=user.pk,
@@ -783,7 +747,6 @@ def test_delete_asset_updates_distribution_budget_to_sum_of_remaining_lines():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     keep_me = create_asset(
         user_id=user.pk,
@@ -793,7 +756,6 @@ def test_delete_asset_updates_distribution_budget_to_sum_of_remaining_lines():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     dist = Distribution.objects.create(
         owner_id=user.pk,
@@ -832,7 +794,6 @@ def test_create_distribution_personal_updates_balances():
         current_amount=Decimal("100"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     a2 = create_asset(
         user_id=user.pk,
@@ -842,14 +803,12 @@ def test_create_distribution_personal_updates_balances():
         current_amount=Decimal("50"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     did = create_distribution(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
         budget_amount=Decimal("30"),
         currency="CLP",
-        family_id=None,
         asset_ids=[a1, a2],
     )
     assert Distribution.objects.filter(pk=did).exists()
@@ -873,14 +832,12 @@ def test_create_distribution_stores_notes():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     did = create_distribution(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
         budget_amount=Decimal("10"),
         currency="CLP",
-        family_id=None,
         asset_ids=[aid],
         notes="payroll May",
     )
@@ -898,14 +855,12 @@ def test_update_distribution_notes_personal_ok():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     did = create_distribution(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
         budget_amount=Decimal("10"),
         currency="CLP",
-        family_id=None,
         asset_ids=[aid],
         notes="old",
     )
@@ -933,14 +888,12 @@ def test_update_distribution_notes_family_member_ok():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=fam.pk,
     )
     did = create_distribution(
         user_id=member.pk,
         scope=SavingsScope.FAMILY,
         budget_amount=Decimal("25"),
         currency="CLP",
-        family_id=fam.pk,
         asset_ids=[aid],
         notes="before",
     )
@@ -964,14 +917,12 @@ def test_update_distribution_notes_not_found_wrong_user():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     did = create_distribution(
         user_id=user_a.pk,
         scope=SavingsScope.PERSONAL,
         budget_amount=Decimal("10"),
         currency="CLP",
-        family_id=None,
         asset_ids=[aid],
     )
     with pytest.raises(DistributionMutationError) as ei:
@@ -994,7 +945,6 @@ def test_create_distribution_rejects_zero_total_weight():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     a2 = create_asset(
         user_id=user.pk,
@@ -1004,7 +954,6 @@ def test_create_distribution_rejects_zero_total_weight():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     with pytest.raises(DistributionMutationError) as ei:
         create_distribution(
@@ -1012,7 +961,6 @@ def test_create_distribution_rejects_zero_total_weight():
             scope=SavingsScope.PERSONAL,
             budget_amount=Decimal("100"),
             currency="CLP",
-            family_id=None,
             asset_ids=[a1, a2],
         )
     assert ei.value.status_code == 400
@@ -1027,7 +975,6 @@ def test_create_distribution_requires_assets():
             scope=SavingsScope.PERSONAL,
             budget_amount=Decimal("0"),
             currency="CLP",
-            family_id=None,
             asset_ids=[],
         )
     assert ei.value.status_code == 400
@@ -1049,14 +996,12 @@ def test_create_distribution_family_member_ok():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=fam.pk,
     )
     create_distribution(
         user_id=member.pk,
         scope=SavingsScope.FAMILY,
         budget_amount=Decimal("25"),
         currency="CLP",
-        family_id=fam.pk,
         asset_ids=[aid],
     )
     assert Asset.objects.get(pk=aid).current_amount == Decimal("25")
@@ -1073,7 +1018,6 @@ def test_simulate_distribution_matches_split_without_side_effects():
         current_amount=Decimal("10"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     light_id = create_asset(
         user_id=user.pk,
@@ -1083,14 +1027,12 @@ def test_simulate_distribution_matches_split_without_side_effects():
         current_amount=Decimal("20"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     lines = simulate_distribution(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
         budget_amount=Decimal("100"),
         currency="CLP",
-        family_id=None,
         asset_ids=[heavy_id, light_id],
     )
     by_asset = dict(lines)
@@ -1112,7 +1054,6 @@ def test_create_distribution_weighted_split():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     light_id = create_asset(
         user_id=user.pk,
@@ -1122,14 +1063,12 @@ def test_create_distribution_weighted_split():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     create_distribution(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
         budget_amount=Decimal("100"),
         currency="CLP",
-        family_id=None,
         asset_ids=[heavy_id, light_id],
     )
     h = Asset.objects.get(pk=heavy_id).current_amount
@@ -1150,7 +1089,6 @@ def test_simulate_distribution_caps_at_target_then_redistributes():
         current_amount=Decimal("90"),
         target_amount=Decimal("100"),
         currency="CLP",
-        family_id=None,
     )
     sink_id = create_asset(
         user_id=user.pk,
@@ -1160,7 +1098,6 @@ def test_simulate_distribution_caps_at_target_then_redistributes():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     lines = dict(
         simulate_distribution(
@@ -1168,7 +1105,6 @@ def test_simulate_distribution_caps_at_target_then_redistributes():
             scope=SavingsScope.PERSONAL,
             budget_amount=Decimal("100"),
             currency="CLP",
-            family_id=None,
             asset_ids=[capped_id, sink_id],
         )
     )
@@ -1187,7 +1123,6 @@ def test_create_distribution_partial_budget_when_targets_saturate():
         current_amount=Decimal("90"),
         target_amount=Decimal("100"),
         currency="CLP",
-        family_id=None,
     )
     a2 = create_asset(
         user_id=user.pk,
@@ -1197,14 +1132,12 @@ def test_create_distribution_partial_budget_when_targets_saturate():
         current_amount=Decimal("0"),
         target_amount=Decimal("20"),
         currency="CLP",
-        family_id=None,
     )
     did = create_distribution(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
         budget_amount=Decimal("100"),
         currency="CLP",
-        family_id=None,
         asset_ids=[a1, a2],
     )
     dist = Distribution.objects.get(pk=did)
@@ -1230,7 +1163,6 @@ def test_create_distribution_rejects_when_all_selected_at_or_above_target():
         current_amount=Decimal("100"),
         target_amount=Decimal("100"),
         currency="CLP",
-        family_id=None,
     )
     a2 = create_asset(
         user_id=user.pk,
@@ -1240,7 +1172,6 @@ def test_create_distribution_rejects_when_all_selected_at_or_above_target():
         current_amount=Decimal("50"),
         target_amount=Decimal("50"),
         currency="CLP",
-        family_id=None,
     )
     with pytest.raises(DistributionMutationError) as ei:
         create_distribution(
@@ -1248,7 +1179,6 @@ def test_create_distribution_rejects_when_all_selected_at_or_above_target():
             scope=SavingsScope.PERSONAL,
             budget_amount=Decimal("10"),
             currency="CLP",
-            family_id=None,
             asset_ids=[a1, a2],
         )
     assert ei.value.status_code == 400
@@ -1265,7 +1195,6 @@ def test_create_distribution_clp_rejects_fractional_budget():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     a2 = create_asset(
         user_id=user.pk,
@@ -1275,7 +1204,6 @@ def test_create_distribution_clp_rejects_fractional_budget():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     with pytest.raises(DistributionMutationError) as ei:
         create_distribution(
@@ -1283,7 +1211,6 @@ def test_create_distribution_clp_rejects_fractional_budget():
             scope=SavingsScope.PERSONAL,
             budget_amount=Decimal("10.50"),
             currency="CLP",
-            family_id=None,
             asset_ids=[a1, a2],
         )
     assert ei.value.status_code == 400
@@ -1300,7 +1227,6 @@ def test_create_distribution_clp_integer_split_remainder():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     light_id = create_asset(
         user_id=user.pk,
@@ -1310,14 +1236,12 @@ def test_create_distribution_clp_integer_split_remainder():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     did = create_distribution(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
         budget_amount=Decimal("10"),
         currency="CLP",
-        family_id=None,
         asset_ids=[heavy_id, light_id],
     )
     lines = {line.asset_id: line.allocated_amount for line in DistributionLine.objects.filter(distribution_id=did)}
@@ -1337,7 +1261,6 @@ def test_create_distribution_non_clp_uses_cents():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="USD",
-        family_id=None,
     )
     a2 = create_asset(
         user_id=user.pk,
@@ -1347,14 +1270,12 @@ def test_create_distribution_non_clp_uses_cents():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="USD",
-        family_id=None,
     )
     did = create_distribution(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
         budget_amount=Decimal("1.00"),
         currency="USD",
-        family_id=None,
         asset_ids=[a1, a2],
     )
     lines = [line.allocated_amount for line in DistributionLine.objects.filter(distribution_id=did).order_by("id")]
@@ -1372,7 +1293,6 @@ def test_create_distribution_rejects_asset_wrong_scope():
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     fam = Family.objects.create(created_by=user)
     FamilyMembership.objects.create(family=fam, user=user)
@@ -1382,7 +1302,6 @@ def test_create_distribution_rejects_asset_wrong_scope():
             scope=SavingsScope.FAMILY,
             budget_amount=Decimal("1"),
             currency="CLP",
-            family_id=fam.pk,
             asset_ids=[personal_id],
         )
     assert ei.value.status_code == 400
@@ -1399,7 +1318,6 @@ def test_rush_asset_weighted_split_fills_gap():
         current_amount=Decimal("50"),
         target_amount=Decimal("150"),
         currency="CLP",
-        family_id=None,
     )
     d1 = create_asset(
         user_id=user.pk,
@@ -1409,7 +1327,6 @@ def test_rush_asset_weighted_split_fills_gap():
         current_amount=Decimal("200"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     d2 = create_asset(
         user_id=user.pk,
@@ -1419,7 +1336,6 @@ def test_rush_asset_weighted_split_fills_gap():
         current_amount=Decimal("200"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     did, ben = rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
     dist = Distribution.objects.get(pk=did)
@@ -1449,7 +1365,6 @@ def test_rush_asset_iterative_when_donor_balances_exhausted():
         current_amount=Decimal("0"),
         target_amount=Decimal("100"),
         currency="CLP",
-        family_id=None,
     )
     capped = create_asset(
         user_id=user.pk,
@@ -1459,7 +1374,6 @@ def test_rush_asset_iterative_when_donor_balances_exhausted():
         current_amount=Decimal("110"),
         target_amount=Decimal("100"),
         currency="CLP",
-        family_id=None,
     )
     deep = create_asset(
         user_id=user.pk,
@@ -1469,7 +1383,6 @@ def test_rush_asset_iterative_when_donor_balances_exhausted():
         current_amount=Decimal("500"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     did, ben = rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
     assert ben.current_amount == Decimal("100")
@@ -1491,7 +1404,6 @@ def test_rush_asset_rejects_without_target():
         current_amount=Decimal("10"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     create_asset(
         user_id=user.pk,
@@ -1501,7 +1413,6 @@ def test_rush_asset_rejects_without_target():
         current_amount=Decimal("50"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     with pytest.raises(DistributionMutationError) as ei:
         rush_asset(user_id=user.pk, beneficiary_asset_id=aid)
@@ -1519,7 +1430,6 @@ def test_rush_asset_rejects_when_no_eligible_donors():
         current_amount=Decimal("0"),
         target_amount=Decimal("50"),
         currency="CLP",
-        family_id=None,
     )
     create_asset(
         user_id=user.pk,
@@ -1529,7 +1439,6 @@ def test_rush_asset_rejects_when_no_eligible_donors():
         current_amount=Decimal("0"),
         target_amount=Decimal("100"),
         currency="CLP",
-        family_id=None,
     )
     with pytest.raises(DistributionMutationError) as ei:
         rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
@@ -1547,7 +1456,6 @@ def test_rush_asset_skips_wrong_currency_donors():
         current_amount=Decimal("0"),
         target_amount=Decimal("30"),
         currency="CLP",
-        family_id=None,
     )
     create_asset(
         user_id=user.pk,
@@ -1557,7 +1465,6 @@ def test_rush_asset_skips_wrong_currency_donors():
         current_amount=Decimal("999"),
         target_amount=None,
         currency="USD",
-        family_id=None,
     )
     same = create_asset(
         user_id=user.pk,
@@ -1567,7 +1474,6 @@ def test_rush_asset_skips_wrong_currency_donors():
         current_amount=Decimal("100"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
     assert Asset.objects.get(pk=same).current_amount == Decimal("70")
@@ -1584,7 +1490,6 @@ def test_simulate_rush_asset_matches_rush_lines_and_skips_writes():
         current_amount=Decimal("50"),
         target_amount=Decimal("150"),
         currency="CLP",
-        family_id=None,
     )
     create_asset(
         user_id=user.pk,
@@ -1594,7 +1499,6 @@ def test_simulate_rush_asset_matches_rush_lines_and_skips_writes():
         current_amount=Decimal("200"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     create_asset(
         user_id=user.pk,
@@ -1604,7 +1508,6 @@ def test_simulate_rush_asset_matches_rush_lines_and_skips_writes():
         current_amount=Decimal("200"),
         target_amount=None,
         currency="CLP",
-        family_id=None,
     )
     preview = simulate_rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
     assert Distribution.objects.count() == 0
