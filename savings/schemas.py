@@ -158,6 +158,25 @@ class SimulateDistributionResponse(Schema):
     lines: list[SimulatedDistributionLineSchema]
 
 
+class UpdateDistributionNotesRequest(Schema):
+    distribution_id: int
+    notes: str = ""
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def validate_notes(cls, v: object) -> str:
+        if v is None:
+            return ""
+        if not isinstance(v, str):
+            msg = "notes must be a string."
+            raise TypeError(msg)
+        return v
+
+
+class UpdateDistributionNotesResponse(Schema):
+    distribution_id: int
+
+
 class ListAssetsRequest(Schema):
     scope: str
 
