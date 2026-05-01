@@ -66,7 +66,7 @@ INSTALLED_APPS = [
     "auth.apps.AuthConfig",
     "pagechecker",
     "groceries",
-    "savings.apps.SavingsConfig",
+    "savings",
 ]
 
 MIDDLEWARE = [
