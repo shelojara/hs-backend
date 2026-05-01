@@ -116,3 +116,51 @@ class AssetSchema(Schema):
 
 class ListAssetsResponse(Schema):
     assets: list[AssetSchema]
+
+
+class UpdateAssetRequest(Schema):
+    asset_id: int
+    name: str
+    weight: Decimal = Field(default=Decimal("1"), ge=0)
+    current_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    target_amount: Optional[Decimal] = Field(default=None, ge=0)
+    currency: str = "CLP"
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def validate_name(cls, v: object) -> str:
+        if not isinstance(v, str):
+            msg = "Asset name must be a string."
+            raise TypeError(msg)
+        s = v.strip()
+        if not s:
+            msg = "Asset name is required."
+            raise ValueError(msg)
+        if len(s) > 255:
+            msg = "Asset name is too long."
+            raise ValueError(msg)
+        return s
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def validate_currency(cls, v: object) -> str:
+        if not isinstance(v, str):
+            msg = "currency must be a string."
+            raise TypeError(msg)
+        cur = v.strip().upper()
+        if len(cur) != 3:
+            msg = "currency must be a 3-letter ISO 4217 code."
+            raise ValueError(msg)
+        return cur
+
+
+class UpdateAssetResponse(Schema):
+    asset: AssetSchema
+
+
+class DeleteAssetRequest(Schema):
+    asset_id: int
+
+
+class DeleteAssetResponse(Schema):
+    ok: bool = True

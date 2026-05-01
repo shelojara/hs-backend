@@ -4,9 +4,22 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 
-from savings.models import Asset, Family, FamilyMembership, SavingsScope
-from savings.schemas import CreateAssetRequest
-from savings.services import AssetCreateError, create_asset, list_assets
+from savings.models import (
+    Asset,
+    Distribution,
+    DistributionLine,
+    Family,
+    FamilyMembership,
+    SavingsScope,
+)
+from savings.schemas import CreateAssetRequest, UpdateAssetRequest
+from savings.services import (
+    AssetMutationError,
+    create_asset,
+    delete_asset,
+    list_assets,
+    update_asset,
+)
 
 User = get_user_model()
 
@@ -74,7 +87,7 @@ def test_create_asset_family_requires_membership():
     fam = Family.objects.create(created_by=owner)
     FamilyMembership.objects.create(family=fam, user=owner)
 
-    with pytest.raises(AssetCreateError) as ei:
+    with pytest.raises(AssetMutationError) as ei:
         create_asset(
             user_id=other.pk,
             scope=SavingsScope.FAMILY,
@@ -122,7 +135,7 @@ def test_create_asset_duplicate_name_personal():
         currency="CLP",
         family_id=None,
     )
-    with pytest.raises(AssetCreateError) as ei:
+    with pytest.raises(AssetMutationError) as ei:
         create_asset(
             user_id=user.pk,
             scope=SavingsScope.PERSONAL,
@@ -247,3 +260,184 @@ def test_family_membership_at_most_one_per_user():
     FamilyMembership.objects.create(family=fam_a, user=user)
     with pytest.raises(IntegrityError):
         FamilyMembership.objects.create(family=fam_b, user=user)
+
+
+@pytest.mark.django_db
+def test_update_asset_personal():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Old",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    payload = UpdateAssetRequest.model_validate(
+        {
+            "asset_id": aid,
+            "name": "  New  ",
+            "weight": Decimal("3"),
+            "current_amount": Decimal("12.34"),
+            "target_amount": Decimal("99"),
+            "currency": "usd",
+        }
+    )
+    row = update_asset(
+        user_id=user.pk,
+        asset_id=payload.asset_id,
+        name=payload.name,
+        weight=payload.weight,
+        current_amount=payload.current_amount,
+        target_amount=payload.target_amount,
+        currency=payload.currency,
+    )
+    assert row.pk == aid
+    assert row.name == "New"
+    assert row.weight == Decimal("3")
+    assert row.current_amount == Decimal("12.34")
+    assert row.target_amount == Decimal("99")
+    assert row.currency == "USD"
+
+
+@pytest.mark.django_db
+def test_update_asset_family_member_can_edit():
+    owner = _user("owner")
+    member = _user("member")
+    fam = Family.objects.create(created_by=owner)
+    FamilyMembership.objects.create(family=fam, user=owner)
+    FamilyMembership.objects.create(family=fam, user=member)
+
+    aid = create_asset(
+        user_id=owner.pk,
+        scope=SavingsScope.FAMILY,
+        name="Pot",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=fam.pk,
+    )
+    row = update_asset(
+        user_id=member.pk,
+        asset_id=aid,
+        name="Pot",
+        weight=Decimal("2"),
+        current_amount=Decimal("5"),
+        target_amount=None,
+        currency="CLP",
+    )
+    assert row.weight == Decimal("2")
+    assert row.current_amount == Decimal("5")
+
+
+@pytest.mark.django_db
+def test_update_asset_not_found_for_other_user():
+    a = _user("a")
+    b = _user("b")
+    aid = create_asset(
+        user_id=a.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Mine",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    with pytest.raises(AssetMutationError) as ei:
+        update_asset(
+            user_id=b.pk,
+            asset_id=aid,
+            name="Stolen",
+            weight=Decimal("1"),
+            current_amount=Decimal("0"),
+            target_amount=None,
+            currency="CLP",
+        )
+    assert ei.value.status_code == 404
+
+
+@pytest.mark.django_db
+def test_update_asset_duplicate_name_conflict():
+    user = _user()
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="First",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    aid2 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Second",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    with pytest.raises(AssetMutationError) as ei:
+        update_asset(
+            user_id=user.pk,
+            asset_id=aid2,
+            name="First",
+            weight=Decimal("1"),
+            current_amount=Decimal("0"),
+            target_amount=None,
+            currency="CLP",
+        )
+    assert ei.value.status_code == 409
+
+
+@pytest.mark.django_db
+def test_delete_asset_ok():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Gone",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    delete_asset(user_id=user.pk, asset_id=aid)
+    assert not Asset.objects.filter(pk=aid).exists()
+
+
+@pytest.mark.django_db
+def test_delete_asset_blocked_when_distribution_line_exists():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Tracked",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    dist = Distribution.objects.create(
+        owner_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        family=None,
+        budget_amount=Decimal("10"),
+        currency="CLP",
+    )
+    DistributionLine.objects.create(
+        distribution=dist,
+        asset_id=aid,
+        allocated_amount=Decimal("10"),
+    )
+    with pytest.raises(AssetMutationError) as ei:
+        delete_asset(user_id=user.pk, asset_id=aid)
+    assert ei.value.status_code == 409
