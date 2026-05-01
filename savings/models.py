@@ -53,6 +53,10 @@ class FamilyMembership(models.Model):
                 fields=("family", "user"),
                 name="savings_family_membership_uniq",
             ),
+            models.UniqueConstraint(
+                fields=("user",),
+                name="savings_family_membership_one_per_user",
+            ),
         ]
 
     def __str__(self) -> str:

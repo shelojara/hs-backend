@@ -83,9 +83,19 @@ class CreateAssetResponse(Schema):
 
 
 class ListAssetsRequest(Schema):
-    """Empty body for RPC transport consistency."""
+    scope: str
 
-    pass
+    @field_validator("scope", mode="before")
+    @classmethod
+    def validate_scope(cls, v: object) -> str:
+        if not isinstance(v, str):
+            msg = "scope must be a string."
+            raise TypeError(msg)
+        s = v.strip().upper()
+        if s not in (SavingsScope.PERSONAL, SavingsScope.FAMILY):
+            msg = "Invalid scope; use PERSONAL or FAMILY."
+            raise ValueError(msg)
+        return s
 
 
 class AssetSummary(Schema):

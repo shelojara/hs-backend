@@ -44,5 +44,5 @@ def create_asset(request, payload: CreateAssetRequest) -> CreateAssetResponse:
 @router.post("/v1.Savings.ListAssets", response=ListAssetsResponse)
 def list_assets(request, payload: ListAssetsRequest) -> ListAssetsResponse:
     user = request.auth
-    rows = services.list_assets(user_id=user.pk)
+    rows = services.list_assets(user_id=user.pk, scope=payload.scope)
     return ListAssetsResponse(assets=rows)
