@@ -59,7 +59,7 @@ class FamilyMembership(models.Model):
         return f"FamilyMembership(family={self.family_id} user={self.user_id})"
 
 
-class SavingsAsset(models.Model):
+class Asset(models.Model):
     """Savings goal / asset with weight for pro-rata distribution."""
 
     owner = models.ForeignKey(
@@ -186,7 +186,7 @@ class DistributionLine(models.Model):
         related_name="lines",
     )
     asset = models.ForeignKey(
-        SavingsAsset,
+        Asset,
         on_delete=models.PROTECT,
         related_name="distribution_lines",
     )

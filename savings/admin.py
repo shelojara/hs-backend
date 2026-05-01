@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from savings.models import Distribution, DistributionLine, Family, FamilyMembership, SavingsAsset
+from savings.models import Asset, Distribution, DistributionLine, Family, FamilyMembership
 
 
 @admin.register(Family)
@@ -13,8 +13,8 @@ class FamilyMembershipAdmin(admin.ModelAdmin):
     list_display = ("id", "family", "user", "joined_at")
 
 
-@admin.register(SavingsAsset)
-class SavingsAssetAdmin(admin.ModelAdmin):
+@admin.register(Asset)
+class AssetAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "scope",
