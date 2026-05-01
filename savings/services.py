@@ -571,14 +571,10 @@ def _donor_give_capacity(asset: Asset) -> Decimal:
     return excess if excess > 0 else Decimal("0")
 
 
-def rush_asset(*, user_id: int, beneficiary_asset_id: int) -> tuple[int, Asset]:
-    """Move pooled drawable balance from other assets in same scope onto beneficiary.
-
-    Repeatedly splits remaining gap to target using donor weights, caps each donor by
-    drawable capacity (no-target: down to zero; with target: only excess above target).
-    Persists one ``Distribution`` and signed ``DistributionLine`` rows;
-    ``budget_amount`` equals total moved to beneficiary.
-    """
+def _compute_rush_transfers(
+    *, user_id: int, beneficiary_asset_id: int
+) -> tuple[Asset, str, Decimal, dict[int, Decimal]]:
+    """Shared plan for rush: beneficiary row, currency, inflow amount, donor id -> negative delta."""
     beneficiary = get_asset_for_user(user_id=user_id, asset_id=beneficiary_asset_id)
     if beneficiary is None:
         raise DistributionMutationError("Asset not found.", status_code=404)
@@ -665,6 +661,40 @@ def rush_asset(*, user_id: int, beneficiary_asset_id: int) -> tuple[int, Asset]:
             "Insufficient available surplus in other assets to rush this target.",
             status_code=400,
         )
+
+    return beneficiary, currency, total_to_beneficiary, transfers
+
+
+def simulate_rush_asset(
+    *, user_id: int, beneficiary_asset_id: int
+) -> list[tuple[int, Decimal]]:
+    """Preview rush lines (beneficiary positive, donors negative); no DB writes."""
+    beneficiary, _currency, total_to_beneficiary, transfers = _compute_rush_transfers(
+        user_id=user_id,
+        beneficiary_asset_id=beneficiary_asset_id,
+    )
+    lines: list[tuple[int, Decimal]] = [
+        (beneficiary.pk, total_to_beneficiary),
+    ]
+    for asset_id in sorted(transfers.keys()):
+        delta = transfers[asset_id]
+        if delta != 0:
+            lines.append((asset_id, delta))
+    return lines
+
+
+def rush_asset(*, user_id: int, beneficiary_asset_id: int) -> tuple[int, Asset]:
+    """Move pooled drawable balance from other assets in same scope onto beneficiary.
+
+    Repeatedly splits remaining gap to target using donor weights, caps each donor by
+    drawable capacity (no-target: down to zero; with target: only excess above target).
+    Persists one ``Distribution`` and signed ``DistributionLine`` rows;
+    ``budget_amount`` equals total moved to beneficiary.
+    """
+    beneficiary, currency, total_to_beneficiary, transfers = _compute_rush_transfers(
+        user_id=user_id,
+        beneficiary_asset_id=beneficiary_asset_id,
+    )
 
     with transaction.atomic():
         beneficiary_locked = Asset.objects.select_for_update().get(pk=beneficiary.pk)

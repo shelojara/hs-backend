@@ -18,6 +18,7 @@ from savings.schemas import (
     PingSavingsResponse,
     RushAssetRequest,
     SimulateDistributionRequest,
+    SimulateRushAssetRequest,
     SimulateDistributionResponse,
     SimulatedDistributionLineSchema,
     UpdateAssetRequest,
@@ -167,6 +168,26 @@ def delete_asset(request, payload: DeleteAssetRequest) -> DeleteAssetResponse:
     except AssetMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
     return DeleteAssetResponse()
+
+
+@router.post("/v1.Savings.SimulateRushAsset", response=SimulateDistributionResponse)
+def simulate_rush_asset(
+    request, payload: SimulateRushAssetRequest
+) -> SimulateDistributionResponse:
+    user = request.auth
+    try:
+        pairs = services.simulate_rush_asset(
+            user_id=user.pk,
+            beneficiary_asset_id=payload.asset_id,
+        )
+    except DistributionMutationError as exc:
+        raise HttpError(exc.status_code, str(exc)) from exc
+    return SimulateDistributionResponse(
+        lines=[
+            SimulatedDistributionLineSchema(asset_id=aid, allocated_amount=amt)
+            for aid, amt in pairs
+        ]
+    )
 
 
 @router.post("/v1.Savings.RushAsset", response=CreateDistributionResponse)
