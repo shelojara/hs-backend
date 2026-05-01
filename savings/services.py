@@ -5,6 +5,7 @@ from decimal import ROUND_DOWN, Decimal
 
 from django.db import IntegrityError, transaction
 from django.db.models import Sum
+from django.utils import timezone
 
 from savings import gemini_service
 from savings.models import (
@@ -316,8 +317,13 @@ def set_asset_completion(
     row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
     if row is None:
         raise AssetMutationError("Asset not found.", status_code=404)
-    row.state = AssetState.COMPLETED if completed else AssetState.ACTIVE
-    row.save(update_fields=("state", "updated_at"))
+    if completed:
+        row.state = AssetState.COMPLETED
+        row.completed_at = timezone.now()
+    else:
+        row.state = AssetState.ACTIVE
+        row.completed_at = None
+    row.save(update_fields=("state", "completed_at", "updated_at"))
     return row
 
 

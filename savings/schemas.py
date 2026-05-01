@@ -187,6 +187,7 @@ class AssetSchema(Schema):
     currency: str
     emoji: str
     state: str
+    completed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
