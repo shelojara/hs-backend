@@ -986,6 +986,121 @@ def test_create_distribution_weighted_split():
 
 
 @pytest.mark.django_db
+def test_simulate_distribution_caps_at_target_then_redistributes():
+    user = _user()
+    capped_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="NearGoal",
+        weight=Decimal("1"),
+        current_amount=Decimal("90"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+        family_id=None,
+    )
+    sink_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Sink",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    lines = dict(
+        simulate_distribution(
+            user_id=user.pk,
+            scope=SavingsScope.PERSONAL,
+            budget_amount=Decimal("100"),
+            currency="CLP",
+            family_id=None,
+            asset_ids=[capped_id, sink_id],
+        )
+    )
+    assert lines[capped_id] == Decimal("10")
+    assert lines[sink_id] == Decimal("90")
+
+
+@pytest.mark.django_db
+def test_create_distribution_partial_budget_when_targets_saturate():
+    user = _user()
+    a1 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Gap10",
+        weight=Decimal("1"),
+        current_amount=Decimal("90"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+        family_id=None,
+    )
+    a2 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Gap20",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=Decimal("20"),
+        currency="CLP",
+        family_id=None,
+    )
+    did = create_distribution(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        budget_amount=Decimal("100"),
+        currency="CLP",
+        family_id=None,
+        asset_ids=[a1, a2],
+    )
+    dist = Distribution.objects.get(pk=did)
+    assert dist.budget_amount == Decimal("30")
+    by_asset = {
+        line.asset_id: line.allocated_amount
+        for line in DistributionLine.objects.filter(distribution_id=did)
+    }
+    assert by_asset[a1] == Decimal("10")
+    assert by_asset[a2] == Decimal("20")
+    assert Asset.objects.get(pk=a1).current_amount == Decimal("100")
+    assert Asset.objects.get(pk=a2).current_amount == Decimal("20")
+
+
+@pytest.mark.django_db
+def test_create_distribution_rejects_when_all_selected_at_or_above_target():
+    user = _user()
+    a1 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Full1",
+        weight=Decimal("1"),
+        current_amount=Decimal("100"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+        family_id=None,
+    )
+    a2 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Full2",
+        weight=Decimal("1"),
+        current_amount=Decimal("50"),
+        target_amount=Decimal("50"),
+        currency="CLP",
+        family_id=None,
+    )
+    with pytest.raises(DistributionMutationError) as ei:
+        create_distribution(
+            user_id=user.pk,
+            scope=SavingsScope.PERSONAL,
+            budget_amount=Decimal("10"),
+            currency="CLP",
+            family_id=None,
+            asset_ids=[a1, a2],
+        )
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.django_db
 def test_create_distribution_clp_rejects_fractional_budget():
     user = _user()
     a1 = create_asset(

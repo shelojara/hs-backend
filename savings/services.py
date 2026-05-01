@@ -268,6 +268,85 @@ def _integer_split_by_weights(total_units: int, weights: list[Decimal]) -> list[
     return out
 
 
+def _min_currency_step(currency: str) -> Decimal:
+    """Smallest positive amount unit for quantize (CLP: 1 peso; else cents)."""
+    return Decimal("1") if currency == "CLP" else Decimal("0.01")
+
+
+def _receive_headroom(asset: Asset, allocated_so_far: Decimal) -> Decimal | None:
+    """Room for additional **positive** allocation without crossing ``target_amount``.
+
+    ``None`` means no cap. ``Decimal('0')`` means already at or over target.
+    ``allocated_so_far`` is cumulative planned credit for this distribution (dry run or txn).
+    """
+    if asset.target_amount is None:
+        return None
+    gap = asset.target_amount - asset.current_amount - allocated_so_far
+    return gap if gap > 0 else Decimal("0")
+
+
+def _allocate_budget_respecting_targets(
+    budget_amount: Decimal,
+    resolved_assets: list[Asset],
+    currency: str,
+) -> list[Decimal]:
+    """Pro-rata split with iterative cap when ``target_amount`` would be exceeded.
+
+    Positive ``budget_amount``: rounds of weighted split; each line capped by headroom to
+    target; uncapped lines absorb remainder until budget exhausted or no asset can take more.
+
+    Non-positive ``budget_amount``: same as single ``_split_budget_by_weights`` (no target cap).
+
+    Returns per-asset amounts in ``resolved_assets`` order; sum may be less than
+    ``budget_amount`` when all targets saturated before budget depleted.
+    """
+    n = len(resolved_assets)
+    if n == 0:
+        return []
+
+    if budget_amount <= 0:
+        weights = [a.weight for a in resolved_assets]
+        return _split_budget_by_weights(budget_amount, weights, currency)
+
+    q = _min_currency_step(currency)
+    allocated: list[Decimal] = [Decimal("0")] * n
+    remaining = budget_amount
+    max_iters = max(32, n * 24 + 8)
+
+    for _ in range(max_iters):
+        if remaining <= 0:
+            break
+        active_idx: list[int] = []
+        for i, a in enumerate(resolved_assets):
+            hr = _receive_headroom(a, allocated[i])
+            if hr is None or hr > 0:
+                active_idx.append(i)
+        if not active_idx:
+            break
+        weights = [resolved_assets[i].weight for i in active_idx]
+        chunk = _split_budget_by_weights(remaining, weights, currency)
+        moved = Decimal("0")
+        for j, i in enumerate(active_idx):
+            raw = chunk[j]
+            if raw <= 0:
+                continue
+            hr = _receive_headroom(resolved_assets[i], allocated[i])
+            if hr is None:
+                take = raw
+            else:
+                take = min(raw, hr)
+            take = take.quantize(q)
+            if take <= 0:
+                continue
+            allocated[i] += take
+            moved += take
+        if moved <= 0:
+            break
+        remaining -= moved
+
+    return allocated
+
+
 def _split_budget_by_weights(
     budget_amount: Decimal,
     weights: list[Decimal],
@@ -391,7 +470,7 @@ def simulate_distribution(
     family_id: int | None,
     asset_ids: list[int],
 ) -> list[tuple[int, Decimal]]:
-    """Compute pro-rata splits without persisting or updating balances (dry run)."""
+    """Compute splits without persisting. Same cap-and-redistribute rules as ``create_distribution``."""
     _, resolved_assets = _resolve_assets_for_distribution(
         user_id=user_id,
         scope=scope,
@@ -399,8 +478,9 @@ def simulate_distribution(
         family_id=family_id,
         asset_ids=asset_ids,
     )
-    weights = [a.weight for a in resolved_assets]
-    allocated_amounts = _split_budget_by_weights(budget_amount, weights, currency)
+    allocated_amounts = _allocate_budget_respecting_targets(
+        budget_amount, resolved_assets, currency
+    )
     return [
         (asset_row.pk, amt)
         for asset_row, amt in zip(resolved_assets, allocated_amounts, strict=True)
@@ -417,8 +497,14 @@ def create_distribution(
     asset_ids: list[int],
     notes: str = "",
 ) -> int:
-    """Persist distribution, lines, and bump asset balances. Amounts from asset weights (pro-rata)."""
-    fam, resolved_assets = _resolve_assets_for_distribution(
+    """Persist distribution, lines, and bump asset balances.
+
+    Positive ``budget_amount``: weighted split with per-line cap up to ``target_amount``;
+    leftover budget flows to assets still below target. ``Distribution.budget_amount`` is
+    sum of line allocations (may be less than requested if targets saturate first).
+    Non-positive ``budget_amount``: unchanged single-pass weighted split.
+    """
+    fam, _ = _resolve_assets_for_distribution(
         user_id=user_id,
         scope=scope,
         currency=currency,
@@ -426,19 +512,36 @@ def create_distribution(
         asset_ids=asset_ids,
     )
 
-    weights = [a.weight for a in resolved_assets]
-    allocated_amounts = _split_budget_by_weights(budget_amount, weights, currency)
-
     with transaction.atomic():
+        locked_by_pk = {
+            a.pk: a
+            for a in Asset.objects.select_for_update().filter(
+                pk__in=asset_ids,
+            ).order_by("pk")
+        }
+        if len(locked_by_pk) != len(asset_ids):
+            raise DistributionMutationError("Asset not found.", status_code=404)
+        locked_assets = [locked_by_pk[aid] for aid in asset_ids]
+
+        allocated_amounts = _allocate_budget_respecting_targets(
+            budget_amount, locked_assets, currency
+        )
+        total_allocated = sum(allocated_amounts, Decimal("0"))
+        if budget_amount > 0 and total_allocated <= 0:
+            raise DistributionMutationError(
+                "No room to allocate toward selected assets (all at or above target).",
+                status_code=400,
+            )
+
         dist = Distribution.objects.create(
             owner_id=user_id,
             scope=scope,
             family=fam,
-            budget_amount=budget_amount,
+            budget_amount=total_allocated,
             currency=currency,
             notes=notes,
         )
-        for asset_row, amt in zip(resolved_assets, allocated_amounts, strict=True):
+        for asset_row, amt in zip(locked_assets, allocated_amounts, strict=True):
             DistributionLine.objects.create(
                 distribution=dist,
                 asset=asset_row,
