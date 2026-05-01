@@ -1325,6 +1325,7 @@ def test_rush_asset_weighted_split_fills_gap():
     assert "Rush toward target" in dist.notes
     assert str(rush_id) in dist.notes
     assert "RushMe" in dist.notes
+    assert dist.budget_amount == Decimal("0")
     assert ben.current_amount == Decimal("150")
     assert Asset.objects.get(pk=d1).current_amount == Decimal("125")
     assert Asset.objects.get(pk=d2).current_amount == Decimal("175")
@@ -1375,7 +1376,7 @@ def test_rush_asset_iterative_when_donor_balances_exhausted():
     assert Asset.objects.get(pk=capped).current_amount == Decimal("60")
     assert Asset.objects.get(pk=deep).current_amount == Decimal("450")
     dist = Distribution.objects.get(pk=did)
-    assert dist.budget_amount == Decimal("100")
+    assert dist.budget_amount == Decimal("0")
 
 
 @pytest.mark.django_db
