@@ -6,12 +6,16 @@ from savings import services
 from savings.schemas import (
     CreateAssetRequest,
     CreateAssetResponse,
+    DeleteAssetRequest,
+    DeleteAssetResponse,
     ListAssetsRequest,
     ListAssetsResponse,
     PingSavingsRequest,
     PingSavingsResponse,
+    UpdateAssetRequest,
+    UpdateAssetResponse,
 )
-from savings.services import AssetCreateError
+from savings.services import AssetMutationError
 
 router = Router(auth=protected_api_auth, tags=["Savings"])
 
@@ -36,7 +40,7 @@ def create_asset(request, payload: CreateAssetRequest) -> CreateAssetResponse:
             currency=payload.currency,
             family_id=payload.family_id,
         )
-    except AssetCreateError as exc:
+    except AssetMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
     return CreateAssetResponse(asset_id=asset_id)
 
@@ -46,3 +50,31 @@ def list_assets(request, payload: ListAssetsRequest) -> ListAssetsResponse:
     user = request.auth
     rows = services.list_assets(user_id=user.pk, scope=payload.scope)
     return ListAssetsResponse(assets=rows)
+
+
+@router.post("/v1.Savings.UpdateAsset", response=UpdateAssetResponse)
+def update_asset(request, payload: UpdateAssetRequest) -> UpdateAssetResponse:
+    user = request.auth
+    try:
+        row = services.update_asset(
+            user_id=user.pk,
+            asset_id=payload.asset_id,
+            name=payload.name,
+            weight=payload.weight,
+            current_amount=payload.current_amount,
+            target_amount=payload.target_amount,
+            currency=payload.currency,
+        )
+    except AssetMutationError as exc:
+        raise HttpError(exc.status_code, str(exc)) from exc
+    return UpdateAssetResponse(asset=row)
+
+
+@router.post("/v1.Savings.DeleteAsset", response=DeleteAssetResponse)
+def delete_asset(request, payload: DeleteAssetRequest) -> DeleteAssetResponse:
+    user = request.auth
+    try:
+        services.delete_asset(user_id=user.pk, asset_id=payload.asset_id)
+    except AssetMutationError as exc:
+        raise HttpError(exc.status_code, str(exc)) from exc
+    return DeleteAssetResponse()
