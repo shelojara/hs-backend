@@ -38,6 +38,23 @@ def test_create_asset_personal():
 
 
 @pytest.mark.django_db
+def test_create_asset_null_target():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Open goal",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    row = Asset.objects.get(pk=aid)
+    assert row.target_amount is None
+
+
+@pytest.mark.django_db
 def test_create_asset_family_requires_membership():
     owner = _user("owner")
     other = _user("other")

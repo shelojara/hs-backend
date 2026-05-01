@@ -94,7 +94,8 @@ class Asset(models.Model):
     target_amount = models.DecimalField(
         max_digits=14,
         decimal_places=2,
-        default=Decimal("0"),
+        null=True,
+        blank=True,
     )
     currency = models.CharField(
         max_length=3,

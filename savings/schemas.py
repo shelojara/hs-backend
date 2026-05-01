@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Optional
 
 from ninja import Schema
 
@@ -18,7 +19,7 @@ class CreateAssetRequest(Schema):
     name: str
     weight: Decimal = Decimal("1")
     current_amount: Decimal = Decimal("0")
-    target_amount: Decimal = Decimal("0")
+    target_amount: Optional[Decimal] = None
     currency: str = "CLP"
     family_id: int | None = None
 

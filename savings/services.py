@@ -27,7 +27,7 @@ def create_asset(
     name: str,
     weight: Decimal,
     current_amount: Decimal,
-    target_amount: Decimal,
+    target_amount: Decimal | None,
     currency: str,
     family_id: int | None,
 ) -> int:
@@ -63,8 +63,10 @@ def create_asset(
 
     if weight < 0:
         raise AssetCreateError("Weight must be non-negative.")
-    if current_amount < 0 or target_amount < 0:
-        raise AssetCreateError("Amounts must be non-negative.")
+    if current_amount < 0:
+        raise AssetCreateError("current_amount must be non-negative.")
+    if target_amount is not None and target_amount < 0:
+        raise AssetCreateError("target_amount must be non-negative when set.")
 
     cur = currency.strip().upper()
     if len(cur) != 3:
