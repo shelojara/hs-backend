@@ -16,6 +16,7 @@ class FamilyMembershipAdmin(admin.ModelAdmin):
 @admin.register(Asset)
 class AssetAdmin(admin.ModelAdmin):
     list_display = (
+        "emoji",
         "name",
         "scope",
         "family",

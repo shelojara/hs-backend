@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import call, patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -33,6 +34,45 @@ User = get_user_model()
 
 def _user(username: str = "u1"):
     return User.objects.create_user(username=username, password="pw")
+
+
+@pytest.mark.django_db
+@patch("savings.services.gemini_service.suggest_asset_emoji", return_value="💸")
+def test_create_asset_persists_gemini_emoji(mock_emoji):
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Rainy day",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    row = Asset.objects.get(pk=aid)
+    assert row.emoji == "💸"
+    mock_emoji.assert_called_once_with(name="Rainy day")
+
+
+@pytest.mark.django_db
+@patch(
+    "savings.services.gemini_service.suggest_asset_emoji",
+    side_effect=RuntimeError("no key"),
+)
+def test_create_asset_unconfigured_gemini_emoji_empty(_mock_emoji):
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="No key",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    assert Asset.objects.get(pk=aid).emoji == ""
 
 
 @pytest.mark.django_db
@@ -458,6 +498,67 @@ def test_family_membership_at_most_one_per_user():
     FamilyMembership.objects.create(family=fam_a, user=user)
     with pytest.raises(IntegrityError):
         FamilyMembership.objects.create(family=fam_b, user=user)
+
+
+@pytest.mark.django_db
+@patch("savings.services.gemini_service.suggest_asset_emoji", side_effect=["", "🏠"])
+def test_update_asset_renames_refreshes_emoji(mock_emoji):
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Fund",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    row = update_asset(
+        user_id=user.pk,
+        asset_id=aid,
+        name="House deposit",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    assert row.emoji == "🏠"
+    assert mock_emoji.call_args_list == [
+        call(name="Fund"),
+        call(name="House deposit"),
+    ]
+
+
+@pytest.mark.django_db
+@patch(
+    "savings.services.gemini_service.suggest_asset_emoji",
+    return_value="📌",
+)
+def test_update_asset_same_name_preserves_emoji(mock_emoji):
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Stable",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    Asset.objects.filter(pk=aid).update(emoji="🔒")
+    update_asset(
+        user_id=user.pk,
+        asset_id=aid,
+        name="Stable",
+        weight=Decimal("2"),
+        current_amount=Decimal("10"),
+        target_amount=None,
+        currency="CLP",
+    )
+    assert Asset.objects.get(pk=aid).emoji == "🔒"
+    mock_emoji.assert_called_once_with(name="Stable")
 
 
 @pytest.mark.django_db

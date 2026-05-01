@@ -205,6 +205,7 @@ class AssetSchema(Schema):
     current_amount: Decimal
     target_amount: Optional[Decimal]
     currency: str
+    emoji: str
     created_at: datetime
     updated_at: datetime
 

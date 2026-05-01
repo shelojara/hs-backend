@@ -106,6 +106,12 @@ class Asset(models.Model):
         default="CLP",
         help_text="ISO 4217 currency code (e.g. CLP).",
     )
+    emoji = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Display emoji for this goal (often suggested via Gemini).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
