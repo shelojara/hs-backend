@@ -16,6 +16,7 @@ from savings.schemas import (
     ListDistributionsResponse,
     PingSavingsRequest,
     PingSavingsResponse,
+    RushAssetRequest,
     UpdateAssetRequest,
     UpdateAssetResponse,
 )
@@ -115,3 +116,16 @@ def delete_asset(request, payload: DeleteAssetRequest) -> DeleteAssetResponse:
     except AssetMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
     return DeleteAssetResponse()
+
+
+@router.post("/v1.Savings.RushAsset", response=CreateDistributionResponse)
+def rush_asset(request, payload: RushAssetRequest) -> CreateDistributionResponse:
+    user = request.auth
+    try:
+        dist_id, _row = services.rush_asset(
+            user_id=user.pk,
+            beneficiary_asset_id=payload.asset_id,
+        )
+    except DistributionMutationError as exc:
+        raise HttpError(exc.status_code, str(exc)) from exc
+    return CreateDistributionResponse(distribution_id=dist_id)

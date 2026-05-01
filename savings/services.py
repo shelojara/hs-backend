@@ -361,3 +361,149 @@ def create_distribution(
             asset_row.save(update_fields=("current_amount", "updated_at"))
 
     return dist.pk
+
+
+def _list_peer_assets_for_rush(*, user_id: int, beneficiary: Asset) -> list[Asset]:
+    """Same visibility as ``list_assets``, excluding ``beneficiary``."""
+    rows = list_assets(user_id=user_id, scope=beneficiary.scope)
+    return [a for a in rows if a.pk != beneficiary.pk]
+
+
+def _donor_give_capacity(asset: Asset) -> Decimal:
+    """Max amount this asset can decrease without breaking rules.
+
+    No ``target_amount``: may draw down to zero (bounded by ``current_amount``).
+    With ``target_amount``: only ``current`` above target counts as drawable surplus.
+    """
+    if asset.target_amount is None:
+        return asset.current_amount
+    excess = asset.current_amount - asset.target_amount
+    return excess if excess > 0 else Decimal("0")
+
+
+def rush_asset(*, user_id: int, beneficiary_asset_id: int) -> tuple[int, Asset]:
+    """Move pooled drawable balance from other assets in same scope onto beneficiary.
+
+    Repeatedly splits remaining gap to target using donor weights, caps each donor by
+    drawable capacity (no-target: down to zero; with target: only excess above target).
+    Persists one ``Distribution`` and signed ``DistributionLine`` rows;
+    ``budget_amount`` equals total moved to beneficiary.
+    """
+    beneficiary = get_asset_for_user(user_id=user_id, asset_id=beneficiary_asset_id)
+    if beneficiary is None:
+        raise DistributionMutationError("Asset not found.", status_code=404)
+
+    if beneficiary.target_amount is None:
+        raise DistributionMutationError(
+            "Asset has no target amount; nothing to rush toward.",
+            status_code=400,
+        )
+
+    gap = beneficiary.target_amount - beneficiary.current_amount
+    if gap <= 0:
+        raise DistributionMutationError(
+            "Asset already meets or exceeds its target.",
+            status_code=400,
+        )
+
+    peers = _list_peer_assets_for_rush(user_id=user_id, beneficiary=beneficiary)
+    currency = beneficiary.currency
+
+    # Donors: positive drawable capacity; same currency only.
+    donors: list[Asset] = []
+    for a in peers:
+        if a.currency != currency:
+            continue
+        if _donor_give_capacity(a) <= 0:
+            continue
+        donors.append(a)
+
+    if not donors:
+        raise DistributionMutationError(
+            "No other assets in this scope can contribute toward the target.",
+            status_code=400,
+        )
+
+    donor_remaining: dict[int, Decimal] = {
+        a.pk: _donor_give_capacity(a) for a in donors
+    }
+
+    transfers: dict[int, Decimal] = {}
+
+    def add_transfer(asset_id: int, delta: Decimal) -> None:
+        transfers[asset_id] = transfers.get(asset_id, Decimal("0")) + delta
+
+    remaining_gap = gap
+    max_iters = max(32, len(donors) * 24 + 8)
+    for _ in range(max_iters):
+        if remaining_gap <= 0:
+            break
+        active: list[Asset] = []
+        for a in donors:
+            cap = donor_remaining[a.pk]
+            if cap > 0:
+                active.append(a)
+        if not active:
+            break
+        weights = [a.weight for a in active]
+        if sum(weights, Decimal("0")) <= 0:
+            raise DistributionMutationError(
+                "Combined weight of contributing assets must be positive.",
+                status_code=400,
+            )
+        chunk_amounts = _split_budget_by_weights(remaining_gap, weights, currency)
+        moved_this_round = Decimal("0")
+        for asset_row, raw_amt in zip(active, chunk_amounts, strict=True):
+            if raw_amt <= 0:
+                continue
+            cap = donor_remaining[asset_row.pk]
+            take = min(raw_amt, cap)
+            if take <= 0:
+                continue
+            q = Decimal("1") if currency == "CLP" else Decimal("0.01")
+            take = take.quantize(q)
+            add_transfer(asset_row.pk, -take)
+            moved_this_round += take
+            donor_remaining[asset_row.pk] = cap - take
+        if moved_this_round <= 0:
+            break
+        remaining_gap -= moved_this_round
+
+    total_to_beneficiary = gap - remaining_gap
+    if total_to_beneficiary <= 0:
+        raise DistributionMutationError(
+            "Insufficient available surplus in other assets to rush this target.",
+            status_code=400,
+        )
+
+    with transaction.atomic():
+        beneficiary_locked = Asset.objects.select_for_update().get(pk=beneficiary.pk)
+        dist = Distribution.objects.create(
+            owner_id=user_id,
+            scope=beneficiary_locked.scope,
+            family=beneficiary_locked.family,
+            budget_amount=total_to_beneficiary,
+            currency=currency,
+        )
+        DistributionLine.objects.create(
+            distribution=dist,
+            asset=beneficiary_locked,
+            allocated_amount=total_to_beneficiary,
+        )
+        for asset_id in sorted(transfers.keys()):
+            delta = transfers[asset_id]
+            if delta == 0:
+                continue
+            donor_row = Asset.objects.select_for_update().get(pk=asset_id)
+            DistributionLine.objects.create(
+                distribution=dist,
+                asset=donor_row,
+                allocated_amount=delta,
+            )
+            donor_row.current_amount += delta
+            donor_row.save(update_fields=("current_amount", "updated_at"))
+        beneficiary_locked.current_amount += total_to_beneficiary
+        beneficiary_locked.save(update_fields=("current_amount", "updated_at"))
+
+    beneficiary_locked.refresh_from_db()
+    return dist.pk, beneficiary_locked

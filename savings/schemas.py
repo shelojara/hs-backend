@@ -259,3 +259,7 @@ class DeleteAssetRequest(Schema):
 
 class DeleteAssetResponse(Schema):
     ok: bool = True
+
+
+class RushAssetRequest(Schema):
+    asset_id: int
