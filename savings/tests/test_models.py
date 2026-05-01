@@ -50,7 +50,7 @@ def test_create_asset_session_and_line() -> None:
 @pytest.mark.django_db
 def test_family_membership_and_family_scoped_asset() -> None:
     user = User.objects.create_user(username="u2", password="x")
-    family = Family.objects.create(name="Home", created_by=user)
+    family = Family.objects.create(created_by=user)
     FamilyMembership.objects.create(family=family, user=user)
     asset = SavingsAsset.objects.create(
         owner=user,

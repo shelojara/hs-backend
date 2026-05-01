@@ -16,7 +16,6 @@ class SavingsScope(models.TextChoices):
 class Family(models.Model):
     """Shared savings bucket for multiple users (family scope)."""
 
-    name = models.CharField(max_length=255, blank=True, default="")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -30,8 +29,7 @@ class Family(models.Model):
         verbose_name_plural = "families"
 
     def __str__(self) -> str:
-        label = self.name.strip() or f"Family #{self.pk}"
-        return label
+        return f"Family #{self.pk}"
 
 
 class FamilyMembership(models.Model):

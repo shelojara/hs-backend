@@ -11,7 +11,7 @@ from savings.models import (
 
 @admin.register(Family)
 class FamilyAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "created_by", "created_at")
+    list_display = ("id", "created_by", "created_at")
 
 
 @admin.register(FamilyMembership)
