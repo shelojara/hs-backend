@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -58,6 +59,24 @@ class FamilyMembership(models.Model):
                 name="savings_family_membership_one_per_user",
             ),
         ]
+
+    def clean(self) -> None:
+        super().clean()
+        if self.user_id is None:
+            return
+        qs = FamilyMembership.objects.filter(user_id=self.user_id)
+        if self.pk is not None:
+            qs = qs.exclude(pk=self.pk)
+        other = qs.select_related("family").first()
+        if other is not None:
+            raise ValidationError(
+                {
+                    "user": (
+                        "Each user may belong to only one family. This user is "
+                        f"already in family #{other.family_id}."
+                    )
+                }
+            )
 
     def __str__(self) -> str:
         return f"FamilyMembership(family={self.family_id} user={self.user_id})"
