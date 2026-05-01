@@ -55,7 +55,6 @@ CSRF_TRUSTED_ORIGINS = _csrf_trusted_origins()
 # Application definition
 
 INSTALLED_APPS = [
-    "backend.apps.BackendConfig",
     "corsheaders",
     "flags",
     "django.contrib.admin",
