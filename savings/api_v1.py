@@ -17,6 +17,8 @@ from savings.schemas import (
     PingSavingsRequest,
     PingSavingsResponse,
     RushAssetRequest,
+    SetAssetCompletionRequest,
+    SetAssetCompletionResponse,
     SimulateDistributionRequest,
     SimulateRushAssetRequest,
     SimulateDistributionResponse,
@@ -155,6 +157,22 @@ def update_asset(request, payload: UpdateAssetRequest) -> UpdateAssetResponse:
     except AssetMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
     return UpdateAssetResponse(asset=row)
+
+
+@router.post("/v1.Savings.SetAssetCompletion", response=SetAssetCompletionResponse)
+def set_asset_completion(
+    request, payload: SetAssetCompletionRequest
+) -> SetAssetCompletionResponse:
+    user = request.auth
+    try:
+        row = services.set_asset_completion(
+            user_id=user.pk,
+            asset_id=payload.asset_id,
+            completed=payload.completed,
+        )
+    except AssetMutationError as exc:
+        raise HttpError(exc.status_code, str(exc)) from exc
+    return SetAssetCompletionResponse(asset_id=row.pk)
 
 
 @router.post("/v1.Savings.DeleteAsset", response=DeleteAssetResponse)

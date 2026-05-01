@@ -186,6 +186,7 @@ class AssetSchema(Schema):
     target_amount: Optional[Decimal]
     currency: str
     emoji: str
+    state: str
     created_at: datetime
     updated_at: datetime
 
@@ -276,6 +277,15 @@ class UpdateAssetRequest(Schema):
 
 class UpdateAssetResponse(Schema):
     asset: AssetSchema
+
+
+class SetAssetCompletionRequest(Schema):
+    asset_id: int
+    completed: bool
+
+
+class SetAssetCompletionResponse(Schema):
+    asset_id: int
 
 
 class DeleteAssetRequest(Schema):

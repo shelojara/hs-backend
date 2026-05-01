@@ -9,6 +9,7 @@ from django.db.models import Sum
 from savings import gemini_service
 from savings.models import (
     Asset,
+    AssetState,
     Distribution,
     DistributionLine,
     Family,
@@ -284,6 +285,18 @@ def update_asset(
     return row
 
 
+def set_asset_completion(
+    *, user_id: int, asset_id: int, completed: bool
+) -> Asset:
+    """Mark asset ACTIVE or COMPLETED (completed excluded from distributions and rush)."""
+    row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
+    if row is None:
+        raise AssetMutationError("Asset not found.", status_code=404)
+    row.state = AssetState.COMPLETED if completed else AssetState.ACTIVE
+    row.save(update_fields=("state", "updated_at"))
+    return row
+
+
 def _integer_split_by_weights(total_units: int, weights: list[Decimal]) -> list[int]:
     """Split ``total_units`` across ``weights`` using Hamilton largest remainder."""
     n = len(weights)
@@ -494,6 +507,11 @@ def _resolve_assets_for_distribution(
                 "All assets must use the same currency as the distribution.",
                 status_code=400,
             )
+        if row.state == AssetState.COMPLETED:
+            raise DistributionMutationError(
+                "Completed assets cannot be included in distributions.",
+                status_code=400,
+            )
         resolved_assets.append(row)
 
     return fam, resolved_assets
@@ -507,7 +525,11 @@ def simulate_distribution(
     currency: str,
     asset_ids: list[int],
 ) -> list[tuple[int, Decimal]]:
-    """Compute splits without persisting. Same cap-and-redistribute rules as ``create_distribution``."""
+    """Compute splits without persisting.
+
+    Uses ``_resolve_assets_for_distribution`` — same rules as ``create_distribution``,
+    including rejection of COMPLETED assets (cannot receive split).
+    """
     _, resolved_assets = _resolve_assets_for_distribution(
         user_id=user_id,
         scope=scope,
@@ -609,6 +631,12 @@ def _compute_rush_transfers(
     if beneficiary is None:
         raise DistributionMutationError("Asset not found.", status_code=404)
 
+    if beneficiary.state == AssetState.COMPLETED:
+        raise DistributionMutationError(
+            "Completed assets cannot be rush beneficiaries.",
+            status_code=400,
+        )
+
     if beneficiary.target_amount is None:
         raise DistributionMutationError(
             "Asset has no target amount; nothing to rush toward.",
@@ -628,6 +656,8 @@ def _compute_rush_transfers(
     # Donors: positive balance; same currency only. Targets on donors not enforced.
     donors: list[Asset] = []
     for a in peers:
+        if a.state == AssetState.COMPLETED:
+            continue
         if a.currency != currency:
             continue
         if _rush_donor_capacity(a) <= 0:
@@ -698,7 +728,11 @@ def _compute_rush_transfers(
 def simulate_rush_asset(
     *, user_id: int, beneficiary_asset_id: int
 ) -> list[tuple[int, Decimal]]:
-    """Preview rush lines (beneficiary positive, donors negative); no DB writes."""
+    """Preview rush lines (beneficiary positive, donors negative); no DB writes.
+
+    Same plan as ``rush_asset`` via ``_compute_rush_transfers``: COMPLETED assets
+    cannot be beneficiaries; COMPLETED peers are not donors.
+    """
     beneficiary, _currency, total_to_beneficiary, transfers = _compute_rush_transfers(
         user_id=user_id,
         beneficiary_asset_id=beneficiary_asset_id,
