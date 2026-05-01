@@ -98,7 +98,7 @@ class ListAssetsRequest(Schema):
         return s
 
 
-class AssetSummary(Schema):
+class AssetSchema(Schema):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -115,4 +115,4 @@ class AssetSummary(Schema):
 
 
 class ListAssetsResponse(Schema):
-    assets: list[AssetSummary]
+    assets: list[AssetSchema]
