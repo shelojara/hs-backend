@@ -29,6 +29,7 @@ class AssetAdmin(admin.ModelAdmin):
         "emoji",
         "name",
         "scope",
+        "state",
         "family",
         "owner",
         "weight",
@@ -36,7 +37,7 @@ class AssetAdmin(admin.ModelAdmin):
         "target_amount",
         "currency",
     )
-    list_filter = ("scope", "currency")
+    list_filter = ("scope", "currency", "state")
     search_fields = ("name",)
 
 

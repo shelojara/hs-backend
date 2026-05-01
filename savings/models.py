@@ -14,6 +14,13 @@ class SavingsScope(models.TextChoices):
     FAMILY = "FAMILY", "Family"
 
 
+class AssetState(models.TextChoices):
+    """Lifecycle for savings goals."""
+
+    ACTIVE = "ACTIVE", "Active"
+    COMPLETED = "COMPLETED", "Completed"
+
+
 class Family(models.Model):
     """Shared savings bucket for multiple users (family scope)."""
 
@@ -130,6 +137,13 @@ class Asset(models.Model):
         blank=True,
         default="",
         help_text="Display emoji for this goal (often suggested via Gemini).",
+    )
+    state = models.CharField(
+        max_length=16,
+        choices=AssetState.choices,
+        default=AssetState.ACTIVE,
+        db_index=True,
+        help_text="Completed goals are excluded from new distributions and rush transfers.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
