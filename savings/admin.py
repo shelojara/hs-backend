@@ -3,14 +3,23 @@ from django.contrib import admin
 from savings.models import Asset, Distribution, DistributionLine, Family, FamilyMembership
 
 
+class FamilyMembershipInline(admin.TabularInline):
+    model = FamilyMembership
+    fk_name = "family"
+    extra = 1
+    autocomplete_fields = ("user",)
+
+
 @admin.register(Family)
 class FamilyAdmin(admin.ModelAdmin):
     list_display = ("id", "created_by", "created_at")
+    inlines = (FamilyMembershipInline,)
 
 
 @admin.register(FamilyMembership)
 class FamilyMembershipAdmin(admin.ModelAdmin):
     list_display = ("id", "family", "user", "joined_at")
+    autocomplete_fields = ("family", "user")
 
 
 @admin.register(Asset)
