@@ -283,17 +283,15 @@ def delete_asset(*, user_id: int, asset_id: int) -> None:
         ) from exc
 
 
-def create_distribution(
+def _resolve_assets_for_distribution(
     *,
     user_id: int,
     scope: str,
-    budget_amount: Decimal,
     currency: str,
     family_id: int | None,
     asset_ids: list[int],
-    notes: str = "",
-) -> int:
-    """Persist distribution, lines, and bump asset balances. Amounts from asset weights (pro-rata)."""
+) -> tuple[Family | None, list[Asset]]:
+    """Validate scope/family membership and assets; return family (if any) and rows in ``asset_ids`` order."""
     if scope == SavingsScope.PERSONAL:
         fam = None
     else:
@@ -345,6 +343,53 @@ def create_distribution(
                 status_code=400,
             )
         resolved_assets.append(row)
+
+    return fam, resolved_assets
+
+
+def simulate_distribution(
+    *,
+    user_id: int,
+    scope: str,
+    budget_amount: Decimal,
+    currency: str,
+    family_id: int | None,
+    asset_ids: list[int],
+) -> list[tuple[int, Decimal]]:
+    """Compute pro-rata splits without persisting or updating balances (dry run)."""
+    _, resolved_assets = _resolve_assets_for_distribution(
+        user_id=user_id,
+        scope=scope,
+        currency=currency,
+        family_id=family_id,
+        asset_ids=asset_ids,
+    )
+    weights = [a.weight for a in resolved_assets]
+    allocated_amounts = _split_budget_by_weights(budget_amount, weights, currency)
+    return [
+        (asset_row.pk, amt)
+        for asset_row, amt in zip(resolved_assets, allocated_amounts, strict=True)
+    ]
+
+
+def create_distribution(
+    *,
+    user_id: int,
+    scope: str,
+    budget_amount: Decimal,
+    currency: str,
+    family_id: int | None,
+    asset_ids: list[int],
+    notes: str = "",
+) -> int:
+    """Persist distribution, lines, and bump asset balances. Amounts from asset weights (pro-rata)."""
+    fam, resolved_assets = _resolve_assets_for_distribution(
+        user_id=user_id,
+        scope=scope,
+        currency=currency,
+        family_id=family_id,
+        asset_ids=asset_ids,
+    )
 
     weights = [a.weight for a in resolved_assets]
     allocated_amounts = _split_budget_by_weights(budget_amount, weights, currency)

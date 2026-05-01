@@ -22,6 +22,7 @@ from savings.services import (
     list_assets,
     list_distributions,
     rush_asset,
+    simulate_distribution,
     update_asset,
 )
 
@@ -808,6 +809,45 @@ def test_create_distribution_family_member_ok():
         asset_ids=[aid],
     )
     assert Asset.objects.get(pk=aid).current_amount == Decimal("25")
+
+
+@pytest.mark.django_db
+def test_simulate_distribution_matches_split_without_side_effects():
+    user = _user()
+    heavy_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Heavy",
+        weight=Decimal("3"),
+        current_amount=Decimal("10"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    light_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Light",
+        weight=Decimal("1"),
+        current_amount=Decimal("20"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    lines = simulate_distribution(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        budget_amount=Decimal("100"),
+        currency="CLP",
+        family_id=None,
+        asset_ids=[heavy_id, light_id],
+    )
+    by_asset = dict(lines)
+    assert by_asset[heavy_id] == Decimal("75")
+    assert by_asset[light_id] == Decimal("25")
+    assert Distribution.objects.count() == 0
+    assert Asset.objects.get(pk=heavy_id).current_amount == Decimal("10")
+    assert Asset.objects.get(pk=light_id).current_amount == Decimal("20")
 
 
 @pytest.mark.django_db

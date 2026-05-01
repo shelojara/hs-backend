@@ -145,6 +145,19 @@ class CreateDistributionResponse(Schema):
     distribution_id: int
 
 
+class SimulateDistributionRequest(CreateDistributionRequest):
+    """Same shape as create; preview splits only (no persistence)."""
+
+
+class SimulatedDistributionLineSchema(Schema):
+    asset_id: int
+    allocated_amount: Decimal
+
+
+class SimulateDistributionResponse(Schema):
+    lines: list[SimulatedDistributionLineSchema]
+
+
 class ListAssetsRequest(Schema):
     scope: str
 
