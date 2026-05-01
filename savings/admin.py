@@ -13,6 +13,7 @@ class FamilyMembershipInline(admin.TabularInline):
 @admin.register(Family)
 class FamilyAdmin(admin.ModelAdmin):
     list_display = ("id", "created_by", "created_at")
+    search_fields = ("=id", "created_by__username", "created_by__email")
     inlines = (FamilyMembershipInline,)
 
 
