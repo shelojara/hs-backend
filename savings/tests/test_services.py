@@ -21,6 +21,7 @@ from savings.services import (
     delete_asset,
     list_assets,
     list_distributions,
+    rush_asset,
     update_asset,
 )
 
@@ -927,3 +928,182 @@ def test_create_distribution_rejects_asset_wrong_scope():
             asset_ids=[personal_id],
         )
     assert ei.value.status_code == 400
+
+
+@pytest.mark.django_db
+def test_rush_asset_weighted_split_fills_gap():
+    user = _user()
+    rush_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="RushMe",
+        weight=Decimal("1"),
+        current_amount=Decimal("50"),
+        target_amount=Decimal("150"),
+        currency="CLP",
+        family_id=None,
+    )
+    d1 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="D1",
+        weight=Decimal("3"),
+        current_amount=Decimal("200"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    d2 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="D2",
+        weight=Decimal("1"),
+        current_amount=Decimal("200"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    did, ben = rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
+    assert ben.current_amount == Decimal("150")
+    assert Asset.objects.get(pk=d1).current_amount == Decimal("125")
+    assert Asset.objects.get(pk=d2).current_amount == Decimal("175")
+    lines = list(DistributionLine.objects.filter(distribution_id=did).order_by("asset_id"))
+    assert sum(line.allocated_amount for line in lines) == Decimal("0")
+    by_asset = {line.asset_id: line.allocated_amount for line in lines}
+    assert by_asset[rush_id] == Decimal("100")
+    assert by_asset[d1] == Decimal("-75")
+    assert by_asset[d2] == Decimal("-25")
+
+
+@pytest.mark.django_db
+def test_rush_asset_iterative_when_donors_hit_target_cap():
+    user = _user()
+    rush_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Goal",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+        family_id=None,
+    )
+    capped = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Cap10",
+        weight=Decimal("1"),
+        current_amount=Decimal("110"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+        family_id=None,
+    )
+    deep = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Deep",
+        weight=Decimal("1"),
+        current_amount=Decimal("500"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    did, ben = rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
+    assert ben.current_amount == Decimal("100")
+    assert Asset.objects.get(pk=capped).current_amount == Decimal("100")
+    assert Asset.objects.get(pk=deep).current_amount == Decimal("410")
+    dist = Distribution.objects.get(pk=did)
+    assert dist.budget_amount == Decimal("100")
+
+
+@pytest.mark.django_db
+def test_rush_asset_rejects_without_target():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Open",
+        weight=Decimal("1"),
+        current_amount=Decimal("10"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Pot",
+        weight=Decimal("1"),
+        current_amount=Decimal("50"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    with pytest.raises(DistributionMutationError) as ei:
+        rush_asset(user_id=user.pk, beneficiary_asset_id=aid)
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.django_db
+def test_rush_asset_rejects_when_no_eligible_donors():
+    user = _user()
+    rush_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Need",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=Decimal("50"),
+        currency="CLP",
+        family_id=None,
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Full",
+        weight=Decimal("1"),
+        current_amount=Decimal("100"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+        family_id=None,
+    )
+    with pytest.raises(DistributionMutationError) as ei:
+        rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.django_db
+def test_rush_asset_skips_wrong_currency_donors():
+    user = _user()
+    rush_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="CLPGoal",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=Decimal("30"),
+        currency="CLP",
+        family_id=None,
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="USDOnly",
+        weight=Decimal("1"),
+        current_amount=Decimal("999"),
+        target_amount=None,
+        currency="USD",
+        family_id=None,
+    )
+    same = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="CLPPot",
+        weight=Decimal("1"),
+        current_amount=Decimal("100"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
+    assert Asset.objects.get(pk=same).current_amount == Decimal("70")
