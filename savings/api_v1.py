@@ -17,6 +17,9 @@ from savings.schemas import (
     PingSavingsRequest,
     PingSavingsResponse,
     RushAssetRequest,
+    SimulateDistributionRequest,
+    SimulateDistributionResponse,
+    SimulatedDistributionLineSchema,
     UpdateAssetRequest,
     UpdateAssetResponse,
 )
@@ -68,6 +71,30 @@ def create_distribution(
     except DistributionMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
     return CreateDistributionResponse(distribution_id=did)
+
+
+@router.post("/v1.Savings.SimulateDistribution", response=SimulateDistributionResponse)
+def simulate_distribution(
+    request, payload: SimulateDistributionRequest
+) -> SimulateDistributionResponse:
+    user = request.auth
+    try:
+        pairs = services.simulate_distribution(
+            user_id=user.pk,
+            scope=payload.scope,
+            budget_amount=payload.budget_amount,
+            currency=payload.currency,
+            family_id=payload.family_id,
+            asset_ids=payload.asset_ids,
+        )
+    except DistributionMutationError as exc:
+        raise HttpError(exc.status_code, str(exc)) from exc
+    return SimulateDistributionResponse(
+        lines=[
+            SimulatedDistributionLineSchema(asset_id=aid, allocated_amount=amt)
+            for aid, amt in pairs
+        ]
+    )
 
 
 @router.post("/v1.Savings.ListAssets", response=ListAssetsResponse)
