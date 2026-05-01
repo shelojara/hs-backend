@@ -59,9 +59,7 @@ def create_distribution(
             budget_amount=payload.budget_amount,
             currency=payload.currency,
             family_id=payload.family_id,
-            allocations=[
-                (line.asset_id, line.allocated_amount) for line in payload.allocations
-            ],
+            asset_ids=payload.asset_ids,
         )
     except DistributionMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc

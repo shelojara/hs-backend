@@ -474,25 +474,36 @@ def test_create_distribution_personal_updates_balances():
         budget_amount=Decimal("30"),
         currency="CLP",
         family_id=None,
-        allocations=[
-            (a1, Decimal("10")),
-            (a2, Decimal("20")),
-        ],
+        asset_ids=[a1, a2],
     )
     assert Distribution.objects.filter(pk=did).exists()
-    assert DistributionLine.objects.filter(distribution_id=did).count() == 2
-    assert Asset.objects.get(pk=a1).current_amount == Decimal("110")
-    assert Asset.objects.get(pk=a2).current_amount == Decimal("70")
+    lines = list(
+        DistributionLine.objects.filter(distribution_id=did).order_by("asset_id")
+    )
+    assert len(lines) == 2
+    assert sum(line.allocated_amount for line in lines) == Decimal("30")
+    assert Asset.objects.get(pk=a1).current_amount == Decimal("115")
+    assert Asset.objects.get(pk=a2).current_amount == Decimal("65")
 
 
 @pytest.mark.django_db
-def test_create_distribution_budget_must_match_sum():
+def test_create_distribution_rejects_zero_total_weight():
     user = _user()
     a1 = create_asset(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
         name="A",
-        weight=Decimal("1"),
+        weight=Decimal("0"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    a2 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="B",
+        weight=Decimal("0"),
         current_amount=Decimal("0"),
         target_amount=None,
         currency="CLP",
@@ -505,13 +516,13 @@ def test_create_distribution_budget_must_match_sum():
             budget_amount=Decimal("100"),
             currency="CLP",
             family_id=None,
-            allocations=[(a1, Decimal("50"))],
+            asset_ids=[a1, a2],
         )
     assert ei.value.status_code == 400
 
 
 @pytest.mark.django_db
-def test_create_distribution_requires_lines():
+def test_create_distribution_requires_assets():
     user = _user()
     with pytest.raises(DistributionMutationError) as ei:
         create_distribution(
@@ -520,7 +531,7 @@ def test_create_distribution_requires_lines():
             budget_amount=Decimal("0"),
             currency="CLP",
             family_id=None,
-            allocations=[],
+            asset_ids=[],
         )
     assert ei.value.status_code == 400
 
@@ -549,9 +560,47 @@ def test_create_distribution_family_member_ok():
         budget_amount=Decimal("25"),
         currency="CLP",
         family_id=fam.pk,
-        allocations=[(aid, Decimal("25"))],
+        asset_ids=[aid],
     )
     assert Asset.objects.get(pk=aid).current_amount == Decimal("25")
+
+
+@pytest.mark.django_db
+def test_create_distribution_weighted_split():
+    user = _user()
+    heavy_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Heavy",
+        weight=Decimal("3"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    light_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Light",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    create_distribution(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        budget_amount=Decimal("100"),
+        currency="CLP",
+        family_id=None,
+        asset_ids=[heavy_id, light_id],
+    )
+    h = Asset.objects.get(pk=heavy_id).current_amount
+    ell = Asset.objects.get(pk=light_id).current_amount
+    assert h == Decimal("75")
+    assert ell == Decimal("25")
+    assert h + ell == Decimal("100")
 
 
 @pytest.mark.django_db
@@ -576,6 +625,6 @@ def test_create_distribution_rejects_asset_wrong_scope():
             budget_amount=Decimal("1"),
             currency="CLP",
             family_id=fam.pk,
-            allocations=[(personal_id, Decimal("1"))],
+            asset_ids=[personal_id],
         )
     assert ei.value.status_code == 400

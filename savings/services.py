@@ -1,6 +1,6 @@
 """Business logic for savings app."""
 
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
@@ -169,6 +169,42 @@ def update_asset(
     return row
 
 
+def _split_budget_by_weights(
+    budget_amount: Decimal,
+    weights: list[Decimal],
+) -> list[Decimal]:
+    """Pro-rata split of ``budget_amount`` by weights; 2 dp; largest-remainder for cents."""
+    if not weights:
+        raise DistributionMutationError(
+            "At least one asset is required.",
+            status_code=400,
+        )
+    total_w = sum(weights, Decimal("0"))
+    if total_w <= 0:
+        raise DistributionMutationError(
+            "Combined weight of selected assets must be positive.",
+            status_code=400,
+        )
+
+    sign = Decimal("1") if budget_amount >= 0 else Decimal("-1")
+    abs_budget = abs(budget_amount)
+    exact = [abs_budget * (w / total_w) for w in weights]
+    floors = [e.quantize(Decimal("0.01"), rounding=ROUND_DOWN) for e in exact]
+    remainder = abs_budget - sum(floors)
+    # Remainder as whole cents; distribute by largest fractional parts (stable by index).
+    frac_order = sorted(
+        range(len(weights)),
+        key=lambda i: (exact[i] - floors[i], i),
+        reverse=True,
+    )
+    amounts = list(floors)
+    cents = int((remainder * 100).quantize(Decimal("1"), rounding=ROUND_DOWN))
+    for k in range(cents):
+        amounts[frac_order[k % len(frac_order)]] += Decimal("0.01")
+
+    return [sign * a for a in amounts]
+
+
 def delete_asset(*, user_id: int, asset_id: int) -> None:
     """Delete asset if visible to user; ``PROTECT`` on distribution lines → 409."""
     row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
@@ -190,9 +226,9 @@ def create_distribution(
     budget_amount: Decimal,
     currency: str,
     family_id: int | None,
-    allocations: list[tuple[int, Decimal]],
+    asset_ids: list[int],
 ) -> int:
-    """Persist distribution, lines, and bump asset balances. Caller validates request body."""
+    """Persist distribution, lines, and bump asset balances. Amounts from asset weights (pro-rata)."""
     if scope == SavingsScope.PERSONAL:
         fam = None
     else:
@@ -209,28 +245,20 @@ def create_distribution(
                 status_code=403,
             )
 
-    if not allocations:
+    if not asset_ids:
         raise DistributionMutationError(
-            "At least one allocation is required.",
+            "At least one asset is required.",
             status_code=400,
         )
 
-    asset_ids = [a for a, _ in allocations]
     if len(asset_ids) != len(set(asset_ids)):
         raise DistributionMutationError(
-            "Duplicate asset in allocations.",
-            status_code=400,
-        )
-
-    total_allocated = sum((amt for _, amt in allocations), Decimal("0"))
-    if total_allocated != budget_amount:
-        raise DistributionMutationError(
-            "Allocated amounts must sum to budget_amount.",
+            "Duplicate asset in asset_ids.",
             status_code=400,
         )
 
     resolved_assets: list[Asset] = []
-    for asset_id, _ in allocations:
+    for asset_id in asset_ids:
         row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
         if row is None:
             raise DistributionMutationError("Asset not found.", status_code=404)
@@ -253,6 +281,9 @@ def create_distribution(
             )
         resolved_assets.append(row)
 
+    weights = [a.weight for a in resolved_assets]
+    allocated_amounts = _split_budget_by_weights(budget_amount, weights)
+
     with transaction.atomic():
         dist = Distribution.objects.create(
             owner_id=user_id,
@@ -261,7 +292,7 @@ def create_distribution(
             budget_amount=budget_amount,
             currency=currency,
         )
-        for asset_row, (_, amt) in zip(resolved_assets, allocations, strict=True):
+        for asset_row, amt in zip(resolved_assets, allocated_amounts, strict=True):
             DistributionLine.objects.create(
                 distribution=dist,
                 asset=asset_row,

@@ -82,17 +82,12 @@ class CreateAssetResponse(Schema):
     asset_id: int
 
 
-class AllocationLineSchema(Schema):
-    asset_id: int
-    allocated_amount: Decimal
-
-
 class CreateDistributionRequest(Schema):
     scope: str
     budget_amount: Decimal
     currency: str = "CLP"
     family_id: int | None = None
-    allocations: list[AllocationLineSchema]
+    asset_ids: list[int]
 
     @field_validator("scope", mode="before")
     @classmethod
