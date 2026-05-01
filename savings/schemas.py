@@ -5,7 +5,7 @@ from typing import Optional
 from ninja import Schema
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from savings.models import SavingsScope
+from savings.models import AssetState, SavingsScope
 
 
 class PingSavingsRequest(Schema):
@@ -159,6 +159,7 @@ class UpdateDistributionNotesResponse(Schema):
 
 class ListAssetsRequest(Schema):
     scope: str
+    state: str | None = None
 
     @field_validator("scope", mode="before")
     @classmethod
@@ -169,6 +170,20 @@ class ListAssetsRequest(Schema):
         s = v.strip().upper()
         if s not in (SavingsScope.PERSONAL, SavingsScope.FAMILY):
             msg = "Invalid scope; use PERSONAL or FAMILY."
+            raise ValueError(msg)
+        return s
+
+    @field_validator("state", mode="before")
+    @classmethod
+    def validate_state(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            msg = "state must be a string."
+            raise TypeError(msg)
+        s = v.strip().upper()
+        if s not in (AssetState.ACTIVE, AssetState.COMPLETED):
+            msg = "Invalid state; use ACTIVE or COMPLETED."
             raise ValueError(msg)
         return s
 

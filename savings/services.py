@@ -130,13 +130,20 @@ def _list_assets_sort_key(asset: Asset) -> tuple:
     return (0, -ratio, asset.name, asset.pk)
 
 
-def list_assets(*, user_id: int, scope: str) -> list[Asset]:
+def list_assets(
+    *,
+    user_id: int,
+    scope: str,
+    state: str | None = None,
+) -> list[Asset]:
     """List assets for the given savings scope (caller validates ``scope``)."""
     if scope == SavingsScope.PERSONAL:
         qs = Asset.objects.filter(
             owner_id=user_id,
             scope=SavingsScope.PERSONAL,
         )
+        if state is not None:
+            qs = qs.filter(state=state)
         rows = list(qs)
         rows.sort(key=_list_assets_sort_key)
         return rows
@@ -149,6 +156,8 @@ def list_assets(*, user_id: int, scope: str) -> list[Asset]:
         scope=SavingsScope.FAMILY,
         family_id=fid,
     )
+    if state is not None:
+        qs = qs.filter(state=state)
     rows = list(qs)
     rows.sort(key=_list_assets_sort_key)
     return rows
