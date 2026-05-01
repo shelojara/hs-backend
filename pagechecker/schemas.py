@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from typing import Annotated, Literal
 
@@ -204,3 +204,33 @@ class SendTestEmailResponse(Schema):
 
 class SendDailyReportsResponse(Schema):
     enqueued_page_ids: list[int]
+
+
+class ReportIntervalCount(Schema):
+    """Count of pages with given report_interval (NONE = unset)."""
+
+    interval: Literal["DAILY", "WEEKLY", "MONTHLY", "NONE"]
+    page_count: int
+
+
+class CategoryPageCount(Schema):
+    category_id: int | None = None
+    name: str
+    emoji: str = ""
+    page_count: int
+
+
+class GetStatisticsResponse(Schema):
+    """Aggregate counts for authenticated owner (calendar month in server TZ)."""
+
+    month_start: date
+    month_end_exclusive: date
+    pages_total: int
+    snapshots_total: int
+    snapshots_this_month: int
+    checks_this_month: int
+    content_changes_detected_this_month: int
+    snapshots_with_feature_this_month: int
+    targets_hit_all_time: int
+    report_interval_distribution: list[ReportIntervalCount]
+    category_distribution: list[CategoryPageCount]

@@ -1,3 +1,4 @@
+import datetime
 from unittest.mock import patch
 
 import httpx
@@ -16,6 +17,7 @@ from pagechecker.services import (
     create_category,
     create_page,
     delete_question,
+    get_statistics,
     list_categories,
     list_pages,
     run_daily_report_for_page,
@@ -111,6 +113,78 @@ def test_list_pages_scoped_to_owner():
     pa = Page.objects.create(url="https://example.com/a-only", owner=a)
     Page.objects.create(url="https://example.com/b-only", owner=b)
     assert [p.id for p in list_pages(user_id=a.pk)] == [pa.id]
+
+
+@pytest.mark.django_db
+@patch("pagechecker.services.timezone.now")
+def test_get_statistics_owner_scope_and_month_window(mock_now):
+    mock_now.return_value = timezone.datetime(
+        2026, 5, 15, 12, 0, 0, tzinfo=datetime.UTC
+    )
+    owner = _owner()
+    other = _owner(username="other")
+
+    cat = Category.objects.create(name="News", emoji="📰")
+    p_daily = Page.objects.create(
+        url="https://example.com/daily",
+        owner=owner,
+        report_interval=ReportInterval.DAILY,
+        category=cat,
+        last_checked_at=timezone.datetime(2026, 5, 10, 10, 0, 0, tzinfo=datetime.UTC),
+    )
+    Page.objects.create(
+        url="https://example.com/weekly",
+        owner=owner,
+        report_interval=ReportInterval.WEEKLY,
+    )
+    Page.objects.create(url="https://example.com/none", owner=owner)
+    Page.objects.create(url="https://example.com/other", owner=other)
+
+    may = timezone.datetime(2026, 5, 8, 10, 0, 0, tzinfo=datetime.UTC)
+    may2 = may + datetime.timedelta(seconds=1)
+    may3 = may + datetime.timedelta(seconds=2)
+    apr = timezone.datetime(2026, 4, 1, 10, 0, 0, tzinfo=datetime.UTC)
+    s_apr = Snapshot.objects.create(
+        page=p_daily,
+        md_content="alpha",
+        feature="hit",
+    )
+    Snapshot.objects.filter(pk=s_apr.pk).update(created_at=apr)
+
+    def _snap(**kw):
+        s = Snapshot.objects.create(page=p_daily, **kw)
+        Snapshot.objects.filter(pk=s.pk).update(created_at=may)
+        return s
+
+    _snap(md_content="alpha")
+    s_b1 = Snapshot.objects.create(page=p_daily, md_content="beta", feature="")
+    Snapshot.objects.filter(pk=s_b1.pk).update(created_at=may2)
+    s_b2 = Snapshot.objects.create(page=p_daily, md_content="beta", feature="x")
+    Snapshot.objects.filter(pk=s_b2.pk).update(created_at=may3)
+
+    stats_owner = get_statistics(user_id=owner.pk)
+    assert stats_owner["month_start"].isoformat() == "2026-05-01"
+    assert stats_owner["month_end_exclusive"].isoformat() == "2026-06-01"
+    assert stats_owner["pages_total"] == 3
+    assert stats_owner["snapshots_total"] == 4
+    assert stats_owner["snapshots_this_month"] == 3
+    assert stats_owner["checks_this_month"] == 1
+    assert stats_owner["content_changes_detected_this_month"] == 1
+    assert stats_owner["snapshots_with_feature_this_month"] == 1
+    assert stats_owner["targets_hit_all_time"] == 2
+
+    intervals = {row["interval"]: row["page_count"] for row in stats_owner["report_interval_distribution"]}
+    assert intervals == {"DAILY": 1, "WEEKLY": 1, "MONTHLY": 0, "NONE": 1}
+
+    cats = stats_owner["category_distribution"]
+    unc = next(c for c in cats if c["category_id"] is None)
+    news = next(c for c in cats if c["category_id"] == cat.id)
+    assert unc["page_count"] == 2
+    assert news["page_count"] == 1
+
+    stats_other = get_statistics(user_id=other.pk)
+    assert stats_other["pages_total"] == 1
+    assert stats_other["snapshots_total"] == 0
 
 
 @pytest.mark.django_db

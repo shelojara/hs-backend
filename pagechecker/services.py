@@ -4,6 +4,7 @@ from collections.abc import Sequence
 import httpx
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Count, F, OuterRef, Q, Subquery
 from django.utils import timezone
 
 from backend.email_services import send_email_via_gmail
@@ -102,6 +103,112 @@ class QuestionInUseError(Exception):
         message: str = "Cannot delete question while it is linked to one or more pages.",
     ) -> None:
         super().__init__(message)
+
+
+def get_statistics(*, user_id: int) -> dict:
+    """Return aggregate stats for *user_id* (pages, snapshots, month-scoped breakdown)."""
+    now = timezone.now()
+    month_start = timezone.datetime(now.year, now.month, 1, tzinfo=now.tzinfo)
+    next_month_year = now.year + (1 if now.month == 12 else 0)
+    next_month_num = 1 if now.month == 12 else now.month + 1
+    month_end_exclusive = timezone.datetime(
+        next_month_year, next_month_num, 1, tzinfo=now.tzinfo
+    )
+
+    base_pages = Page.objects.filter(owner_id=user_id)
+    pages_total = base_pages.count()
+
+    page_snapshots = Snapshot.objects.filter(page__owner_id=user_id)
+    snapshots_total = page_snapshots.count()
+    snapshots_this_month = page_snapshots.filter(
+        created_at__gte=month_start,
+        created_at__lt=month_end_exclusive,
+    ).count()
+
+    checks_this_month = base_pages.filter(
+        last_checked_at__gte=month_start,
+        last_checked_at__lt=month_end_exclusive,
+    ).count()
+
+    prev_md_sq = Snapshot.objects.filter(
+        page_id=OuterRef("page_id"),
+        created_at__lt=OuterRef("created_at"),
+    ).order_by("-created_at")
+
+    content_changes_detected_this_month = (
+        Snapshot.objects.filter(
+            page__owner_id=user_id,
+            created_at__gte=month_start,
+            created_at__lt=month_end_exclusive,
+        )
+        .annotate(prev_md=Subquery(prev_md_sq.values("md_content")[:1]))
+        .filter(Q(prev_md__isnull=True) | ~Q(md_content=F("prev_md")))
+        .count()
+    )
+
+    snapshots_with_feature_this_month = (
+        page_snapshots.filter(
+            created_at__gte=month_start,
+            created_at__lt=month_end_exclusive,
+        )
+        .exclude(feature__isnull=True)
+        .exclude(feature="")
+        .count()
+    )
+
+    targets_hit_all_time = (
+        page_snapshots.exclude(feature__isnull=True).exclude(feature="").count()
+    )
+
+    interval_rows = base_pages.values("report_interval").annotate(page_count=Count("id"))
+    interval_map = {row["report_interval"]: row["page_count"] for row in interval_rows}
+    report_interval_distribution = [
+        {"interval": "DAILY", "page_count": interval_map.get(ReportInterval.DAILY, 0)},
+        {"interval": "WEEKLY", "page_count": interval_map.get(ReportInterval.WEEKLY, 0)},
+        {"interval": "MONTHLY", "page_count": interval_map.get(ReportInterval.MONTHLY, 0)},
+        {"interval": "NONE", "page_count": interval_map.get(None, 0)},
+    ]
+
+    uncategorized_count = base_pages.filter(category__isnull=True).count()
+    cat_rows = (
+        base_pages.exclude(category__isnull=True)
+        .values("category_id", "category__name", "category__emoji")
+        .annotate(page_count=Count("id"))
+        .order_by("-page_count", "category__name", "category_id")
+    )
+    category_distribution: list[dict] = []
+    if uncategorized_count:
+        category_distribution.append(
+            {
+                "category_id": None,
+                "name": "Uncategorized",
+                "emoji": "",
+                "page_count": uncategorized_count,
+            }
+        )
+    for row in cat_rows:
+        category_distribution.append(
+            {
+                "category_id": row["category_id"],
+                "name": row["category__name"] or "",
+                "emoji": row["category__emoji"] or "",
+                "page_count": row["page_count"],
+            }
+        )
+
+    return {
+        "month_start": month_start.date(),
+        "month_end_exclusive": month_end_exclusive.date(),
+        "pages_total": pages_total,
+        "snapshots_total": snapshots_total,
+        "snapshots_this_month": snapshots_this_month,
+        "checks_this_month": checks_this_month,
+        "content_changes_detected_this_month": content_changes_detected_this_month,
+        "snapshots_with_feature_this_month": snapshots_with_feature_this_month,
+        "targets_hit_all_time": targets_hit_all_time,
+        "report_interval_distribution": report_interval_distribution,
+        "category_distribution": category_distribution,
+    }
 
 
 def list_pages(*, user_id: int, limit: int = 20, offset: int = 0) -> list[Page]:

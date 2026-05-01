@@ -21,6 +21,7 @@ from pagechecker.schemas import (
     SendDailyReportsResponse,
     SendTestEmailRequest,
     SendTestEmailResponse,
+    GetStatisticsResponse,
     CreatePageRequest,
     CreatePageResponse,
     CreateCategoryRequest,
@@ -48,6 +49,13 @@ from pagechecker.schemas import (
 )
 
 router = Router(auth=protected_api_auth, tags=["PageChecker"])
+
+
+@router.post("/v1.PageChecker.GetStatistics", response=GetStatisticsResponse)
+def get_statistics(request):
+    user = request.auth
+    data = services.get_statistics(user_id=user.pk)
+    return GetStatisticsResponse(**data)
 
 
 @router.post("/v1.PageChecker.ListPages", response=ListPagesResponse)
