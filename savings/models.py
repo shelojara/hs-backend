@@ -130,13 +130,13 @@ class SavingsAsset(models.Model):
         return f"{self.name} ({self.scope}) owner={self.owner_id}"
 
 
-class DistributionSession(models.Model):
+class Distribution(models.Model):
     """One pro-rata sync / group registry row (budget applied across assets)."""
 
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="savings_distribution_sessions",
+        related_name="savings_distributions",
     )
     scope = models.CharField(
         max_length=16,
@@ -148,12 +148,12 @@ class DistributionSession(models.Model):
         null=True,
         blank=True,
         on_delete=models.CASCADE,
-        related_name="distribution_sessions",
+        related_name="distributions",
     )
     budget_amount = models.DecimalField(
         max_digits=14,
         decimal_places=2,
-        help_text="Total amount distributed in this session (signed).",
+        help_text="Total amount distributed in this run (signed).",
     )
     currency = models.CharField(max_length=3, default="CLP")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -166,39 +166,29 @@ class DistributionSession(models.Model):
                     models.Q(scope=SavingsScope.PERSONAL, family__isnull=True)
                     | models.Q(scope=SavingsScope.FAMILY, family__isnull=False)
                 ),
-                name="savings_session_scope_family_consistent",
+                name="savings_distribution_scope_family_consistent",
             ),
         ]
 
     def __str__(self) -> str:
         return (
-            f"DistributionSession({self.budget_amount} {self.currency} "
+            f"Distribution({self.budget_amount} {self.currency} "
             f"{self.scope} owner={self.owner_id})"
         )
 
 
 class DistributionLine(models.Model):
-    """Per-asset slice for a session; snapshots survive asset edits/deletes."""
+    """Per-asset allocation for a distribution."""
 
-    session = models.ForeignKey(
-        DistributionSession,
+    distribution = models.ForeignKey(
+        Distribution,
         on_delete=models.CASCADE,
         related_name="lines",
     )
     asset = models.ForeignKey(
         SavingsAsset,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        on_delete=models.PROTECT,
         related_name="distribution_lines",
-    )
-    asset_name_snapshot = models.CharField(max_length=255)
-    weight_snapshot = models.DecimalField(max_digits=12, decimal_places=4)
-    selected = models.BooleanField(default=True)
-    share_percent = models.DecimalField(
-        max_digits=7,
-        decimal_places=4,
-        help_text="Percent of selected weight total (0–100).",
     )
     allocated_amount = models.DecimalField(max_digits=14, decimal_places=2)
 
@@ -207,6 +197,6 @@ class DistributionLine(models.Model):
 
     def __str__(self) -> str:
         return (
-            f"DistributionLine({self.asset_name_snapshot!r} "
-            f"{self.allocated_amount} session={self.session_id})"
+            f"DistributionLine(asset={self.asset_id} amount={self.allocated_amount} "
+            f"distribution={self.distribution_id})"
         )

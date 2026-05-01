@@ -1,12 +1,6 @@
 from django.contrib import admin
 
-from savings.models import (
-    DistributionLine,
-    DistributionSession,
-    Family,
-    FamilyMembership,
-    SavingsAsset,
-)
+from savings.models import Distribution, DistributionLine, Family, FamilyMembership, SavingsAsset
 
 
 @admin.register(Family)
@@ -35,8 +29,8 @@ class SavingsAssetAdmin(admin.ModelAdmin):
     search_fields = ("name",)
 
 
-@admin.register(DistributionSession)
-class DistributionSessionAdmin(admin.ModelAdmin):
+@admin.register(Distribution)
+class DistributionAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "budget_amount",
@@ -54,10 +48,7 @@ class DistributionSessionAdmin(admin.ModelAdmin):
 class DistributionLineAdmin(admin.ModelAdmin):
     list_display = (
         "id",
-        "session",
-        "asset_name_snapshot",
-        "selected",
-        "share_percent",
+        "distribution",
+        "asset",
         "allocated_amount",
     )
-    list_filter = ("selected",)
