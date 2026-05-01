@@ -692,8 +692,9 @@ def rush_asset(*, user_id: int, beneficiary_asset_id: int) -> tuple[int, Asset]:
 
     Repeatedly splits remaining gap to target using donor weights; each donor capped by
     ``current_amount`` only (donor targets ignored).
-    Persists one ``Distribution`` and signed ``DistributionLine`` rows;
-    ``budget_amount`` equals total moved to beneficiary.
+    Persists one ``Distribution`` and signed ``DistributionLine`` rows (positive line on
+    beneficiary, negatives on donors; net zero). ``budget_amount`` is ``0`` — rush is an
+    internal rebalance, not new capital into the scope.
     """
     beneficiary, currency, total_to_beneficiary, transfers = _compute_rush_transfers(
         user_id=user_id,
@@ -710,7 +711,7 @@ def rush_asset(*, user_id: int, beneficiary_asset_id: int) -> tuple[int, Asset]:
             owner_id=user_id,
             scope=beneficiary_locked.scope,
             family=beneficiary_locked.family,
-            budget_amount=total_to_beneficiary,
+            budget_amount=Decimal("0"),
             currency=currency,
             notes=rush_notes,
         )
