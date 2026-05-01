@@ -161,6 +161,7 @@ class Distribution(models.Model):
         help_text="Total amount distributed in this run (signed).",
     )
     currency = models.CharField(max_length=3, default="CLP")
+    notes = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

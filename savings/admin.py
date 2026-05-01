@@ -38,6 +38,7 @@ class DistributionAdmin(admin.ModelAdmin):
         "scope",
         "family",
         "owner",
+        "notes",
         "created_at",
     )
     list_filter = ("scope", "currency")

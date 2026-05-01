@@ -63,6 +63,7 @@ def create_distribution(
             currency=payload.currency,
             family_id=payload.family_id,
             asset_ids=payload.asset_ids,
+            notes=payload.notes,
         )
     except DistributionMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
