@@ -110,14 +110,36 @@ def create_asset(
     return row.pk
 
 
+def _asset_completion_ratio(asset: Asset) -> Decimal:
+    """Fraction toward target (0..1) for ordering active assets; no target → 0."""
+    if asset.target_amount is None or asset.target_amount <= 0:
+        return Decimal("0")
+    if asset.current_amount <= 0:
+        return Decimal("0")
+    raw = asset.current_amount / asset.target_amount
+    if raw >= 1:
+        return Decimal("1")
+    return raw
+
+
+def _list_assets_sort_key(asset: Asset) -> tuple:
+    """Completed last; active descending by completion ratio, then name, id."""
+    if asset.state == AssetState.COMPLETED:
+        return (1, asset.name, asset.pk)
+    ratio = _asset_completion_ratio(asset)
+    return (0, -ratio, asset.name, asset.pk)
+
+
 def list_assets(*, user_id: int, scope: str) -> list[Asset]:
     """List assets for the given savings scope (caller validates ``scope``)."""
     if scope == SavingsScope.PERSONAL:
         qs = Asset.objects.filter(
             owner_id=user_id,
             scope=SavingsScope.PERSONAL,
-        ).order_by("name", "id")
-        return list(qs)
+        )
+        rows = list(qs)
+        rows.sort(key=_list_assets_sort_key)
+        return rows
 
     membership = FamilyMembership.objects.filter(user_id=user_id).first()
     if membership is None:
@@ -126,8 +148,10 @@ def list_assets(*, user_id: int, scope: str) -> list[Asset]:
     qs = Asset.objects.filter(
         scope=SavingsScope.FAMILY,
         family_id=fid,
-    ).order_by("name", "id")
-    return list(qs)
+    )
+    rows = list(qs)
+    rows.sort(key=_list_assets_sort_key)
+    return rows
 
 
 def list_distributions(
