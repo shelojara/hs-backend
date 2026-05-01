@@ -1285,7 +1285,7 @@ def test_rush_asset_weighted_split_fills_gap():
 
 
 @pytest.mark.django_db
-def test_rush_asset_iterative_when_donors_hit_target_cap():
+def test_rush_asset_iterative_when_donor_balances_exhausted():
     user = _user()
     rush_id = create_asset(
         user_id=user.pk,
@@ -1319,8 +1319,9 @@ def test_rush_asset_iterative_when_donors_hit_target_cap():
     )
     did, ben = rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
     assert ben.current_amount == Decimal("100")
-    assert Asset.objects.get(pk=capped).current_amount == Decimal("100")
-    assert Asset.objects.get(pk=deep).current_amount == Decimal("410")
+    # Donor targets ignored: split 50/50 by equal weight until gap filled.
+    assert Asset.objects.get(pk=capped).current_amount == Decimal("60")
+    assert Asset.objects.get(pk=deep).current_amount == Decimal("450")
     dist = Distribution.objects.get(pk=did)
     assert dist.budget_amount == Decimal("100")
 
@@ -1369,9 +1370,9 @@ def test_rush_asset_rejects_when_no_eligible_donors():
     create_asset(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
-        name="Full",
+        name="Empty",
         weight=Decimal("1"),
-        current_amount=Decimal("100"),
+        current_amount=Decimal("0"),
         target_amount=Decimal("100"),
         currency="CLP",
         family_id=None,
