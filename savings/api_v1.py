@@ -6,6 +6,8 @@ from savings import services
 from savings.schemas import (
     CreateAssetRequest,
     CreateAssetResponse,
+    CreateDistributionRequest,
+    CreateDistributionResponse,
     DeleteAssetRequest,
     DeleteAssetResponse,
     ListAssetsRequest,
@@ -15,7 +17,7 @@ from savings.schemas import (
     UpdateAssetRequest,
     UpdateAssetResponse,
 )
-from savings.services import AssetMutationError
+from savings.services import AssetMutationError, DistributionMutationError
 
 router = Router(auth=protected_api_auth, tags=["Savings"])
 
@@ -43,6 +45,27 @@ def create_asset(request, payload: CreateAssetRequest) -> CreateAssetResponse:
     except AssetMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
     return CreateAssetResponse(asset_id=asset_id)
+
+
+@router.post("/v1.Savings.CreateDistribution", response=CreateDistributionResponse)
+def create_distribution(
+    request, payload: CreateDistributionRequest
+) -> CreateDistributionResponse:
+    user = request.auth
+    try:
+        did = services.create_distribution(
+            user_id=user.pk,
+            scope=payload.scope,
+            budget_amount=payload.budget_amount,
+            currency=payload.currency,
+            family_id=payload.family_id,
+            allocations=[
+                (line.asset_id, line.allocated_amount) for line in payload.allocations
+            ],
+        )
+    except DistributionMutationError as exc:
+        raise HttpError(exc.status_code, str(exc)) from exc
+    return CreateDistributionResponse(distribution_id=did)
 
 
 @router.post("/v1.Savings.ListAssets", response=ListAssetsResponse)

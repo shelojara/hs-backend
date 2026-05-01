@@ -15,7 +15,9 @@ from savings.models import (
 from savings.schemas import CreateAssetRequest, UpdateAssetRequest
 from savings.services import (
     AssetMutationError,
+    DistributionMutationError,
     create_asset,
+    create_distribution,
     delete_asset,
     list_assets,
     update_asset,
@@ -441,3 +443,139 @@ def test_delete_asset_blocked_when_distribution_line_exists():
     with pytest.raises(AssetMutationError) as ei:
         delete_asset(user_id=user.pk, asset_id=aid)
     assert ei.value.status_code == 409
+
+
+@pytest.mark.django_db
+def test_create_distribution_personal_updates_balances():
+    user = _user()
+    a1 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="A",
+        weight=Decimal("1"),
+        current_amount=Decimal("100"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    a2 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="B",
+        weight=Decimal("1"),
+        current_amount=Decimal("50"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    did = create_distribution(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        budget_amount=Decimal("30"),
+        currency="CLP",
+        family_id=None,
+        allocations=[
+            (a1, Decimal("10")),
+            (a2, Decimal("20")),
+        ],
+    )
+    assert Distribution.objects.filter(pk=did).exists()
+    assert DistributionLine.objects.filter(distribution_id=did).count() == 2
+    assert Asset.objects.get(pk=a1).current_amount == Decimal("110")
+    assert Asset.objects.get(pk=a2).current_amount == Decimal("70")
+
+
+@pytest.mark.django_db
+def test_create_distribution_budget_must_match_sum():
+    user = _user()
+    a1 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="A",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    with pytest.raises(DistributionMutationError) as ei:
+        create_distribution(
+            user_id=user.pk,
+            scope=SavingsScope.PERSONAL,
+            budget_amount=Decimal("100"),
+            currency="CLP",
+            family_id=None,
+            allocations=[(a1, Decimal("50"))],
+        )
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.django_db
+def test_create_distribution_requires_lines():
+    user = _user()
+    with pytest.raises(DistributionMutationError) as ei:
+        create_distribution(
+            user_id=user.pk,
+            scope=SavingsScope.PERSONAL,
+            budget_amount=Decimal("0"),
+            currency="CLP",
+            family_id=None,
+            allocations=[],
+        )
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.django_db
+def test_create_distribution_family_member_ok():
+    owner = _user("owner")
+    member = _user("member")
+    fam = Family.objects.create(created_by=owner)
+    FamilyMembership.objects.create(family=fam, user=owner)
+    FamilyMembership.objects.create(family=fam, user=member)
+
+    aid = create_asset(
+        user_id=owner.pk,
+        scope=SavingsScope.FAMILY,
+        name="Pot",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=fam.pk,
+    )
+    create_distribution(
+        user_id=member.pk,
+        scope=SavingsScope.FAMILY,
+        budget_amount=Decimal("25"),
+        currency="CLP",
+        family_id=fam.pk,
+        allocations=[(aid, Decimal("25"))],
+    )
+    assert Asset.objects.get(pk=aid).current_amount == Decimal("25")
+
+
+@pytest.mark.django_db
+def test_create_distribution_rejects_asset_wrong_scope():
+    user = _user()
+    personal_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Solo",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    fam = Family.objects.create(created_by=user)
+    FamilyMembership.objects.create(family=fam, user=user)
+    with pytest.raises(DistributionMutationError) as ei:
+        create_distribution(
+            user_id=user.pk,
+            scope=SavingsScope.FAMILY,
+            budget_amount=Decimal("1"),
+            currency="CLP",
+            family_id=fam.pk,
+            allocations=[(personal_id, Decimal("1"))],
+        )
+    assert ei.value.status_code == 400

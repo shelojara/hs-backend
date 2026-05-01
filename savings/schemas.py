@@ -82,6 +82,58 @@ class CreateAssetResponse(Schema):
     asset_id: int
 
 
+class AllocationLineSchema(Schema):
+    asset_id: int
+    allocated_amount: Decimal
+
+
+class CreateDistributionRequest(Schema):
+    scope: str
+    budget_amount: Decimal
+    currency: str = "CLP"
+    family_id: int | None = None
+    allocations: list[AllocationLineSchema]
+
+    @field_validator("scope", mode="before")
+    @classmethod
+    def validate_scope(cls, v: object) -> str:
+        if not isinstance(v, str):
+            msg = "scope must be a string."
+            raise TypeError(msg)
+        s = v.strip().upper()
+        if s not in (SavingsScope.PERSONAL, SavingsScope.FAMILY):
+            msg = "Invalid scope; use PERSONAL or FAMILY."
+            raise ValueError(msg)
+        return s
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def validate_currency(cls, v: object) -> str:
+        if not isinstance(v, str):
+            msg = "currency must be a string."
+            raise TypeError(msg)
+        cur = v.strip().upper()
+        if len(cur) != 3:
+            msg = "currency must be a 3-letter ISO 4217 code."
+            raise ValueError(msg)
+        return cur
+
+    @model_validator(mode="after")
+    def family_matches_scope(self) -> "CreateDistributionRequest":
+        if self.scope == SavingsScope.PERSONAL:
+            if self.family_id is not None:
+                msg = "Personal distributions must not set family_id."
+                raise ValueError(msg)
+        elif self.family_id is None:
+            msg = "Family distributions require family_id."
+            raise ValueError(msg)
+        return self
+
+
+class CreateDistributionResponse(Schema):
+    distribution_id: int
+
+
 class ListAssetsRequest(Schema):
     scope: str
 

@@ -5,11 +5,26 @@ from decimal import Decimal
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
 
-from savings.models import Asset, Family, FamilyMembership, SavingsScope
+from savings.models import (
+    Asset,
+    Distribution,
+    DistributionLine,
+    Family,
+    FamilyMembership,
+    SavingsScope,
+)
 
 
 class AssetMutationError(Exception):
     """Domain rule violation when persisting or mutating an asset (not request shape)."""
+
+    def __init__(self, message: str, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class DistributionMutationError(Exception):
+    """Domain rule violation when creating a distribution."""
 
     def __init__(self, message: str, status_code: int = 400) -> None:
         super().__init__(message)
@@ -166,3 +181,93 @@ def delete_asset(*, user_id: int, asset_id: int) -> None:
             "Asset has distribution history and cannot be deleted.",
             status_code=409,
         ) from exc
+
+
+def create_distribution(
+    *,
+    user_id: int,
+    scope: str,
+    budget_amount: Decimal,
+    currency: str,
+    family_id: int | None,
+    allocations: list[tuple[int, Decimal]],
+) -> int:
+    """Persist distribution, lines, and bump asset balances. Caller validates request body."""
+    if scope == SavingsScope.PERSONAL:
+        fam = None
+    else:
+        try:
+            fam = Family.objects.get(pk=family_id)
+        except Family.DoesNotExist as exc:
+            raise DistributionMutationError("Family not found.", status_code=404) from exc
+        if not FamilyMembership.objects.filter(
+            family_id=fam.pk,
+            user_id=user_id,
+        ).exists():
+            raise DistributionMutationError(
+                "Not a member of this family.",
+                status_code=403,
+            )
+
+    if not allocations:
+        raise DistributionMutationError(
+            "At least one allocation is required.",
+            status_code=400,
+        )
+
+    asset_ids = [a for a, _ in allocations]
+    if len(asset_ids) != len(set(asset_ids)):
+        raise DistributionMutationError(
+            "Duplicate asset in allocations.",
+            status_code=400,
+        )
+
+    total_allocated = sum((amt for _, amt in allocations), Decimal("0"))
+    if total_allocated != budget_amount:
+        raise DistributionMutationError(
+            "Allocated amounts must sum to budget_amount.",
+            status_code=400,
+        )
+
+    resolved_assets: list[Asset] = []
+    for asset_id, _ in allocations:
+        row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
+        if row is None:
+            raise DistributionMutationError("Asset not found.", status_code=404)
+        if row.scope != scope:
+            raise DistributionMutationError(
+                "Asset scope does not match distribution scope.",
+                status_code=400,
+            )
+        if scope == SavingsScope.FAMILY:
+            assert fam is not None
+            if row.family_id != fam.pk:
+                raise DistributionMutationError(
+                    "Asset does not belong to this family.",
+                    status_code=400,
+                )
+        if row.currency != currency:
+            raise DistributionMutationError(
+                "All assets must use the same currency as the distribution.",
+                status_code=400,
+            )
+        resolved_assets.append(row)
+
+    with transaction.atomic():
+        dist = Distribution.objects.create(
+            owner_id=user_id,
+            scope=scope,
+            family=fam,
+            budget_amount=budget_amount,
+            currency=currency,
+        )
+        for asset_row, (_, amt) in zip(resolved_assets, allocations, strict=True):
+            DistributionLine.objects.create(
+                distribution=dist,
+                asset=asset_row,
+                allocated_amount=amt,
+            )
+            asset_row.current_amount += amt
+            asset_row.save(update_fields=("current_amount", "updated_at"))
+
+    return dist.pk
