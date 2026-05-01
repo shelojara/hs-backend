@@ -172,6 +172,8 @@ class ListAssetsResponse(Schema):
 
 class ListDistributionsRequest(Schema):
     scope: str
+    limit: int = Field(default=20, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
 
     @field_validator("scope", mode="before")
     @classmethod

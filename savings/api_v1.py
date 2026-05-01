@@ -80,7 +80,12 @@ def list_distributions(
     request, payload: ListDistributionsRequest
 ) -> ListDistributionsResponse:
     user = request.auth
-    rows = services.list_distributions(user_id=user.pk, scope=payload.scope)
+    rows = services.list_distributions(
+        user_id=user.pk,
+        scope=payload.scope,
+        limit=payload.limit,
+        offset=payload.offset,
+    )
     return ListDistributionsResponse(distributions=rows)
 
 

@@ -374,6 +374,79 @@ def test_list_distributions_personal_excludes_family():
 
 
 @pytest.mark.django_db
+def test_list_distributions_pagination_offset_limit():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Pot",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    budgets = [Decimal("10"), Decimal("20"), Decimal("30")]
+    ids: list[int] = []
+    for b in budgets:
+        ids.append(
+            create_distribution(
+                user_id=user.pk,
+                scope=SavingsScope.PERSONAL,
+                budget_amount=b,
+                currency="CLP",
+                family_id=None,
+                asset_ids=[aid],
+            )
+        )
+    newest_first = list(reversed(ids))
+    page0 = list_distributions(
+        user_id=user.pk, scope=SavingsScope.PERSONAL, limit=1, offset=0
+    )
+    assert [d.pk for d in page0] == [newest_first[0]]
+    page1 = list_distributions(
+        user_id=user.pk, scope=SavingsScope.PERSONAL, limit=1, offset=1
+    )
+    assert [d.pk for d in page1] == [newest_first[1]]
+    page01 = list_distributions(
+        user_id=user.pk, scope=SavingsScope.PERSONAL, limit=2, offset=0
+    )
+    assert [d.pk for d in page01] == newest_first[:2]
+    beyond = list_distributions(
+        user_id=user.pk, scope=SavingsScope.PERSONAL, limit=10, offset=99
+    )
+    assert beyond == []
+
+
+@pytest.mark.django_db
+def test_list_distributions_clamps_limit_in_service():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Pot",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    for i in range(3):
+        create_distribution(
+            user_id=user.pk,
+            scope=SavingsScope.PERSONAL,
+            budget_amount=Decimal(i + 1),
+            currency="CLP",
+            family_id=None,
+            asset_ids=[aid],
+        )
+    rows = list_distributions(
+        user_id=user.pk, scope=SavingsScope.PERSONAL, limit=500, offset=0
+    )
+    assert len(rows) == 3
+
+
+@pytest.mark.django_db
 def test_family_membership_at_most_one_per_user():
     user = _user()
     fam_a = Family.objects.create(created_by=user)

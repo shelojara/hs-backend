@@ -14,6 +14,9 @@ from savings.models import (
     SavingsScope,
 )
 
+_LIST_DISTRIBUTIONS_DEFAULT_LIMIT = 20
+_LIST_DISTRIBUTIONS_MAX_LIMIT = 100
+
 
 class AssetMutationError(Exception):
     """Domain rule violation when persisting or mutating an asset (not request shape)."""
@@ -108,8 +111,16 @@ def list_assets(*, user_id: int, scope: str) -> list[Asset]:
     return list(qs)
 
 
-def list_distributions(*, user_id: int, scope: str) -> list[Distribution]:
-    """List distributions for scope with lines prefetched (caller validates ``scope``)."""
+def list_distributions(
+    *,
+    user_id: int,
+    scope: str,
+    limit: int = _LIST_DISTRIBUTIONS_DEFAULT_LIMIT,
+    offset: int = 0,
+) -> list[Distribution]:
+    """List distributions for scope with lines prefetched (newest first); paginated slice."""
+    lim = max(1, min(int(limit), _LIST_DISTRIBUTIONS_MAX_LIMIT))
+    off = max(0, int(offset))
     if scope == SavingsScope.PERSONAL:
         qs = (
             Distribution.objects.filter(
@@ -119,7 +130,7 @@ def list_distributions(*, user_id: int, scope: str) -> list[Distribution]:
             .prefetch_related("lines")
             .order_by("-created_at", "-id")
         )
-        return list(qs)
+        return list(qs[off : off + lim])
 
     membership = FamilyMembership.objects.filter(user_id=user_id).first()
     if membership is None:
@@ -132,7 +143,7 @@ def list_distributions(*, user_id: int, scope: str) -> list[Distribution]:
         .prefetch_related("lines")
         .order_by("-created_at", "-id")
     )
-    return list(qs)
+    return list(qs[off : off + lim])
 
 
 def get_asset_for_user(*, user_id: int, asset_id: int) -> Asset | None:
