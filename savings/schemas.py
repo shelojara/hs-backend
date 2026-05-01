@@ -122,6 +122,11 @@ class CreateDistributionRequest(Schema):
         elif self.family_id is None:
             msg = "Family distributions require family_id."
             raise ValueError(msg)
+        if self.currency == "CLP":
+            q = self.budget_amount.quantize(Decimal("1"))
+            if self.budget_amount != q:
+                msg = "CLP budget_amount must be a whole number (no decimals)."
+                raise ValueError(msg)
         return self
 
 

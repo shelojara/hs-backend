@@ -604,6 +604,113 @@ def test_create_distribution_weighted_split():
 
 
 @pytest.mark.django_db
+def test_create_distribution_clp_rejects_fractional_budget():
+    user = _user()
+    a1 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="A",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    a2 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="B",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    with pytest.raises(DistributionMutationError) as ei:
+        create_distribution(
+            user_id=user.pk,
+            scope=SavingsScope.PERSONAL,
+            budget_amount=Decimal("10.50"),
+            currency="CLP",
+            family_id=None,
+            asset_ids=[a1, a2],
+        )
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.django_db
+def test_create_distribution_clp_integer_split_remainder():
+    user = _user()
+    heavy_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Heavy",
+        weight=Decimal("3"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    light_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Light",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    did = create_distribution(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        budget_amount=Decimal("10"),
+        currency="CLP",
+        family_id=None,
+        asset_ids=[heavy_id, light_id],
+    )
+    lines = {line.asset_id: line.allocated_amount for line in DistributionLine.objects.filter(distribution_id=did)}
+    assert lines[heavy_id] == Decimal("8")
+    assert lines[light_id] == Decimal("2")
+    assert sum(lines.values()) == Decimal("10")
+
+
+@pytest.mark.django_db
+def test_create_distribution_non_clp_uses_cents():
+    user = _user()
+    a1 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="A",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="USD",
+        family_id=None,
+    )
+    a2 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="B",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="USD",
+        family_id=None,
+    )
+    did = create_distribution(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        budget_amount=Decimal("1.00"),
+        currency="USD",
+        family_id=None,
+        asset_ids=[a1, a2],
+    )
+    lines = [line.allocated_amount for line in DistributionLine.objects.filter(distribution_id=did).order_by("id")]
+    assert lines == [Decimal("0.50"), Decimal("0.50")]
+
+
+@pytest.mark.django_db
 def test_create_distribution_rejects_asset_wrong_scope():
     user = _user()
     personal_id = create_asset(

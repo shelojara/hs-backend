@@ -169,11 +169,33 @@ def update_asset(
     return row
 
 
+def _integer_split_by_weights(total_units: int, weights: list[Decimal]) -> list[int]:
+    """Split ``total_units`` across ``weights`` using Hamilton largest remainder."""
+    n = len(weights)
+    total_w = sum(weights, Decimal("0"))
+    exact = [Decimal(total_units) * (weights[i] / total_w) for i in range(n)]
+    floors = [
+        int(e.quantize(Decimal("1"), rounding=ROUND_DOWN)) for e in exact
+    ]
+    allocated = sum(floors)
+    remainder = total_units - allocated
+    frac_order = sorted(
+        range(n),
+        key=lambda i: (exact[i] - Decimal(floors[i]), -i),
+        reverse=True,
+    )
+    out = floors[:]
+    for k in range(remainder):
+        out[frac_order[k]] += 1
+    return out
+
+
 def _split_budget_by_weights(
     budget_amount: Decimal,
     weights: list[Decimal],
+    currency: str,
 ) -> list[Decimal]:
-    """Pro-rata split of ``budget_amount`` by weights; 2 dp; largest-remainder for cents."""
+    """Pro-rata split by weights. CLP: whole pesos; other ISO currencies: hundredths."""
     if not weights:
         raise DistributionMutationError(
             "At least one asset is required.",
@@ -188,21 +210,20 @@ def _split_budget_by_weights(
 
     sign = Decimal("1") if budget_amount >= 0 else Decimal("-1")
     abs_budget = abs(budget_amount)
-    exact = [abs_budget * (w / total_w) for w in weights]
-    floors = [e.quantize(Decimal("0.01"), rounding=ROUND_DOWN) for e in exact]
-    remainder = abs_budget - sum(floors)
-    # Remainder as whole cents; distribute by largest fractional parts (stable by index).
-    frac_order = sorted(
-        range(len(weights)),
-        key=lambda i: (exact[i] - floors[i], i),
-        reverse=True,
-    )
-    amounts = list(floors)
-    cents = int((remainder * 100).quantize(Decimal("1"), rounding=ROUND_DOWN))
-    for k in range(cents):
-        amounts[frac_order[k % len(frac_order)]] += Decimal("0.01")
 
-    return [sign * a for a in amounts]
+    if currency == "CLP":
+        if abs_budget != abs_budget.quantize(Decimal("1")):
+            raise DistributionMutationError(
+                "CLP amounts must be whole pesos (no decimals).",
+                status_code=400,
+            )
+        units = int(abs_budget)
+        ints = _integer_split_by_weights(units, weights)
+        return [sign * Decimal(x) for x in ints]
+
+    cents_total = int((abs_budget * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_DOWN))
+    ints = _integer_split_by_weights(cents_total, weights)
+    return [sign * (Decimal(x) / Decimal("100")) for x in ints]
 
 
 def delete_asset(*, user_id: int, asset_id: int) -> None:
@@ -282,7 +303,7 @@ def create_distribution(
         resolved_assets.append(row)
 
     weights = [a.weight for a in resolved_assets]
-    allocated_amounts = _split_budget_by_weights(budget_amount, weights)
+    allocated_amounts = _split_budget_by_weights(budget_amount, weights, currency)
 
     with transaction.atomic():
         dist = Distribution.objects.create(
