@@ -343,6 +343,20 @@ def test_list_assets_orders_by_completion_then_completed_last():
     names = [r.name for r in rows]
     assert names == ["Almost", "Mid", "Low", "No target", "Z_done"]
 
+    active_only = list_assets(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        state=AssetState.ACTIVE,
+    )
+    assert [r.name for r in active_only] == ["Almost", "Mid", "Low", "No target"]
+
+    done_only = list_assets(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        state=AssetState.COMPLETED,
+    )
+    assert [r.name for r in done_only] == ["Z_done"]
+
 
 @pytest.mark.django_db
 def test_list_distributions_personal_with_lines():

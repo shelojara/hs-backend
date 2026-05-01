@@ -123,7 +123,11 @@ def update_distribution_notes(
 @router.post("/v1.Savings.ListAssets", response=ListAssetsResponse)
 def list_assets(request, payload: ListAssetsRequest) -> ListAssetsResponse:
     user = request.auth
-    rows = services.list_assets(user_id=user.pk, scope=payload.scope)
+    rows = services.list_assets(
+        user_id=user.pk,
+        scope=payload.scope,
+        state=payload.state,
+    )
     return ListAssetsResponse(assets=rows)
 
 
