@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 import os
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -54,6 +55,7 @@ CSRF_TRUSTED_ORIGINS = _csrf_trusted_origins()
 # Application definition
 
 INSTALLED_APPS = [
+    "backend.apps.BackendConfig",
     "corsheaders",
     "flags",
     "django.contrib.admin",
@@ -104,12 +106,49 @@ WSGI_APPLICATION = "backend.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+
+def _postgres_from_url(url: str) -> dict:
+    """Build Django DATABASES entry from POSTGRES_URL (postgresql:// or postgres://)."""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"postgresql", "postgres"}:
+        msg = f"POSTGRES_URL must use postgresql:// or postgres:// scheme, got {parsed.scheme!r}"
+        raise ValueError(msg)
+    query = parse_qs(parsed.query)
+    options: dict[str, str] = {}
+    if "sslmode" in query and query["sslmode"]:
+        options["sslmode"] = query["sslmode"][0]
+    name = (parsed.path or "").lstrip("/") or ""
+    if not name:
+        msg = "POSTGRES_URL must include a database name in the path"
+        raise ValueError(msg)
+    cfg: dict = {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": unquote(name),
+        "USER": unquote(parsed.username) if parsed.username else "",
+        "PASSWORD": unquote(parsed.password) if parsed.password else "",
+        "HOST": parsed.hostname or "",
+        "PORT": str(parsed.port) if parsed.port else "",
     }
-}
+    if options:
+        cfg["OPTIONS"] = options
+    return cfg
+
+
+_sqlite_path = Path(os.getenv("SQLITE_PATH", str(BASE_DIR / "db.sqlite3"))).expanduser()
+
+POSTGRES_URL = os.getenv("POSTGRES_URL", "").strip()
+
+if POSTGRES_URL:
+    DATABASES = {
+        "default": _postgres_from_url(POSTGRES_URL),
+    }
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": _sqlite_path,
+        }
+    }
 
 
 # Password validation
