@@ -29,4 +29,10 @@ dependencies = [
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "backend.settings"
 python_files = ["test_*.py", "*_test.py"]
-testpaths = ["auth/tests", "groceries/tests", "pagechecker/tests", "backend/tests"]
+testpaths = [
+    "auth/tests",
+    "groceries/tests",
+    "pagechecker/tests",
+    "savings/tests",
+    "backend/tests",
+]

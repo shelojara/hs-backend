@@ -70,3 +70,23 @@ def create_asset(
         ) from exc
 
     return row.pk
+
+
+def list_assets(*, user_id: int, scope: str) -> list[Asset]:
+    """List assets for the given savings scope (caller validates ``scope``)."""
+    if scope == SavingsScope.PERSONAL:
+        qs = Asset.objects.filter(
+            owner_id=user_id,
+            scope=SavingsScope.PERSONAL,
+        ).order_by("name", "id")
+        return list(qs)
+
+    membership = FamilyMembership.objects.filter(user_id=user_id).first()
+    if membership is None:
+        return []
+    fid = membership.family_id
+    qs = Asset.objects.filter(
+        scope=SavingsScope.FAMILY,
+        family_id=fid,
+    ).order_by("name", "id")
+    return list(qs)

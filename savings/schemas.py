@@ -1,8 +1,9 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
 from ninja import Schema
-from pydantic import Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from savings.models import SavingsScope
 
@@ -79,3 +80,39 @@ class CreateAssetRequest(Schema):
 
 class CreateAssetResponse(Schema):
     asset_id: int
+
+
+class ListAssetsRequest(Schema):
+    scope: str
+
+    @field_validator("scope", mode="before")
+    @classmethod
+    def validate_scope(cls, v: object) -> str:
+        if not isinstance(v, str):
+            msg = "scope must be a string."
+            raise TypeError(msg)
+        s = v.strip().upper()
+        if s not in (SavingsScope.PERSONAL, SavingsScope.FAMILY):
+            msg = "Invalid scope; use PERSONAL or FAMILY."
+            raise ValueError(msg)
+        return s
+
+
+class AssetSchema(Schema):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    owner_id: int
+    scope: str
+    family_id: int | None
+    name: str
+    weight: Decimal
+    current_amount: Decimal
+    target_amount: Optional[Decimal]
+    currency: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ListAssetsResponse(Schema):
+    assets: list[AssetSchema]

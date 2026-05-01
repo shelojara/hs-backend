@@ -2,10 +2,11 @@ from decimal import Decimal
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError
 
 from savings.models import Asset, Family, FamilyMembership, SavingsScope
 from savings.schemas import CreateAssetRequest
-from savings.services import AssetCreateError, create_asset
+from savings.services import AssetCreateError, create_asset, list_assets
 
 User = get_user_model()
 
@@ -133,3 +134,116 @@ def test_create_asset_duplicate_name_personal():
             family_id=None,
         )
     assert ei.value.status_code == 409
+
+
+@pytest.mark.django_db
+def test_list_assets_personal_only():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Rainy day",
+        weight=Decimal("1"),
+        current_amount=Decimal("5"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    rows = list_assets(user_id=user.pk, scope=SavingsScope.PERSONAL)
+    assert len(rows) == 1
+    assert rows[0].pk == aid
+    assert rows[0].name == "Rainy day"
+
+
+@pytest.mark.django_db
+def test_list_assets_family_visible_to_other_member():
+    owner = _user("owner")
+    member = _user("member")
+    fam = Family.objects.create(created_by=owner)
+    FamilyMembership.objects.create(family=fam, user=owner)
+    FamilyMembership.objects.create(family=fam, user=member)
+
+    aid = create_asset(
+        user_id=owner.pk,
+        scope=SavingsScope.FAMILY,
+        name="Shared pot",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+        family_id=fam.pk,
+    )
+
+    member_rows = list_assets(user_id=member.pk, scope=SavingsScope.FAMILY)
+    ids = {r.pk for r in member_rows}
+    assert aid in ids
+    shared = next(r for r in member_rows if r.pk == aid)
+    assert shared.owner_id == owner.pk
+
+
+@pytest.mark.django_db
+def test_list_assets_family_hidden_from_non_member():
+    owner = _user("owner")
+    outsider = _user("outsider")
+    fam = Family.objects.create(created_by=owner)
+    FamilyMembership.objects.create(family=fam, user=owner)
+
+    aid = create_asset(
+        user_id=owner.pk,
+        scope=SavingsScope.FAMILY,
+        name="Private family goal",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=fam.pk,
+    )
+
+    rows = list_assets(user_id=outsider.pk, scope=SavingsScope.FAMILY)
+    assert all(r.pk != aid for r in rows)
+
+
+@pytest.mark.django_db
+def test_list_assets_family_empty_without_membership():
+    user = _user()
+    assert list_assets(user_id=user.pk, scope=SavingsScope.FAMILY) == []
+
+
+@pytest.mark.django_db
+def test_list_assets_personal_excludes_family_rows():
+    user = _user()
+    fam = Family.objects.create(created_by=user)
+    FamilyMembership.objects.create(family=fam, user=user)
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Solo",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.FAMILY,
+        name="Joint",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=fam.pk,
+    )
+    personal = list_assets(user_id=user.pk, scope=SavingsScope.PERSONAL)
+    assert len(personal) == 1
+    assert personal[0].name == "Solo"
+
+
+@pytest.mark.django_db
+def test_family_membership_at_most_one_per_user():
+    user = _user()
+    fam_a = Family.objects.create(created_by=user)
+    fam_b = Family.objects.create(created_by=user)
+    FamilyMembership.objects.create(family=fam_a, user=user)
+    with pytest.raises(IntegrityError):
+        FamilyMembership.objects.create(family=fam_b, user=user)
