@@ -4,6 +4,7 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from savings.models import Asset, Family, FamilyMembership, SavingsScope
+from savings.schemas import CreateAssetRequest
 from savings.services import AssetCreateError, create_asset
 
 User = get_user_model()
@@ -16,15 +17,26 @@ def _user(username: str = "u1"):
 @pytest.mark.django_db
 def test_create_asset_personal():
     user = _user()
+    payload = CreateAssetRequest.model_validate(
+        {
+            "scope": SavingsScope.PERSONAL,
+            "name": "  Emergency  ",
+            "weight": Decimal("2"),
+            "current_amount": Decimal("10.50"),
+            "target_amount": Decimal("100"),
+            "currency": "clp",
+            "family_id": None,
+        }
+    )
     aid = create_asset(
         user_id=user.pk,
-        scope=SavingsScope.PERSONAL,
-        name="  Emergency  ",
-        weight=Decimal("2"),
-        current_amount=Decimal("10.50"),
-        target_amount=Decimal("100"),
-        currency="clp",
-        family_id=None,
+        scope=payload.scope,
+        name=payload.name,
+        weight=payload.weight,
+        current_amount=payload.current_amount,
+        target_amount=payload.target_amount,
+        currency=payload.currency,
+        family_id=payload.family_id,
     )
     row = Asset.objects.get(pk=aid)
     assert row.owner_id == user.pk

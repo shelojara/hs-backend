@@ -8,7 +8,7 @@ from savings.models import Asset, Family, FamilyMembership, SavingsScope
 
 
 class AssetCreateError(Exception):
-    """Invalid create-asset input or business rule violation."""
+    """Domain rule violation when persisting an asset (not request shape)."""
 
     def __init__(self, message: str, status_code: int = 400) -> None:
         super().__init__(message)
@@ -31,23 +31,13 @@ def create_asset(
     currency: str,
     family_id: int | None,
 ) -> int:
-    """Create asset for authenticated user. Returns new asset primary key."""
-    cleaned = name.strip()
-    if not cleaned:
-        raise AssetCreateError("Asset name is required.")
-    if len(cleaned) > 255:
-        raise AssetCreateError("Asset name is too long.")
+    """Create asset for authenticated user. Returns new asset primary key.
 
-    if scope not in (SavingsScope.PERSONAL, SavingsScope.FAMILY):
-        raise AssetCreateError("Invalid scope; use PERSONAL or FAMILY.")
-
+    Caller must pass values already validated (e.g. from ``CreateAssetRequest``).
+    """
     if scope == SavingsScope.PERSONAL:
-        if family_id is not None:
-            raise AssetCreateError("Personal assets must not set family_id.")
         fam = None
     else:
-        if family_id is None:
-            raise AssetCreateError("Family assets require family_id.")
         try:
             fam = Family.objects.get(pk=family_id)
         except Family.DoesNotExist as exc:
@@ -61,28 +51,17 @@ def create_asset(
                 status_code=403,
             )
 
-    if weight < 0:
-        raise AssetCreateError("Weight must be non-negative.")
-    if current_amount < 0:
-        raise AssetCreateError("current_amount must be non-negative.")
-    if target_amount is not None and target_amount < 0:
-        raise AssetCreateError("target_amount must be non-negative when set.")
-
-    cur = currency.strip().upper()
-    if len(cur) != 3:
-        raise AssetCreateError("currency must be a 3-letter ISO 4217 code.")
-
     try:
         with transaction.atomic():
             row = Asset.objects.create(
                 owner_id=user_id,
                 scope=scope,
                 family=fam,
-                name=cleaned,
+                name=name,
                 weight=weight,
                 current_amount=current_amount,
                 target_amount=target_amount,
-                currency=cur,
+                currency=currency,
             )
     except IntegrityError as exc:
         raise AssetCreateError(
