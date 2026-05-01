@@ -1334,6 +1334,30 @@ def test_create_distribution_rejects_completed_asset():
 
 
 @pytest.mark.django_db
+def test_simulate_distribution_rejects_completed_asset():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Done",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    set_asset_completion(user_id=user.pk, asset_id=aid, completed=True)
+    with pytest.raises(DistributionMutationError) as ei:
+        simulate_distribution(
+            user_id=user.pk,
+            scope=SavingsScope.PERSONAL,
+            budget_amount=Decimal("10"),
+            currency="CLP",
+            asset_ids=[aid],
+        )
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.django_db
 def test_rush_rejects_completed_beneficiary():
     user = _user()
     ben = create_asset(
@@ -1357,6 +1381,33 @@ def test_rush_rejects_completed_beneficiary():
     set_asset_completion(user_id=user.pk, asset_id=ben, completed=True)
     with pytest.raises(DistributionMutationError) as ei:
         rush_asset(user_id=user.pk, beneficiary_asset_id=ben)
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.django_db
+def test_simulate_rush_rejects_completed_beneficiary():
+    user = _user()
+    ben = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Goal",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Pot",
+        weight=Decimal("1"),
+        current_amount=Decimal("500"),
+        target_amount=None,
+        currency="CLP",
+    )
+    set_asset_completion(user_id=user.pk, asset_id=ben, completed=True)
+    with pytest.raises(DistributionMutationError) as ei:
+        simulate_rush_asset(user_id=user.pk, beneficiary_asset_id=ben)
     assert ei.value.status_code == 400
 
 
@@ -1395,6 +1446,44 @@ def test_rush_skips_completed_donor():
     assert Asset.objects.get(pk=done_donor).current_amount == Decimal("999")
     assert Asset.objects.get(pk=active_donor).current_amount == Decimal("450")
     assert Asset.objects.get(pk=rush_id).current_amount == Decimal("50")
+
+
+@pytest.mark.django_db
+def test_simulate_rush_skips_completed_donor():
+    user = _user()
+    rush_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Need",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=Decimal("50"),
+        currency="CLP",
+    )
+    done_donor = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="FinishedPot",
+        weight=Decimal("1"),
+        current_amount=Decimal("999"),
+        target_amount=None,
+        currency="CLP",
+    )
+    active_donor = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="ActivePot",
+        weight=Decimal("1"),
+        current_amount=Decimal("500"),
+        target_amount=None,
+        currency="CLP",
+    )
+    set_asset_completion(user_id=user.pk, asset_id=done_donor, completed=True)
+    preview = simulate_rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
+    by_asset = dict(preview)
+    assert by_asset[rush_id] == Decimal("50")
+    assert by_asset[active_donor] == Decimal("-50")
+    assert done_donor not in by_asset
 
 
 @pytest.mark.django_db

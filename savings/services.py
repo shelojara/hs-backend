@@ -525,7 +525,11 @@ def simulate_distribution(
     currency: str,
     asset_ids: list[int],
 ) -> list[tuple[int, Decimal]]:
-    """Compute splits without persisting. Same cap-and-redistribute rules as ``create_distribution``."""
+    """Compute splits without persisting.
+
+    Uses ``_resolve_assets_for_distribution`` — same rules as ``create_distribution``,
+    including rejection of COMPLETED assets (cannot receive split).
+    """
     _, resolved_assets = _resolve_assets_for_distribution(
         user_id=user_id,
         scope=scope,
@@ -724,7 +728,11 @@ def _compute_rush_transfers(
 def simulate_rush_asset(
     *, user_id: int, beneficiary_asset_id: int
 ) -> list[tuple[int, Decimal]]:
-    """Preview rush lines (beneficiary positive, donors negative); no DB writes."""
+    """Preview rush lines (beneficiary positive, donors negative); no DB writes.
+
+    Same plan as ``rush_asset`` via ``_compute_rush_transfers``: COMPLETED assets
+    cannot be beneficiaries; COMPLETED peers are not donors.
+    """
     beneficiary, _currency, total_to_beneficiary, transfers = _compute_rush_transfers(
         user_id=user_id,
         beneficiary_asset_id=beneficiary_asset_id,
