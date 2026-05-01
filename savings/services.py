@@ -1,10 +1,12 @@
 """Business logic for savings app."""
 
+import logging
 from decimal import ROUND_DOWN, Decimal
 
 from django.db import IntegrityError, transaction
 from django.db.models import Sum
 
+from savings import gemini_service
 from savings.models import (
     Asset,
     Distribution,
@@ -16,6 +18,8 @@ from savings.models import (
 
 _LIST_DISTRIBUTIONS_DEFAULT_LIMIT = 20
 _LIST_DISTRIBUTIONS_MAX_LIMIT = 100
+
+logger = logging.getLogger(__name__)
 
 
 class AssetMutationError(Exception):
@@ -70,6 +74,20 @@ def create_asset(
                 status_code=403,
             )
 
+    emoji = ""
+    try:
+        emoji = gemini_service.suggest_asset_emoji(name=name)
+    except RuntimeError:
+        logger.warning(
+            "Skipped Gemini asset emoji: GEMINI_API_KEY not set (asset name=%r).",
+            name[:80],
+        )
+    except Exception:
+        logger.exception(
+            "Gemini asset emoji failed for create name=%r",
+            name[:80],
+        )
+
     try:
         with transaction.atomic():
             row = Asset.objects.create(
@@ -81,6 +99,7 @@ def create_asset(
                 current_amount=current_amount,
                 target_amount=target_amount,
                 currency=currency,
+                emoji=emoji,
             )
     except IntegrityError as exc:
         raise AssetMutationError(
@@ -216,6 +235,7 @@ def update_asset(
     if row is None:
         raise AssetMutationError("Asset not found.", status_code=404)
 
+    old_name = row.name
     row.name = name
     row.weight = weight
     if target_amount is not None and target_amount < current_amount:
@@ -227,16 +247,34 @@ def update_asset(
     row.target_amount = target_amount
     row.currency = currency
 
+    if name != old_name:
+        try:
+            row.emoji = gemini_service.suggest_asset_emoji(name=name)
+        except RuntimeError:
+            logger.warning(
+                "Skipped Gemini asset emoji: GEMINI_API_KEY not set (update asset id=%s).",
+                asset_id,
+            )
+        except Exception:
+            logger.exception(
+                "Gemini asset emoji failed on update for asset id=%s",
+                asset_id,
+            )
+
+    update_fields = (
+        "name",
+        "weight",
+        "current_amount",
+        "target_amount",
+        "currency",
+        "updated_at",
+    )
+    if name != old_name:
+        update_fields = update_fields + ("emoji",)
+
     try:
         row.save(
-            update_fields=(
-                "name",
-                "weight",
-                "current_amount",
-                "target_amount",
-                "currency",
-                "updated_at",
-            )
+            update_fields=update_fields,
         )
     except IntegrityError as exc:
         raise AssetMutationError(
