@@ -146,6 +146,41 @@ def list_distributions(
     return list(qs[off : off + lim])
 
 
+def get_distribution_for_user(
+    *, user_id: int, distribution_id: int
+) -> Distribution | None:
+    """Return distribution if ``user_id`` may read it (same rules as ``list_distributions``)."""
+    personal = Distribution.objects.filter(
+        pk=distribution_id,
+        owner_id=user_id,
+        scope=SavingsScope.PERSONAL,
+    ).first()
+    if personal is not None:
+        return personal
+
+    membership = FamilyMembership.objects.filter(user_id=user_id).first()
+    if membership is None:
+        return None
+    return Distribution.objects.filter(
+        pk=distribution_id,
+        scope=SavingsScope.FAMILY,
+        family_id=membership.family_id,
+    ).first()
+
+
+def update_distribution_notes(
+    *, user_id: int, distribution_id: int, notes: str
+) -> None:
+    """Set ``notes`` on distribution; caller validates payload."""
+    dist = get_distribution_for_user(
+        user_id=user_id, distribution_id=distribution_id
+    )
+    if dist is None:
+        raise DistributionMutationError("Distribution not found.", status_code=404)
+    dist.notes = notes
+    dist.save(update_fields=("notes",))
+
+
 def get_asset_for_user(*, user_id: int, asset_id: int) -> Asset | None:
     """Return asset row if ``user_id`` may read it (same rules as ``list_assets``)."""
     personal = Asset.objects.filter(

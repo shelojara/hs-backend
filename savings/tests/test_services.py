@@ -24,6 +24,7 @@ from savings.services import (
     rush_asset,
     simulate_distribution,
     update_asset,
+    update_distribution_notes,
 )
 
 User = get_user_model()
@@ -730,6 +731,102 @@ def test_create_distribution_stores_notes():
         notes="payroll May",
     )
     assert Distribution.objects.get(pk=did).notes == "payroll May"
+
+
+@pytest.mark.django_db
+def test_update_distribution_notes_personal_ok():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="A",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    did = create_distribution(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        budget_amount=Decimal("10"),
+        currency="CLP",
+        family_id=None,
+        asset_ids=[aid],
+        notes="old",
+    )
+    update_distribution_notes(
+        user_id=user.pk,
+        distribution_id=did,
+        notes="new note",
+    )
+    assert Distribution.objects.get(pk=did).notes == "new note"
+
+
+@pytest.mark.django_db
+def test_update_distribution_notes_family_member_ok():
+    owner = _user("owner")
+    member = _user("member")
+    fam = Family.objects.create(created_by=owner)
+    FamilyMembership.objects.create(family=fam, user=owner)
+    FamilyMembership.objects.create(family=fam, user=member)
+
+    aid = create_asset(
+        user_id=owner.pk,
+        scope=SavingsScope.FAMILY,
+        name="Pot",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=fam.pk,
+    )
+    did = create_distribution(
+        user_id=member.pk,
+        scope=SavingsScope.FAMILY,
+        budget_amount=Decimal("25"),
+        currency="CLP",
+        family_id=fam.pk,
+        asset_ids=[aid],
+        notes="before",
+    )
+    update_distribution_notes(
+        user_id=owner.pk,
+        distribution_id=did,
+        notes="after",
+    )
+    assert Distribution.objects.get(pk=did).notes == "after"
+
+
+@pytest.mark.django_db
+def test_update_distribution_notes_not_found_wrong_user():
+    user_a = _user("a")
+    user_b = _user("b")
+    aid = create_asset(
+        user_id=user_a.pk,
+        scope=SavingsScope.PERSONAL,
+        name="A",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    did = create_distribution(
+        user_id=user_a.pk,
+        scope=SavingsScope.PERSONAL,
+        budget_amount=Decimal("10"),
+        currency="CLP",
+        family_id=None,
+        asset_ids=[aid],
+    )
+    with pytest.raises(DistributionMutationError) as ei:
+        update_distribution_notes(
+            user_id=user_b.pk,
+            distribution_id=did,
+            notes="nope",
+        )
+    assert ei.value.status_code == 404
 
 
 @pytest.mark.django_db

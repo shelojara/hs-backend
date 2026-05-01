@@ -22,6 +22,8 @@ from savings.schemas import (
     SimulatedDistributionLineSchema,
     UpdateAssetRequest,
     UpdateAssetResponse,
+    UpdateDistributionNotesRequest,
+    UpdateDistributionNotesResponse,
 )
 from savings.services import AssetMutationError, DistributionMutationError
 
@@ -95,6 +97,25 @@ def simulate_distribution(
             for aid, amt in pairs
         ]
     )
+
+
+@router.post(
+    "/v1.Savings.UpdateDistributionNotes",
+    response=UpdateDistributionNotesResponse,
+)
+def update_distribution_notes(
+    request, payload: UpdateDistributionNotesRequest
+) -> UpdateDistributionNotesResponse:
+    user = request.auth
+    try:
+        services.update_distribution_notes(
+            user_id=user.pk,
+            distribution_id=payload.distribution_id,
+            notes=payload.notes,
+        )
+    except DistributionMutationError as exc:
+        raise HttpError(exc.status_code, str(exc)) from exc
+    return UpdateDistributionNotesResponse()
 
 
 @router.post("/v1.Savings.ListAssets", response=ListAssetsResponse)
