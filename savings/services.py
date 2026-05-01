@@ -3,7 +3,7 @@
 from decimal import ROUND_DOWN, Decimal
 
 from django.db import IntegrityError, transaction
-from django.db.models.deletion import ProtectedError
+from django.db.models import Sum
 
 from savings.models import (
     Asset,
@@ -384,17 +384,25 @@ def _split_budget_by_weights(
 
 
 def delete_asset(*, user_id: int, asset_id: int) -> None:
-    """Delete asset if visible to user; ``PROTECT`` on distribution lines → 409."""
+    """Delete asset if visible to user; removes its distribution lines and fixes budgets."""
     row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
     if row is None:
         raise AssetMutationError("Asset not found.", status_code=404)
-    try:
+    with transaction.atomic():
+        touched_distribution_ids = list(
+            DistributionLine.objects.filter(asset_id=row.pk)
+            .values_list("distribution_id", flat=True)
+            .distinct()
+        )
+        DistributionLine.objects.filter(asset_id=row.pk).delete()
+        for did in touched_distribution_ids:
+            total = DistributionLine.objects.filter(distribution_id=did).aggregate(
+                s=Sum("allocated_amount")
+            )["s"]
+            if total is None:
+                total = Decimal("0")
+            Distribution.objects.filter(pk=did).update(budget_amount=total)
         row.delete()
-    except ProtectedError as exc:
-        raise AssetMutationError(
-            "Asset has distribution history and cannot be deleted.",
-            status_code=409,
-        ) from exc
 
 
 def _resolve_assets_for_distribution(

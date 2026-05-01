@@ -639,7 +639,7 @@ def test_delete_asset_ok():
 
 
 @pytest.mark.django_db
-def test_delete_asset_blocked_when_distribution_line_exists():
+def test_delete_asset_removes_distribution_lines_then_row():
     user = _user()
     aid = create_asset(
         user_id=user.pk,
@@ -663,9 +663,61 @@ def test_delete_asset_blocked_when_distribution_line_exists():
         asset_id=aid,
         allocated_amount=Decimal("10"),
     )
-    with pytest.raises(AssetMutationError) as ei:
-        delete_asset(user_id=user.pk, asset_id=aid)
-    assert ei.value.status_code == 409
+    delete_asset(user_id=user.pk, asset_id=aid)
+    assert not Asset.objects.filter(pk=aid).exists()
+    assert not DistributionLine.objects.filter(asset_id=aid).exists()
+    dist.refresh_from_db()
+    assert dist.budget_amount == Decimal("0")
+    assert Distribution.objects.filter(pk=dist.pk).exists()
+
+
+@pytest.mark.django_db
+def test_delete_asset_updates_distribution_budget_to_sum_of_remaining_lines():
+    user = _user()
+    remove_me = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Drop",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    keep_me = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Keep",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    dist = Distribution.objects.create(
+        owner_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        family=None,
+        budget_amount=Decimal("30"),
+        currency="CLP",
+    )
+    DistributionLine.objects.create(
+        distribution=dist,
+        asset_id=remove_me,
+        allocated_amount=Decimal("10"),
+    )
+    DistributionLine.objects.create(
+        distribution=dist,
+        asset_id=keep_me,
+        allocated_amount=Decimal("20"),
+    )
+    delete_asset(user_id=user.pk, asset_id=remove_me)
+    dist.refresh_from_db()
+    assert dist.budget_amount == Decimal("20")
+    assert (
+        DistributionLine.objects.filter(distribution_id=dist.pk).count() == 1
+    )
+    assert DistributionLine.objects.get(distribution_id=dist.pk).asset_id == keep_me
 
 
 @pytest.mark.django_db
