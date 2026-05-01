@@ -1,3 +1,4 @@
+from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
 from unittest.mock import call, patch
 
@@ -1570,10 +1571,16 @@ def test_set_asset_completion_toggles_state():
         currency="CLP",
     )
     assert Asset.objects.get(pk=aid).state == AssetState.ACTIVE
-    set_asset_completion(user_id=user.pk, asset_id=aid, completed=True)
-    assert Asset.objects.get(pk=aid).state == AssetState.COMPLETED
+    fixed = datetime(2025, 5, 1, 12, 0, 0, tzinfo=dt_timezone.utc)
+    with patch("savings.services.timezone.now", return_value=fixed):
+        set_asset_completion(user_id=user.pk, asset_id=aid, completed=True)
+    row_done = Asset.objects.get(pk=aid)
+    assert row_done.state == AssetState.COMPLETED
+    assert row_done.completed_at == fixed
     set_asset_completion(user_id=user.pk, asset_id=aid, completed=False)
-    assert Asset.objects.get(pk=aid).state == AssetState.ACTIVE
+    row_active = Asset.objects.get(pk=aid)
+    assert row_active.state == AssetState.ACTIVE
+    assert row_active.completed_at is None
 
 
 @pytest.mark.django_db

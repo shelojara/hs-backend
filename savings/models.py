@@ -145,6 +145,11 @@ class Asset(models.Model):
         db_index=True,
         help_text="Completed goals are excluded from new distributions and rush transfers.",
     )
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the goal was marked completed (null while active).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

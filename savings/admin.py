@@ -30,6 +30,7 @@ class AssetAdmin(admin.ModelAdmin):
         "name",
         "scope",
         "state",
+        "completed_at",
         "family",
         "owner",
         "weight",
