@@ -559,16 +559,12 @@ def _list_peer_assets_for_rush(*, user_id: int, beneficiary: Asset) -> list[Asse
     return [a for a in rows if a.pk != beneficiary.pk]
 
 
-def _donor_give_capacity(asset: Asset) -> Decimal:
-    """Max amount this asset can decrease without breaking rules.
+def _rush_donor_capacity(asset: Asset) -> Decimal:
+    """Max amount rush may pull from this donor: full ``current_amount``.
 
-    No ``target_amount``: may draw down to zero (bounded by ``current_amount``).
-    With ``target_amount``: only ``current`` above target counts as drawable surplus.
+    Rush ignores donor ``target_amount``; weights split the gap among drawable balances.
     """
-    if asset.target_amount is None:
-        return asset.current_amount
-    excess = asset.current_amount - asset.target_amount
-    return excess if excess > 0 else Decimal("0")
+    return asset.current_amount
 
 
 def _compute_rush_transfers(
@@ -595,12 +591,12 @@ def _compute_rush_transfers(
     peers = _list_peer_assets_for_rush(user_id=user_id, beneficiary=beneficiary)
     currency = beneficiary.currency
 
-    # Donors: positive drawable capacity; same currency only.
+    # Donors: positive balance; same currency only. Targets on donors not enforced.
     donors: list[Asset] = []
     for a in peers:
         if a.currency != currency:
             continue
-        if _donor_give_capacity(a) <= 0:
+        if _rush_donor_capacity(a) <= 0:
             continue
         donors.append(a)
 
@@ -611,7 +607,7 @@ def _compute_rush_transfers(
         )
 
     donor_remaining: dict[int, Decimal] = {
-        a.pk: _donor_give_capacity(a) for a in donors
+        a.pk: _rush_donor_capacity(a) for a in donors
     }
 
     transfers: dict[int, Decimal] = {}
@@ -658,7 +654,7 @@ def _compute_rush_transfers(
     total_to_beneficiary = gap - remaining_gap
     if total_to_beneficiary <= 0:
         raise DistributionMutationError(
-            "Insufficient available surplus in other assets to rush this target.",
+            "Insufficient balance in other assets to rush this target.",
             status_code=400,
         )
 
@@ -684,10 +680,10 @@ def simulate_rush_asset(
 
 
 def rush_asset(*, user_id: int, beneficiary_asset_id: int) -> tuple[int, Asset]:
-    """Move pooled drawable balance from other assets in same scope onto beneficiary.
+    """Move pooled balance from other assets in same scope onto beneficiary.
 
-    Repeatedly splits remaining gap to target using donor weights, caps each donor by
-    drawable capacity (no-target: down to zero; with target: only excess above target).
+    Repeatedly splits remaining gap to target using donor weights; each donor capped by
+    ``current_amount`` only (donor targets ignored).
     Persists one ``Distribution`` and signed ``DistributionLine`` rows;
     ``budget_amount`` equals total moved to beneficiary.
     """
