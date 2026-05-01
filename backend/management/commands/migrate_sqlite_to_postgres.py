@@ -3,6 +3,8 @@ Copy all Django data from SQLite file to PostgreSQL (POSTGRES_URL).
 
 Uses dumpdata/loaddata with natural keys so contenttypes and permissions
 (still created by migrate) line up with foreign keys from migrated schema.
+dumpdata runs with ``--all`` (base manager) so soft-deleted rows
+(e.g. groceries Product / Search) are included and FKs stay valid.
 
 Typical flow on target host with empty Postgres:
 
@@ -97,6 +99,7 @@ class Command(BaseCommand):
                 sys.executable,
                 str(manage_py),
                 "dumpdata",
+                "--all",
                 "--natural-foreign",
                 "--natural-primary",
                 "--indent",
