@@ -23,6 +23,7 @@ from savings.services import (
     list_distributions,
     rush_asset,
     simulate_distribution,
+    simulate_rush_asset,
     update_asset,
     update_distribution_notes,
 )
@@ -1415,3 +1416,48 @@ def test_rush_asset_skips_wrong_currency_donors():
     )
     rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
     assert Asset.objects.get(pk=same).current_amount == Decimal("70")
+
+
+@pytest.mark.django_db
+def test_simulate_rush_asset_matches_rush_lines_and_skips_writes():
+    user = _user()
+    rush_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="RushMe",
+        weight=Decimal("1"),
+        current_amount=Decimal("50"),
+        target_amount=Decimal("150"),
+        currency="CLP",
+        family_id=None,
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="D1",
+        weight=Decimal("3"),
+        current_amount=Decimal("200"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="D2",
+        weight=Decimal("1"),
+        current_amount=Decimal("200"),
+        target_amount=None,
+        currency="CLP",
+        family_id=None,
+    )
+    preview = simulate_rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
+    assert Distribution.objects.count() == 0
+    assert Asset.objects.get(pk=rush_id).current_amount == Decimal("50")
+
+    did, _ben = rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
+    by_asset = {
+        line.asset_id: line.allocated_amount
+        for line in DistributionLine.objects.filter(distribution_id=did)
+    }
+    assert dict(preview) == by_asset

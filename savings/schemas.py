@@ -307,3 +307,7 @@ class DeleteAssetResponse(Schema):
 
 class RushAssetRequest(Schema):
     asset_id: int
+
+
+class SimulateRushAssetRequest(RushAssetRequest):
+    """Same fields as RushAsset; server only returns planned lines (no writes)."""
