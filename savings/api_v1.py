@@ -172,7 +172,7 @@ def set_asset_completion(
         )
     except AssetMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
-    return SetAssetCompletionResponse(asset=row)
+    return SetAssetCompletionResponse(asset_id=row.pk)
 
 
 @router.post("/v1.Savings.DeleteAsset", response=DeleteAssetResponse)

@@ -285,7 +285,7 @@ class SetAssetCompletionRequest(Schema):
 
 
 class SetAssetCompletionResponse(Schema):
-    asset: AssetSchema
+    asset_id: int
 
 
 class DeleteAssetRequest(Schema):
