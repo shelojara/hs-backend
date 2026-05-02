@@ -21,8 +21,8 @@ from savings.schemas import (
     RushAssetRequest,
     SetAssetCompletionRequest,
     SetAssetCompletionResponse,
-    SetAssetStateRequest,
-    SetAssetStateResponse,
+    SetAssetPausedRequest,
+    SetAssetPausedResponse,
     SimulateDistributionRequest,
     SimulateRushAssetRequest,
     SimulateDistributionResponse,
@@ -202,20 +202,20 @@ def set_asset_completion(
     return SetAssetCompletionResponse(asset_id=row.pk)
 
 
-@router.post("/v1.Savings.SetAssetState", response=SetAssetStateResponse)
-def set_asset_state(
-    request, payload: SetAssetStateRequest
-) -> SetAssetStateResponse:
+@router.post("/v1.Savings.SetAssetPaused", response=SetAssetPausedResponse)
+def set_asset_paused(
+    request, payload: SetAssetPausedRequest
+) -> SetAssetPausedResponse:
     user = request.auth
     try:
-        row = services.set_asset_state(
+        row = services.set_asset_paused(
             user_id=user.pk,
             asset_id=payload.asset_id,
-            state=payload.state,
+            paused=payload.paused,
         )
     except AssetMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
-    return SetAssetStateResponse(asset_id=row.pk)
+    return SetAssetPausedResponse(asset_id=row.pk)
 
 
 @router.post("/v1.Savings.DeleteAsset", response=DeleteAssetResponse)
