@@ -43,3 +43,7 @@ class ConvertCbzRequest(Schema):
 
 class ConvertCbzResponse(Schema):
     pass
+
+
+class DownloadCbzRequest(Schema):
+    path: str

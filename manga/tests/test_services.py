@@ -8,6 +8,7 @@ from manga.services import (
     convert_cbz,
     invalidate_manga_directories_cache,
     list_manga_directories,
+    resolve_cbz_download,
 )
 
 
@@ -146,3 +147,45 @@ def test_convert_cbz_invalidates_directories_cache(tmp_path, monkeypatch):
     convert_cbz(manga_root=root_str, path="series/ch.cbz", kind="manga")
     assert manga_services._manga_directories_cache_ver(root_str) == 1
     assert cache.get(_dir_cache_key(root_str)) is None
+
+
+def test_resolve_cbz_download_ok(tmp_path):
+    root = tmp_path / "m"
+    cbz = root / "s" / "ch.cbz"
+    cbz.parent.mkdir(parents=True)
+    cbz.write_bytes(b"x")
+
+    got = resolve_cbz_download(manga_root=str(root), path="s/ch.cbz")
+    assert got.absolute_path == str(cbz)
+    assert got.filename == "ch.cbz"
+
+
+def test_resolve_cbz_download_rejects_non_cbz(tmp_path):
+    root = tmp_path / "m"
+    root.mkdir()
+    with pytest.raises(ValueError, match="Not a CBZ"):
+        resolve_cbz_download(manga_root=str(root), path="x.zip")
+
+
+def test_resolve_cbz_download_rejects_path_escape(tmp_path):
+    root = tmp_path / "m"
+    root.mkdir()
+    with pytest.raises(ValueError, match="outside manga root"):
+        resolve_cbz_download(manga_root=str(root), path="../outside.cbz")
+
+
+def test_resolve_cbz_download_missing_file(tmp_path):
+    root = tmp_path / "m"
+    root.mkdir()
+    with pytest.raises(ValueError, match="CBZ not found"):
+        resolve_cbz_download(manga_root=str(root), path="missing.cbz")
+
+
+@pytest.mark.django_db
+def test_convert_cbz_rejects_path_escape(tmp_path, monkeypatch):
+    root = tmp_path / "m"
+    root.mkdir()
+    monkeypatch.setattr(manga_services, "process_manga", lambda _paths: (_ for _ in ()).throw(AssertionError))
+
+    with pytest.raises(ValueError, match="outside manga root"):
+        convert_cbz(manga_root=str(root), path="../evil.cbz", kind="manga")
