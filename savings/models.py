@@ -18,6 +18,7 @@ class AssetState(models.TextChoices):
     """Lifecycle for savings goals."""
 
     ACTIVE = "ACTIVE", "Active"
+    PAUSED = "PAUSED", "Paused"
     COMPLETED = "COMPLETED", "Completed"
 
 
@@ -143,7 +144,8 @@ class Asset(models.Model):
         choices=AssetState.choices,
         default=AssetState.ACTIVE,
         db_index=True,
-        help_text="Completed goals are excluded from new distributions and rush transfers.",
+        help_text="Completed: excluded from distributions and rush. Paused: excluded from "
+        "distributions only; may still appear in rush.",
     )
     completed_at = models.DateTimeField(
         null=True,

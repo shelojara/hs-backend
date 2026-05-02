@@ -21,6 +21,8 @@ from savings.schemas import (
     RushAssetRequest,
     SetAssetCompletionRequest,
     SetAssetCompletionResponse,
+    SetAssetStateRequest,
+    SetAssetStateResponse,
     SimulateDistributionRequest,
     SimulateRushAssetRequest,
     SimulateDistributionResponse,
@@ -159,6 +161,7 @@ def get_statistics(request, payload: GetStatisticsRequest) -> GetStatisticsRespo
         positive_allocations_sum_this_month=stats.positive_allocations_sum_this_month,
         targets_hit_all_time=stats.targets_hit_all_time,
         active_assets_count=stats.active_assets_count,
+        paused_assets_count=stats.paused_assets_count,
         completed_assets_count=stats.completed_assets_count,
         assets_total_count=stats.assets_total_count,
         scope_overall_progress_percent=stats.scope_overall_progress_percent,
@@ -197,6 +200,22 @@ def set_asset_completion(
     except AssetMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
     return SetAssetCompletionResponse(asset_id=row.pk)
+
+
+@router.post("/v1.Savings.SetAssetState", response=SetAssetStateResponse)
+def set_asset_state(
+    request, payload: SetAssetStateRequest
+) -> SetAssetStateResponse:
+    user = request.auth
+    try:
+        row = services.set_asset_state(
+            user_id=user.pk,
+            asset_id=payload.asset_id,
+            state=payload.state,
+        )
+    except AssetMutationError as exc:
+        raise HttpError(exc.status_code, str(exc)) from exc
+    return SetAssetStateResponse(asset_id=row.pk)
 
 
 @router.post("/v1.Savings.DeleteAsset", response=DeleteAssetResponse)

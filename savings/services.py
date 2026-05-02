@@ -131,7 +131,7 @@ def _asset_completion_ratio(asset: Asset) -> Decimal:
 
 
 def _list_assets_sort_key(asset: Asset) -> tuple:
-    """Completed last; active descending by completion ratio, then name, id."""
+    """Completed last; active/paused descending by completion ratio, then name, id."""
     if asset.state == AssetState.COMPLETED:
         return (1, asset.name, asset.pk)
     ratio = _asset_completion_ratio(asset)
@@ -182,6 +182,7 @@ class SavingsStatistics:
     positive_allocations_sum_this_month: Decimal
     targets_hit_all_time: int
     active_assets_count: int
+    paused_assets_count: int
     completed_assets_count: int
     assets_total_count: int
     scope_overall_progress_percent: Decimal
@@ -266,6 +267,7 @@ def get_statistics(*, user_id: int, scope: str) -> SavingsStatistics:
     assets_qs = _assets_base_qs(user_id=user_id, scope=scope)
     completed = assets_qs.filter(state=AssetState.COMPLETED).count()
     active = assets_qs.filter(state=AssetState.ACTIVE).count()
+    paused = assets_qs.filter(state=AssetState.PAUSED).count()
     total = assets_qs.count()
 
     dec_out = DecimalField(max_digits=24, decimal_places=2)
@@ -315,6 +317,7 @@ def get_statistics(*, user_id: int, scope: str) -> SavingsStatistics:
         positive_allocations_sum_this_month=pos_sum,
         targets_hit_all_time=completed,
         active_assets_count=active,
+        paused_assets_count=paused,
         completed_assets_count=completed,
         assets_total_count=total,
         scope_overall_progress_percent=scope_pct,
@@ -464,21 +467,40 @@ def update_asset(
     return row
 
 
+def set_asset_state(
+    *, user_id: int, asset_id: int, state: str
+) -> Asset:
+    """Set lifecycle state: ACTIVE, PAUSED, or COMPLETED.
+
+    Paused goals skip normal distributions but may still participate in rush.
+    """
+    if state not in (
+        AssetState.ACTIVE,
+        AssetState.PAUSED,
+        AssetState.COMPLETED,
+    ):
+        raise AssetMutationError("Invalid asset state.", status_code=400)
+    row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
+    if row is None:
+        raise AssetMutationError("Asset not found.", status_code=404)
+    row.state = state
+    if state == AssetState.COMPLETED:
+        row.completed_at = timezone.now()
+    else:
+        row.completed_at = None
+    row.save(update_fields=("state", "completed_at", "updated_at"))
+    return row
+
+
 def set_asset_completion(
     *, user_id: int, asset_id: int, completed: bool
 ) -> Asset:
     """Mark asset ACTIVE or COMPLETED (completed excluded from distributions and rush)."""
-    row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
-    if row is None:
-        raise AssetMutationError("Asset not found.", status_code=404)
-    if completed:
-        row.state = AssetState.COMPLETED
-        row.completed_at = timezone.now()
-    else:
-        row.state = AssetState.ACTIVE
-        row.completed_at = None
-    row.save(update_fields=("state", "completed_at", "updated_at"))
-    return row
+    return set_asset_state(
+        user_id=user_id,
+        asset_id=asset_id,
+        state=AssetState.COMPLETED if completed else AssetState.ACTIVE,
+    )
 
 
 def _integer_split_by_weights(total_units: int, weights: list[Decimal]) -> list[int]:
@@ -749,6 +771,11 @@ def _resolve_assets_for_distribution(
                 "Completed assets cannot be included in distributions.",
                 status_code=400,
             )
+        if row.state == AssetState.PAUSED:
+            raise DistributionMutationError(
+                "Paused assets cannot be included in distributions.",
+                status_code=400,
+            )
         resolved_assets.append(row)
 
     return fam, resolved_assets
@@ -765,7 +792,7 @@ def simulate_distribution(
     """Compute splits without persisting.
 
     Uses ``_resolve_assets_for_distribution`` — same rules as ``create_distribution``,
-    including rejection of COMPLETED assets (cannot receive split).
+    including rejection of COMPLETED and PAUSED assets (cannot receive split).
     """
     _, resolved_assets = _resolve_assets_for_distribution(
         user_id=user_id,
@@ -990,7 +1017,8 @@ def simulate_rush_asset(
     """Preview rush lines (beneficiary positive, donors negative); no DB writes.
 
     Same plan as ``rush_asset`` via ``_compute_rush_transfers``: COMPLETED assets
-    cannot be beneficiaries; COMPLETED peers are not donors.
+    cannot be beneficiaries; COMPLETED peers are not donors. PAUSED assets may be
+    beneficiaries or donors.
     """
     beneficiary, _currency, total_to_beneficiary, transfers = _compute_rush_transfers(
         user_id=user_id,
