@@ -17,7 +17,7 @@ def normalize_manga_hidden_rel_path(raw: str) -> str:
 
 
 class MangaHiddenDirectory(models.Model):
-    """Directory path (relative to manga root) excluded from series directory tree."""
+    """Directory path (relative to manga root) excluded from listings and library sync."""
 
     rel_path = models.CharField(
         max_length=1024,
