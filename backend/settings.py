@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     "pagechecker",
     "groceries",
     "savings",
+    "manga",
 ]
 
 MIDDLEWARE = [
@@ -207,9 +208,7 @@ cors_allowed_origins = os.getenv("CORS_ALLOWED_ORIGINS", "").strip()
 
 if cors_allowed_origins:
     CORS_ALLOWED_ORIGINS = [
-        origin.strip()
-        for origin in cors_allowed_origins.split(",")
-        if origin.strip()
+        origin.strip() for origin in cors_allowed_origins.split(",") if origin.strip()
     ]
 elif DEBUG:
     # Development default: allow requests from any local/frontend origin.
@@ -242,3 +241,5 @@ Q_CLUSTER = {
     "max_attempts": 3,
     "label": "Task Queue",
 }
+
+MANGA_ROOT = os.getenv("MANGA_ROOT", "/manga")
