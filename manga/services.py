@@ -2,6 +2,8 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
+import hashlib
+
 from django.conf import settings
 from django.core.cache import cache
 
@@ -62,35 +64,85 @@ def list_manga_items(*, manga_root: str, path: str) -> list[MangaListItem]:
     return flagged
 
 
-_MANGA_DIRECTORIES_CACHE_KEY = "manga:directories:v1:{root}"
+_MANGA_DIRECTORIES_CACHE_KEY = "manga:directories:v3:{root}:{hidden_fp}:{ver}"
 
 
-def _manga_directories_cache_key(manga_root: str) -> str:
+def _manga_directories_ver_key(manga_root: str) -> str:
     root = os.path.abspath(os.path.expanduser(manga_root))
-    return _MANGA_DIRECTORIES_CACHE_KEY.format(root=root)
+    return f"manga:directories:ver:{root}"
+
+
+def _manga_directories_cache_ver(manga_root: str) -> int:
+    v = cache.get(_manga_directories_ver_key(manga_root))
+    return int(v) if v is not None else 0
+
+
+def _bump_manga_directories_cache_ver(manga_root: str) -> None:
+    k = _manga_directories_ver_key(manga_root)
+    n = _manga_directories_cache_ver(manga_root) + 1
+    # Long TTL: version only advances; stale entries harmless after tree keys expire.
+    cache.set(k, n, timeout=86400 * 365)
+
+
+def _manga_hidden_rel_paths() -> frozenset[str]:
+    from manga.models import MangaHiddenDirectory
+
+    rows = MangaHiddenDirectory.objects.order_by("rel_path").values_list("rel_path", flat=True)
+    return frozenset(rows)
+
+
+def _hidden_paths_fingerprint(hidden: frozenset[str]) -> str:
+    if not hidden:
+        return "none"
+    joined = "\n".join(sorted(hidden))
+    return hashlib.sha256(joined.encode()).hexdigest()[:16]
+
+
+def _manga_directories_cache_key(manga_root: str, *, hidden: frozenset[str]) -> str:
+    root = os.path.abspath(os.path.expanduser(manga_root))
+    fp = _hidden_paths_fingerprint(hidden)
+    ver = _manga_directories_cache_ver(manga_root)
+    return _MANGA_DIRECTORIES_CACHE_KEY.format(root=root, hidden_fp=fp, ver=ver)
+
+
+def _directory_hidden_by_config(child_rel: str, hidden: frozenset[str]) -> bool:
+    for h in hidden:
+        if child_rel == h or child_rel.startswith(h + "/"):
+            return True
+    return False
 
 
 def invalidate_manga_directories_cache(*, manga_root: str) -> None:
-    """Drop cached directory tree for manga_root (e.g. after filesystem changes)."""
-    cache.delete(_manga_directories_cache_key(manga_root))
+    """Invalidate cached directory tree for manga_root (filesystem or hidden-path config change)."""
+    _bump_manga_directories_cache_ver(manga_root)
 
 
 def list_manga_directories(*, manga_root: str) -> MangaDirectoryNode:
     """Nested directory tree under manga_root (directories only)."""
-    key = _manga_directories_cache_key(manga_root)
+    hidden = _manga_hidden_rel_paths()
+    key = _manga_directories_cache_key(manga_root, hidden=hidden)
     cached = cache.get(key)
     if cached is not None:
         return cached
     if not os.path.isdir(manga_root):
         node = MangaDirectoryNode(name="", path="", children=())
     else:
-        node = _manga_directory_subtree(os.path.abspath(manga_root), rel_posix="")
+        node = _manga_directory_subtree(
+            os.path.abspath(manga_root),
+            rel_posix="",
+            hidden=hidden,
+        )
     timeout = getattr(settings, "MANGA_DIRECTORIES_CACHE_TIMEOUT_SECONDS", 300)
     cache.set(key, node, timeout=timeout)
     return node
 
 
-def _manga_directory_subtree(full_path: str, *, rel_posix: str) -> MangaDirectoryNode:
+def _manga_directory_subtree(
+    full_path: str,
+    *,
+    rel_posix: str,
+    hidden: frozenset[str],
+) -> MangaDirectoryNode:
     name = "" if not rel_posix else rel_posix.split("/")[-1]
     entries = [e for e in os.listdir(full_path) if not e.startswith(".")]
     dirs_only = [e for e in entries if os.path.isdir(os.path.join(full_path, e))]
@@ -98,8 +150,12 @@ def _manga_directory_subtree(full_path: str, *, rel_posix: str) -> MangaDirector
     children: list[MangaDirectoryNode] = []
     for d in dirs_only:
         child_rel = f"{rel_posix}/{d}" if rel_posix else d
+        if _directory_hidden_by_config(child_rel, hidden):
+            continue
         child_full = os.path.join(full_path, d)
-        children.append(_manga_directory_subtree(child_full, rel_posix=child_rel))
+        children.append(
+            _manga_directory_subtree(child_full, rel_posix=child_rel, hidden=hidden),
+        )
     return MangaDirectoryNode(name=name, path=rel_posix, children=tuple(children))
 
 
