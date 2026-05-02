@@ -131,11 +131,12 @@ def _asset_completion_ratio(asset: Asset) -> Decimal:
 
 
 def _list_assets_sort_key(asset: Asset) -> tuple:
-    """Completed last; active/paused descending by completion ratio, then name, id."""
+    """Order: ACTIVE by completion ratio desc, then PAUSED same way, then COMPLETED by name."""
     if asset.state == AssetState.COMPLETED:
-        return (1, asset.name, asset.pk)
+        return (2, asset.name, asset.pk)
     ratio = _asset_completion_ratio(asset)
-    return (0, -ratio, asset.name, asset.pk)
+    tier = 0 if asset.state == AssetState.ACTIVE else 1
+    return (tier, -ratio, asset.name, asset.pk)
 
 
 def list_assets(

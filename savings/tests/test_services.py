@@ -363,6 +363,42 @@ def test_list_assets_orders_by_completion_then_completed_last():
 
 
 @pytest.mark.django_db
+def test_list_assets_orders_paused_below_active_before_completed():
+    user = _user()
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="ActiveLow",
+        weight=Decimal("1"),
+        current_amount=Decimal("10"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    paused_high = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="PausedHigh",
+        weight=Decimal("1"),
+        current_amount=Decimal("90"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    set_asset_paused(user_id=user.pk, asset_id=paused_high, paused=True)
+    done = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Done",
+        weight=Decimal("1"),
+        current_amount=Decimal("100"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    set_asset_completion(user_id=user.pk, asset_id=done, completed=True)
+    rows = list_assets(user_id=user.pk, scope=SavingsScope.PERSONAL)
+    assert [r.name for r in rows] == ["ActiveLow", "PausedHigh", "Done"]
+
+
+@pytest.mark.django_db
 def test_list_distributions_personal_with_lines():
     user = _user()
     aid = create_asset(
