@@ -5,6 +5,7 @@ from unittest.mock import call, patch
 import pytest
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
+from django.utils import timezone
 
 from savings.models import (
     Asset,
@@ -996,6 +997,117 @@ def test_delete_asset_updates_distribution_budget_to_sum_of_remaining_lines():
         DistributionLine.objects.filter(distribution_id=dist.pk).count() == 1
     )
     assert DistributionLine.objects.get(distribution_id=dist.pk).asset_id == keep_me
+
+
+@pytest.mark.django_db
+def test_delete_asset_redistributes_current_amount_to_active_peers_by_weight():
+    user = _user()
+    heavy = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Heavy",
+        weight=Decimal("3"),
+        current_amount=Decimal("100"),
+        target_amount=None,
+        currency="CLP",
+    )
+    light = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Light",
+        weight=Decimal("1"),
+        current_amount=Decimal("50"),
+        target_amount=None,
+        currency="CLP",
+    )
+    gone = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Gone",
+        weight=Decimal("1"),
+        current_amount=Decimal("40"),
+        target_amount=None,
+        currency="CLP",
+    )
+    delete_asset(user_id=user.pk, asset_id=gone)
+    assert not Asset.objects.filter(pk=gone).exists()
+    # 40 split 3:1 → 30 + 10; sums to 40
+    assert Asset.objects.get(pk=heavy).current_amount == Decimal("130")
+    assert Asset.objects.get(pk=light).current_amount == Decimal("60")
+
+
+@pytest.mark.django_db
+def test_delete_asset_redistributes_when_peer_weights_sum_zero_uses_equal_split():
+    user = _user()
+    a1 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="A1",
+        weight=Decimal("0"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    a2 = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="A2",
+        weight=Decimal("0"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    gone = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Gone",
+        weight=Decimal("1"),
+        current_amount=Decimal("5"),
+        target_amount=None,
+        currency="CLP",
+    )
+    delete_asset(user_id=user.pk, asset_id=gone)
+    assert Asset.objects.get(pk=a1).current_amount == Decimal("3")
+    assert Asset.objects.get(pk=a2).current_amount == Decimal("2")
+
+
+@pytest.mark.django_db
+def test_delete_asset_skips_completed_peers_for_balance_redistribution():
+    user = _user()
+    active = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Active",
+        weight=Decimal("1"),
+        current_amount=Decimal("10"),
+        target_amount=None,
+        currency="CLP",
+    )
+    done = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Done",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    Asset.objects.filter(pk=done).update(
+        state=AssetState.COMPLETED,
+        completed_at=timezone.now(),
+    )
+    gone = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Gone",
+        weight=Decimal("1"),
+        current_amount=Decimal("25"),
+        target_amount=None,
+        currency="CLP",
+    )
+    delete_asset(user_id=user.pk, asset_id=gone)
+    assert Asset.objects.get(pk=active).current_amount == Decimal("35")
+    assert Asset.objects.get(pk=done).current_amount == Decimal("0")
 
 
 @pytest.mark.django_db

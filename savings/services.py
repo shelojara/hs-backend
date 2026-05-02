@@ -608,18 +608,66 @@ def _split_budget_by_weights(
     return [sign * (Decimal(x) / Decimal("100")) for x in ints]
 
 
+def _list_peer_assets_for_balance_on_delete(
+    *, user_id: int, victim: Asset
+) -> list[int]:
+    """Other ACTIVE assets in same scope/currency as ``victim`` (excludes ``victim``)."""
+    if victim.scope == SavingsScope.PERSONAL:
+        qs = Asset.objects.filter(
+            owner_id=user_id,
+            scope=SavingsScope.PERSONAL,
+            currency=victim.currency,
+            state=AssetState.ACTIVE,
+        ).exclude(pk=victim.pk)
+    else:
+        assert victim.family_id is not None
+        qs = Asset.objects.filter(
+            scope=SavingsScope.FAMILY,
+            family_id=victim.family_id,
+            currency=victim.currency,
+            state=AssetState.ACTIVE,
+        ).exclude(pk=victim.pk)
+    return list(qs.values_list("pk", flat=True))
+
+
 def delete_asset(*, user_id: int, asset_id: int) -> None:
-    """Delete asset if visible to user; removes its distribution lines and fixes budgets."""
+    """Delete asset if visible to user.
+
+    Non-zero ``current_amount`` split to other ACTIVE assets in same scope/currency by
+    weight (Hamilton remainder via ``_split_budget_by_weights``). No peers → balance
+    discarded with row. Then removes distribution lines and realigns budgets.
+    """
     row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
     if row is None:
         raise AssetMutationError("Asset not found.", status_code=404)
+    peer_ids = _list_peer_assets_for_balance_on_delete(user_id=user_id, victim=row)
+    lock_ids = sorted({row.pk, *peer_ids})
     with transaction.atomic():
+        locked = {
+            a.pk: a
+            for a in Asset.objects.select_for_update().filter(pk__in=lock_ids).order_by(
+                "pk"
+            )
+        }
+        victim_locked = locked[row.pk]
+        amount = victim_locked.current_amount
+        if amount != 0 and peer_ids:
+            peer_locked = [locked[pid] for pid in sorted(peer_ids)]
+            weights = [a.weight for a in peer_locked]
+            if sum(weights, Decimal("0")) <= 0:
+                weights = [Decimal("1")] * len(peer_locked)
+            splits = _split_budget_by_weights(amount, weights, victim_locked.currency)
+            for peer, extra in zip(peer_locked, splits, strict=True):
+                if extra == 0:
+                    continue
+                peer.current_amount += extra
+                peer.save(update_fields=("current_amount", "updated_at"))
         touched_distribution_ids = list(
-            DistributionLine.objects.filter(asset_id=row.pk)
+            DistributionLine.objects.filter(asset_id=victim_locked.pk)
             .values_list("distribution_id", flat=True)
             .distinct()
         )
-        DistributionLine.objects.filter(asset_id=row.pk).delete()
+        DistributionLine.objects.filter(asset_id=victim_locked.pk).delete()
         for did in touched_distribution_ids:
             total = DistributionLine.objects.filter(distribution_id=did).aggregate(
                 s=Sum("allocated_amount")
@@ -627,7 +675,7 @@ def delete_asset(*, user_id: int, asset_id: int) -> None:
             if total is None:
                 total = Decimal("0")
             Distribution.objects.filter(pk=did).update(budget_amount=total)
-        row.delete()
+        victim_locked.delete()
 
 
 def _resolve_assets_for_distribution(
