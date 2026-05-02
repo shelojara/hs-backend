@@ -28,6 +28,37 @@ class MangaDirectoryNode:
     children: tuple["MangaDirectoryNode", ...]
 
 
+@dataclass(frozen=True)
+class CbzDownload:
+    """Resolved on-disk CBZ for streaming to client."""
+
+    absolute_path: str
+    filename: str
+
+
+def _path_under_manga_root(*, manga_root: str, rel_path: str) -> str:
+    root_abs = os.path.abspath(os.path.expanduser(manga_root))
+    joined = os.path.abspath(os.path.join(root_abs, rel_path))
+    try:
+        common = os.path.commonpath([root_abs, joined])
+    except ValueError:
+        raise ValueError("Invalid path") from None
+    if common != root_abs:
+        raise ValueError("Path outside manga root")
+    return joined
+
+
+def resolve_cbz_download(*, manga_root: str, path: str) -> CbzDownload:
+    """Resolve relative path to a readable .cbz under manga_root."""
+    filename = os.path.basename(path)
+    if not filename.lower().endswith(".cbz"):
+        raise ValueError("Not a CBZ file")
+    abs_path = _path_under_manga_root(manga_root=manga_root, rel_path=path)
+    if not os.path.isfile(abs_path):
+        raise ValueError("CBZ not found")
+    return CbzDownload(absolute_path=abs_path, filename=filename)
+
+
 def list_manga_items(*, manga_root: str, path: str) -> list[MangaListItem]:
     full_path = os.path.join(manga_root, path)
     children = os.listdir(full_path)
@@ -170,7 +201,7 @@ def convert_cbz(
     if ".cbz" not in filename:
         raise ValueError("Not a CBZ file")
 
-    abs_src = os.path.join(manga_root, path)
+    abs_src = _path_under_manga_root(manga_root=manga_root, rel_path=path)
     if kind == "manga":
         output_path = process_manga([abs_src])
         if output_path is None:
