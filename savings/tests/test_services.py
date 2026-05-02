@@ -112,6 +112,48 @@ def test_create_asset_personal():
 
 
 @pytest.mark.django_db
+def test_create_asset_paused_initial_state():
+    user = _user()
+    payload = CreateAssetRequest.model_validate(
+        {
+            "scope": SavingsScope.PERSONAL,
+            "name": "Later goal",
+            "state": "paused",
+        }
+    )
+    aid = create_asset(
+        user_id=user.pk,
+        scope=payload.scope,
+        name=payload.name,
+        weight=payload.weight,
+        current_amount=payload.current_amount,
+        target_amount=payload.target_amount,
+        currency=payload.currency,
+        state=payload.state,
+    )
+    row = Asset.objects.get(pk=aid)
+    assert row.state == AssetState.PAUSED
+    assert row.completed_at is None
+
+
+@pytest.mark.django_db
+def test_create_asset_rejects_completed_initial_state():
+    user = _user()
+    with pytest.raises(AssetMutationError) as excinfo:
+        create_asset(
+            user_id=user.pk,
+            scope=SavingsScope.PERSONAL,
+            name="Bad",
+            weight=Decimal("1"),
+            current_amount=Decimal("0"),
+            target_amount=None,
+            currency="CLP",
+            state=AssetState.COMPLETED,
+        )
+    assert excinfo.value.status_code == 400
+
+
+@pytest.mark.django_db
 def test_create_asset_null_target():
     user = _user()
     aid = create_asset(
