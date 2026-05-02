@@ -9,8 +9,8 @@ from manga.schemas import (
     ConvertCbzRequest,
     ConvertCbzResponse,
     DownloadCbzRequest,
-    ListMangaDirectoriesRequest,
-    ListMangaDirectoriesResponse,
+    ListMangaSeriesRequest,
+    ListMangaSeriesResponse,
     ListMangaItemsRequest,
     ListMangaItemsResponse,
     MangaDirectoryNodeSchema,
@@ -49,10 +49,10 @@ def list_manga_items(request, payload: ListMangaItemsRequest):
     )
 
 
-@router.post("/v1.Manga.ListMangaDirectories", response=ListMangaDirectoriesResponse)
-def list_manga_directories(request, payload: ListMangaDirectoriesRequest):
-    tree = services.list_manga_directories(manga_root=settings.MANGA_ROOT)
-    return ListMangaDirectoriesResponse(root=_directory_node_schema(tree))
+@router.post("/v1.Manga.ListMangaSeries", response=ListMangaSeriesResponse)
+def list_manga_series(request, payload: ListMangaSeriesRequest):
+    tree = services.list_manga_series(manga_root=settings.MANGA_ROOT)
+    return ListMangaSeriesResponse(root=_directory_node_schema(tree))
 
 
 @router.post("/v1.Manga.ConvertCbz", response=ConvertCbzResponse)

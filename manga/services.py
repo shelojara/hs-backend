@@ -196,7 +196,7 @@ def _strip_hidden_directory_nodes(
     )
 
 
-def list_manga_directories(*, manga_root: str) -> MangaDirectoryNode:
+def list_manga_series(*, manga_root: str) -> MangaDirectoryNode:
     """Nested directory tree under manga_root (directories only).
 
     Immediate children of manga root are not listed as nodes when they contain
