@@ -182,8 +182,12 @@ class ListAssetsRequest(Schema):
             msg = "state must be a string."
             raise TypeError(msg)
         s = v.strip().upper()
-        if s not in (AssetState.ACTIVE, AssetState.COMPLETED):
-            msg = "Invalid state; use ACTIVE or COMPLETED."
+        if s not in (
+            AssetState.ACTIVE,
+            AssetState.PAUSED,
+            AssetState.COMPLETED,
+        ):
+            msg = "Invalid state; use ACTIVE, PAUSED, or COMPLETED."
             raise ValueError(msg)
         return s
 
@@ -285,6 +289,7 @@ class GetStatisticsResponse(Schema):
     positive_allocations_sum_this_month: Decimal
     targets_hit_all_time: int
     active_assets_count: int
+    paused_assets_count: int
     completed_assets_count: int
     assets_total_count: int
     scope_overall_progress_percent: Decimal
@@ -330,12 +335,28 @@ class UpdateAssetResponse(Schema):
     asset: AssetSchema
 
 
-class SetAssetCompletionRequest(Schema):
+class SetAssetStatusRequest(Schema):
     asset_id: int
-    completed: bool
+    state: str
+
+    @field_validator("state", mode="before")
+    @classmethod
+    def validate_state(cls, v: object) -> str:
+        if not isinstance(v, str):
+            msg = "state must be a string."
+            raise TypeError(msg)
+        s = v.strip().upper()
+        if s not in (
+            AssetState.ACTIVE,
+            AssetState.PAUSED,
+            AssetState.COMPLETED,
+        ):
+            msg = "Invalid state; use ACTIVE, PAUSED, or COMPLETED."
+            raise ValueError(msg)
+        return s
 
 
-class SetAssetCompletionResponse(Schema):
+class SetAssetStatusResponse(Schema):
     asset_id: int
 
 

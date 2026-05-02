@@ -27,7 +27,7 @@ from savings.services import (
     list_assets,
     list_distributions,
     rush_asset,
-    set_asset_completion,
+    set_asset_status,
     simulate_distribution,
     simulate_rush_asset,
     update_asset,
@@ -303,7 +303,7 @@ def test_list_assets_orders_by_completion_then_completed_last():
         target_amount=Decimal("100"),
         currency="CLP",
     )
-    set_asset_completion(user_id=user.pk, asset_id=done, completed=True)
+    set_asset_status(user_id=user.pk, asset_id=done, state=AssetState.COMPLETED)
     # high ratio first among active
     create_asset(
         user_id=user.pk,
@@ -359,6 +359,42 @@ def test_list_assets_orders_by_completion_then_completed_last():
         state=AssetState.COMPLETED,
     )
     assert [r.name for r in done_only] == ["Z_done"]
+
+
+@pytest.mark.django_db
+def test_list_assets_orders_paused_below_active_before_completed():
+    user = _user()
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="ActiveLow",
+        weight=Decimal("1"),
+        current_amount=Decimal("10"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    paused_high = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="PausedHigh",
+        weight=Decimal("1"),
+        current_amount=Decimal("90"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    set_asset_status(user_id=user.pk, asset_id=paused_high, state=AssetState.PAUSED)
+    done = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Done",
+        weight=Decimal("1"),
+        current_amount=Decimal("100"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    set_asset_status(user_id=user.pk, asset_id=done, state=AssetState.COMPLETED)
+    rows = list_assets(user_id=user.pk, scope=SavingsScope.PERSONAL)
+    assert [r.name for r in rows] == ["ActiveLow", "PausedHigh", "Done"]
 
 
 @pytest.mark.django_db
@@ -590,7 +626,7 @@ def test_get_statistics_personal_month_and_lifetime():
                 target_amount=None,
                 currency="CLP",
             )
-            set_asset_completion(user_id=user.pk, asset_id=done_id, completed=True)
+            set_asset_status(user_id=user.pk, asset_id=done_id, state=AssetState.COMPLETED)
 
             stats = get_statistics(user_id=user.pk, scope=SavingsScope.PERSONAL)
             assert stats.distributions_count_this_month == 1
@@ -598,6 +634,7 @@ def test_get_statistics_personal_month_and_lifetime():
             assert stats.positive_allocations_sum_this_month == Decimal("40")
             assert stats.targets_hit_all_time == 1
             assert stats.active_assets_count == 2
+            assert stats.paused_assets_count == 0
             assert stats.completed_assets_count == 1
             assert stats.assets_total_count == 3
             assert stats.period_month_start == may_start
@@ -1638,7 +1675,7 @@ def test_create_distribution_rejects_completed_asset():
         target_amount=None,
         currency="CLP",
     )
-    set_asset_completion(user_id=user.pk, asset_id=aid, completed=True)
+    set_asset_status(user_id=user.pk, asset_id=aid, state=AssetState.COMPLETED)
     with pytest.raises(DistributionMutationError) as ei:
         create_distribution(
             user_id=user.pk,
@@ -1662,7 +1699,7 @@ def test_simulate_distribution_rejects_completed_asset():
         target_amount=None,
         currency="CLP",
     )
-    set_asset_completion(user_id=user.pk, asset_id=aid, completed=True)
+    set_asset_status(user_id=user.pk, asset_id=aid, state=AssetState.COMPLETED)
     with pytest.raises(DistributionMutationError) as ei:
         simulate_distribution(
             user_id=user.pk,
@@ -1695,7 +1732,7 @@ def test_rush_rejects_completed_beneficiary():
         target_amount=None,
         currency="CLP",
     )
-    set_asset_completion(user_id=user.pk, asset_id=ben, completed=True)
+    set_asset_status(user_id=user.pk, asset_id=ben, state=AssetState.COMPLETED)
     with pytest.raises(DistributionMutationError) as ei:
         rush_asset(user_id=user.pk, beneficiary_asset_id=ben)
     assert ei.value.status_code == 400
@@ -1722,7 +1759,7 @@ def test_simulate_rush_rejects_completed_beneficiary():
         target_amount=None,
         currency="CLP",
     )
-    set_asset_completion(user_id=user.pk, asset_id=ben, completed=True)
+    set_asset_status(user_id=user.pk, asset_id=ben, state=AssetState.COMPLETED)
     with pytest.raises(DistributionMutationError) as ei:
         simulate_rush_asset(user_id=user.pk, beneficiary_asset_id=ben)
     assert ei.value.status_code == 400
@@ -1758,7 +1795,7 @@ def test_rush_skips_completed_donor():
         target_amount=None,
         currency="CLP",
     )
-    set_asset_completion(user_id=user.pk, asset_id=done_donor, completed=True)
+    set_asset_status(user_id=user.pk, asset_id=done_donor, state=AssetState.COMPLETED)
     rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
     assert Asset.objects.get(pk=done_donor).current_amount == Decimal("999")
     assert Asset.objects.get(pk=active_donor).current_amount == Decimal("450")
@@ -1795,7 +1832,7 @@ def test_simulate_rush_skips_completed_donor():
         target_amount=None,
         currency="CLP",
     )
-    set_asset_completion(user_id=user.pk, asset_id=done_donor, completed=True)
+    set_asset_status(user_id=user.pk, asset_id=done_donor, state=AssetState.COMPLETED)
     preview = simulate_rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
     by_asset = dict(preview)
     assert by_asset[rush_id] == Decimal("50")
@@ -1804,7 +1841,186 @@ def test_simulate_rush_skips_completed_donor():
 
 
 @pytest.mark.django_db
-def test_set_asset_completion_toggles_state():
+def test_create_distribution_rejects_paused_asset():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Hold",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    set_asset_status(user_id=user.pk, asset_id=aid, state=AssetState.PAUSED)
+    with pytest.raises(DistributionMutationError) as ei:
+        create_distribution(
+            user_id=user.pk,
+            scope=SavingsScope.PERSONAL,
+            budget_amount=Decimal("10"),
+            currency="CLP",
+            asset_ids=[aid],
+        )
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.django_db
+def test_simulate_distribution_rejects_paused_asset():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Hold",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    set_asset_status(user_id=user.pk, asset_id=aid, state=AssetState.PAUSED)
+    with pytest.raises(DistributionMutationError) as ei:
+        simulate_distribution(
+            user_id=user.pk,
+            scope=SavingsScope.PERSONAL,
+            budget_amount=Decimal("10"),
+            currency="CLP",
+            asset_ids=[aid],
+        )
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.django_db
+def test_rush_allows_paused_beneficiary_and_paused_donor():
+    user = _user()
+    rush_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Need",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=Decimal("50"),
+        currency="CLP",
+    )
+    paused_donor = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="PausedPot",
+        weight=Decimal("1"),
+        current_amount=Decimal("500"),
+        target_amount=None,
+        currency="CLP",
+    )
+    set_asset_status(user_id=user.pk, asset_id=paused_donor, state=AssetState.PAUSED)
+    set_asset_status(user_id=user.pk, asset_id=rush_id, state=AssetState.PAUSED)
+    rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
+    assert Asset.objects.get(pk=rush_id).current_amount == Decimal("50")
+    assert Asset.objects.get(pk=paused_donor).current_amount == Decimal("450")
+
+
+@pytest.mark.django_db
+def test_simulate_rush_matches_paused_beneficiary():
+    user = _user()
+    rush_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Need",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=Decimal("50"),
+        currency="CLP",
+    )
+    donor = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Pot",
+        weight=Decimal("1"),
+        current_amount=Decimal("500"),
+        target_amount=None,
+        currency="CLP",
+    )
+    set_asset_status(user_id=user.pk, asset_id=rush_id, state=AssetState.PAUSED)
+    preview = simulate_rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
+    by_asset = dict(preview)
+    assert by_asset[rush_id] == Decimal("50")
+    assert by_asset[donor] == Decimal("-50")
+
+
+@pytest.mark.django_db
+def test_set_asset_status_rejects_pausing_completed():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="G",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    set_asset_status(user_id=user.pk, asset_id=aid, state=AssetState.COMPLETED)
+    with pytest.raises(AssetMutationError) as ei:
+        set_asset_status(user_id=user.pk, asset_id=aid, state=AssetState.PAUSED)
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.django_db
+def test_set_asset_status_round_trip_pause_complete_active():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="G",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    fixed = datetime(2025, 5, 1, 12, 0, 0, tzinfo=dt_timezone.utc)
+    set_asset_status(user_id=user.pk, asset_id=aid, state=AssetState.PAUSED)
+    assert Asset.objects.get(pk=aid).state == AssetState.PAUSED
+    with patch("savings.services.timezone.now", return_value=fixed):
+        set_asset_status(user_id=user.pk, asset_id=aid, state=AssetState.COMPLETED)
+    row_done = Asset.objects.get(pk=aid)
+    assert row_done.state == AssetState.COMPLETED
+    assert row_done.completed_at == fixed
+    set_asset_status(user_id=user.pk, asset_id=aid, state=AssetState.ACTIVE)
+    assert Asset.objects.get(pk=aid).state == AssetState.ACTIVE
+    assert Asset.objects.get(pk=aid).completed_at is None
+    set_asset_status(user_id=user.pk, asset_id=aid, state=AssetState.PAUSED)
+    assert Asset.objects.get(pk=aid).state == AssetState.PAUSED
+    set_asset_status(user_id=user.pk, asset_id=aid, state=AssetState.ACTIVE)
+    assert Asset.objects.get(pk=aid).state == AssetState.ACTIVE
+
+
+@pytest.mark.django_db
+def test_get_statistics_counts_paused():
+    user = _user()
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="A",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    pid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="P",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    set_asset_status(user_id=user.pk, asset_id=pid, state=AssetState.PAUSED)
+    stats = get_statistics(user_id=user.pk, scope=SavingsScope.PERSONAL)
+    assert stats.active_assets_count == 1
+    assert stats.paused_assets_count == 1
+    assert stats.assets_total_count == 2
+
+
+@pytest.mark.django_db
+def test_set_asset_status_toggles_completion():
     user = _user()
     aid = create_asset(
         user_id=user.pk,
@@ -1818,11 +2034,11 @@ def test_set_asset_completion_toggles_state():
     assert Asset.objects.get(pk=aid).state == AssetState.ACTIVE
     fixed = datetime(2025, 5, 1, 12, 0, 0, tzinfo=dt_timezone.utc)
     with patch("savings.services.timezone.now", return_value=fixed):
-        set_asset_completion(user_id=user.pk, asset_id=aid, completed=True)
+        set_asset_status(user_id=user.pk, asset_id=aid, state=AssetState.COMPLETED)
     row_done = Asset.objects.get(pk=aid)
     assert row_done.state == AssetState.COMPLETED
     assert row_done.completed_at == fixed
-    set_asset_completion(user_id=user.pk, asset_id=aid, completed=False)
+    set_asset_status(user_id=user.pk, asset_id=aid, state=AssetState.ACTIVE)
     row_active = Asset.objects.get(pk=aid)
     assert row_active.state == AssetState.ACTIVE
     assert row_active.completed_at is None
