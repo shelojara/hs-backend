@@ -20,24 +20,6 @@ class ListMangaFilesResponse(Schema):
     items: list[MangaFileSchema]
 
 
-class ListMangaSeriesRequest(Schema):
-    pass
-
-
-class MangaDirectoryNodeSchema(Schema):
-    name: str
-    path: str
-    parent_name: str
-    children: list["MangaDirectoryNodeSchema"]
-
-
-class ListMangaSeriesResponse(Schema):
-    root: MangaDirectoryNodeSchema
-
-
-MangaDirectoryNodeSchema.model_rebuild()
-
-
 class ConvertCbzRequest(Schema):
     path: str
     kind: Literal["manga", "manhwa"] = "manga"
