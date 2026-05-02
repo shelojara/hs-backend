@@ -335,21 +335,28 @@ class UpdateAssetResponse(Schema):
     asset: AssetSchema
 
 
-class SetAssetCompletionRequest(Schema):
+class SetAssetStatusRequest(Schema):
     asset_id: int
-    completed: bool
+    state: str
+
+    @field_validator("state", mode="before")
+    @classmethod
+    def validate_state(cls, v: object) -> str:
+        if not isinstance(v, str):
+            msg = "state must be a string."
+            raise TypeError(msg)
+        s = v.strip().upper()
+        if s not in (
+            AssetState.ACTIVE,
+            AssetState.PAUSED,
+            AssetState.COMPLETED,
+        ):
+            msg = "Invalid state; use ACTIVE, PAUSED, or COMPLETED."
+            raise ValueError(msg)
+        return s
 
 
-class SetAssetCompletionResponse(Schema):
-    asset_id: int
-
-
-class SetAssetPausedRequest(Schema):
-    asset_id: int
-    paused: bool
-
-
-class SetAssetPausedResponse(Schema):
+class SetAssetStatusResponse(Schema):
     asset_id: int
 
 

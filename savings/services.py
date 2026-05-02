@@ -468,44 +468,32 @@ def update_asset(
     return row
 
 
-def set_asset_paused(*, user_id: int, asset_id: int, paused: bool) -> Asset:
-    """Toggle PAUSED; paused goals skip distributions but may still participate in rush.
+def set_asset_status(*, user_id: int, asset_id: int, state: str) -> Asset:
+    """Set lifecycle to ACTIVE, PAUSED, or COMPLETED.
 
-    Cannot pause a completed asset. Unpause sets ACTIVE (only affects PAUSED rows).
+    COMPLETED sets ``completed_at``; other states clear it. Cannot set PAUSED when
+    current state is COMPLETED. Idempotent if already in ``state``.
     """
+    if state not in (
+        AssetState.ACTIVE,
+        AssetState.PAUSED,
+        AssetState.COMPLETED,
+    ):
+        raise AssetMutationError("Invalid asset state.", status_code=400)
     row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
     if row is None:
         raise AssetMutationError("Asset not found.", status_code=404)
-    if paused:
-        if row.state == AssetState.COMPLETED:
-            raise AssetMutationError(
-                "Completed assets cannot be paused.",
-                status_code=400,
-            )
-        if row.state == AssetState.PAUSED:
-            return row
-        row.state = AssetState.PAUSED
-        row.save(update_fields=("state", "updated_at"))
+    if state == row.state:
         return row
-    if row.state != AssetState.PAUSED:
-        return row
-    row.state = AssetState.ACTIVE
-    row.save(update_fields=("state", "updated_at"))
-    return row
-
-
-def set_asset_completion(
-    *, user_id: int, asset_id: int, completed: bool
-) -> Asset:
-    """Mark asset ACTIVE or COMPLETED (completed excluded from distributions and rush)."""
-    row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
-    if row is None:
-        raise AssetMutationError("Asset not found.", status_code=404)
-    if completed:
-        row.state = AssetState.COMPLETED
+    if state == AssetState.PAUSED and row.state == AssetState.COMPLETED:
+        raise AssetMutationError(
+            "Completed assets cannot be paused.",
+            status_code=400,
+        )
+    row.state = state
+    if state == AssetState.COMPLETED:
         row.completed_at = timezone.now()
     else:
-        row.state = AssetState.ACTIVE
         row.completed_at = None
     row.save(update_fields=("state", "completed_at", "updated_at"))
     return row

@@ -19,10 +19,8 @@ from savings.schemas import (
     PingSavingsRequest,
     PingSavingsResponse,
     RushAssetRequest,
-    SetAssetCompletionRequest,
-    SetAssetCompletionResponse,
-    SetAssetPausedRequest,
-    SetAssetPausedResponse,
+    SetAssetStatusRequest,
+    SetAssetStatusResponse,
     SimulateDistributionRequest,
     SimulateRushAssetRequest,
     SimulateDistributionResponse,
@@ -186,36 +184,20 @@ def update_asset(request, payload: UpdateAssetRequest) -> UpdateAssetResponse:
     return UpdateAssetResponse(asset=row)
 
 
-@router.post("/v1.Savings.SetAssetCompletion", response=SetAssetCompletionResponse)
-def set_asset_completion(
-    request, payload: SetAssetCompletionRequest
-) -> SetAssetCompletionResponse:
+@router.post("/v1.Savings.SetAssetStatus", response=SetAssetStatusResponse)
+def set_asset_status(
+    request, payload: SetAssetStatusRequest
+) -> SetAssetStatusResponse:
     user = request.auth
     try:
-        row = services.set_asset_completion(
+        row = services.set_asset_status(
             user_id=user.pk,
             asset_id=payload.asset_id,
-            completed=payload.completed,
+            state=payload.state,
         )
     except AssetMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
-    return SetAssetCompletionResponse(asset_id=row.pk)
-
-
-@router.post("/v1.Savings.SetAssetPaused", response=SetAssetPausedResponse)
-def set_asset_paused(
-    request, payload: SetAssetPausedRequest
-) -> SetAssetPausedResponse:
-    user = request.auth
-    try:
-        row = services.set_asset_paused(
-            user_id=user.pk,
-            asset_id=payload.asset_id,
-            paused=payload.paused,
-        )
-    except AssetMutationError as exc:
-        raise HttpError(exc.status_code, str(exc)) from exc
-    return SetAssetPausedResponse(asset_id=row.pk)
+    return SetAssetStatusResponse(asset_id=row.pk)
 
 
 @router.post("/v1.Savings.DeleteAsset", response=DeleteAssetResponse)
