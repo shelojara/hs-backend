@@ -18,6 +18,7 @@ def test_list_manga_directories_missing_root_returns_empty_node(tmp_path):
     node = list_manga_directories(manga_root=str(missing))
     assert node.name == ""
     assert node.path == ""
+    assert node.parent_name == ""
     assert node.children == ()
 
 
@@ -29,6 +30,7 @@ def test_list_manga_directories_leaf_top_level_stays_at_root(tmp_path):
     node = list_manga_directories(manga_root=str(root))
     assert [c.name for c in node.children] == ["only_series"]
     assert node.children[0].path == "only_series"
+    assert node.children[0].parent_name == ""
 
 
 @pytest.mark.django_db
@@ -36,21 +38,33 @@ def test_list_manga_directories_nested_only_dirs(tmp_path):
     root = tmp_path / "manga"
     (root / "a" / "b").mkdir(parents=True)
     (root / "c").mkdir()
+    (root / "p" / "q" / "r").mkdir(parents=True)
     (root / "a" / "file.cbz").write_text("x")
 
     node = list_manga_directories(manga_root=str(root))
     assert node.name == ""
     assert node.path == ""
+    assert node.parent_name == ""
 
     # Top-level "a" skipped when it has subdirs; "b" promoted to root.
     by_name = {c.name: c for c in node.children}
-    assert set(by_name) == {"b", "c"}
+    assert set(by_name) == {"b", "c", "q"}
 
     assert by_name["b"].path == "a/b"
+    assert by_name["b"].parent_name == "a"
     assert by_name["b"].children == ()
 
     assert by_name["c"].path == "c"
+    assert by_name["c"].parent_name == ""
     assert by_name["c"].children == ()
+
+    assert by_name["q"].path == "p/q"
+    assert by_name["q"].parent_name == "p"
+    assert len(by_name["q"].children) == 1
+    deep = by_name["q"].children[0]
+    assert deep.name == "r"
+    assert deep.path == "p/q/r"
+    assert deep.parent_name == "q"
 
 
 @pytest.mark.django_db
@@ -141,6 +155,7 @@ def test_list_manga_directories_hides_prefix_under_parent(tmp_path):
     node = list_manga_directories(manga_root=str(root))
     visible = next(c for c in node.children if c.name == "visible")
     assert visible.path == "series/visible"
+    assert visible.parent_name == "series"
     assert visible.children == ()
 
 

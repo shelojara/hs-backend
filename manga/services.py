@@ -1,4 +1,5 @@
 import os
+import posixpath
 from dataclasses import dataclass
 from typing import Literal
 
@@ -30,6 +31,7 @@ class MangaListItem:
 class MangaDirectoryNode:
     name: str
     path: str
+    parent_name: str
     children: tuple["MangaDirectoryNode", ...]
 
 
@@ -100,7 +102,7 @@ def list_manga_items(*, manga_root: str, path: str) -> list[MangaListItem]:
     return flagged
 
 
-_MANGA_DIRECTORIES_CACHE_KEY = "manga:directories:v5:{root}:{hidden_fp}:{ver}"
+_MANGA_DIRECTORIES_CACHE_KEY = "manga:directories:v6:{root}:{hidden_fp}:{ver}"
 
 
 def _manga_directories_ver_key(manga_root: str) -> str:
@@ -170,7 +172,7 @@ def _promote_top_level_directory_children(
         else:
             promoted.append(top)
     promoted.sort(key=lambda n: (alphanum_key(n.name), n.path))
-    return MangaDirectoryNode(name="", path="", children=tuple(promoted))
+    return MangaDirectoryNode(name="", path="", parent_name="", children=tuple(promoted))
 
 
 def _strip_hidden_directory_nodes(
@@ -186,7 +188,12 @@ def _strip_hidden_directory_nodes(
         stripped = _strip_hidden_directory_nodes(c, hidden=hidden)
         if stripped is not None:
             kept.append(stripped)
-    return MangaDirectoryNode(name=node.name, path=node.path, children=tuple(kept))
+    return MangaDirectoryNode(
+        name=node.name,
+        path=node.path,
+        parent_name=node.parent_name,
+        children=tuple(kept),
+    )
 
 
 def list_manga_directories(*, manga_root: str) -> MangaDirectoryNode:
@@ -202,7 +209,7 @@ def list_manga_directories(*, manga_root: str) -> MangaDirectoryNode:
     if cached is not None:
         return cached
     if not os.path.isdir(manga_root):
-        node = MangaDirectoryNode(name="", path="", children=())
+        node = MangaDirectoryNode(name="", path="", parent_name="", children=())
     else:
         raw = _manga_directory_subtree(
             os.path.abspath(manga_root),
@@ -211,7 +218,11 @@ def list_manga_directories(*, manga_root: str) -> MangaDirectoryNode:
         )
         promoted = _promote_top_level_directory_children(raw, hidden=hidden)
         stripped = _strip_hidden_directory_nodes(promoted, hidden=hidden)
-        node = stripped if stripped is not None else MangaDirectoryNode(name="", path="", children=())
+        node = (
+            stripped
+            if stripped is not None
+            else MangaDirectoryNode(name="", path="", parent_name="", children=())
+        )
     timeout = getattr(settings, "MANGA_DIRECTORIES_CACHE_TIMEOUT_SECONDS", 300)
     cache.set(key, node, timeout=timeout)
     return node
@@ -224,6 +235,9 @@ def _manga_directory_subtree(
     hidden: frozenset[str],
 ) -> MangaDirectoryNode:
     name = "" if not rel_posix else rel_posix.split("/")[-1]
+    parent_name = (
+        posixpath.basename(posixpath.dirname(rel_posix)) if rel_posix else ""
+    )
     entries = [e for e in os.listdir(full_path) if not e.startswith(".")]
     dirs_only = [e for e in entries if os.path.isdir(os.path.join(full_path, e))]
     sort_nicely(dirs_only)
@@ -236,7 +250,12 @@ def _manga_directory_subtree(
         children.append(
             _manga_directory_subtree(child_full, rel_posix=child_rel, hidden=hidden),
         )
-    return MangaDirectoryNode(name=name, path=rel_posix, children=tuple(children))
+    return MangaDirectoryNode(
+        name=name,
+        path=rel_posix,
+        parent_name=parent_name,
+        children=tuple(children),
+    )
 
 
 def convert_cbz(
