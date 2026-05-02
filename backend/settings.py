@@ -243,3 +243,15 @@ Q_CLUSTER = {
 }
 
 MANGA_ROOT = os.getenv("MANGA_ROOT", "/manga")
+
+# LocMem cache (default backend). Used by manga directory tree; see manga.services.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "backend-default",
+    }
+}
+
+MANGA_DIRECTORIES_CACHE_TIMEOUT_SECONDS = int(
+    os.getenv("MANGA_DIRECTORIES_CACHE_TIMEOUT_SECONDS", "300")
+)
