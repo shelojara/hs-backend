@@ -20,7 +20,7 @@ class ListMangaFilesResponse(Schema):
     items: list[MangaFileSchema]
 
 
-class ListMangaSeriesRequest(Schema):
+class ListSeriesRequest(Schema):
     pass
 
 
@@ -31,7 +31,7 @@ class MangaDirectoryNodeSchema(Schema):
     children: list["MangaDirectoryNodeSchema"]
 
 
-class ListMangaSeriesResponse(Schema):
+class ListSeriesResponse(Schema):
     root: MangaDirectoryNodeSchema
 
 
