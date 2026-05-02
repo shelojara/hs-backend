@@ -10,6 +10,8 @@ from savings.schemas import (
     CreateDistributionResponse,
     DeleteAssetRequest,
     DeleteAssetResponse,
+    GetStatisticsRequest,
+    GetStatisticsResponse,
     ListAssetsRequest,
     ListAssetsResponse,
     ListDistributionsRequest,
@@ -143,6 +145,23 @@ def list_distributions(
         offset=payload.offset,
     )
     return ListDistributionsResponse(distributions=rows)
+
+
+@router.post("/v1.Savings.GetStatistics", response=GetStatisticsResponse)
+def get_statistics(request, payload: GetStatisticsRequest) -> GetStatisticsResponse:
+    user = request.auth
+    stats = services.get_statistics(user_id=user.pk, scope=payload.scope)
+    return GetStatisticsResponse(
+        period_month_start=stats.period_month_start,
+        period_month_end_exclusive=stats.period_month_end_exclusive,
+        distributions_count_this_month=stats.distributions_count_this_month,
+        distributions_net_budget_this_month=stats.distributions_net_budget_this_month,
+        positive_allocations_sum_this_month=stats.positive_allocations_sum_this_month,
+        targets_hit_all_time=stats.targets_hit_all_time,
+        active_assets_count=stats.active_assets_count,
+        completed_assets_count=stats.completed_assets_count,
+        assets_total_count=stats.assets_total_count,
+    )
 
 
 @router.post("/v1.Savings.UpdateAsset", response=UpdateAssetResponse)

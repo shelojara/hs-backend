@@ -1,4 +1,4 @@
-from datetime import datetime, timezone as dt_timezone
+from datetime import date, datetime, timezone as dt_timezone
 from decimal import Decimal
 from unittest.mock import call, patch
 
@@ -22,6 +22,7 @@ from savings.services import (
     create_asset,
     create_distribution,
     delete_asset,
+    get_statistics,
     list_assets,
     list_distributions,
     rush_asset,
@@ -536,6 +537,113 @@ def test_list_distributions_clamps_limit_in_service():
         user_id=user.pk, scope=SavingsScope.PERSONAL, limit=500, offset=0
     )
     assert len(rows) == 3
+
+
+@pytest.mark.django_db
+def test_get_statistics_personal_month_and_lifetime():
+    user = _user()
+    pot = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Pot",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    other = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Other",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    may_start = datetime(2025, 5, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
+    june_start = datetime(2025, 6, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
+    with patch("savings.services.timezone.localdate", return_value=date(2025, 5, 15)):
+        with patch("savings.services.timezone.get_current_timezone", return_value=dt_timezone.utc):
+            with patch("savings.services.timezone.now", return_value=may_start):
+                create_distribution(
+                    user_id=user.pk,
+                    scope=SavingsScope.PERSONAL,
+                    budget_amount=Decimal("40"),
+                    currency="CLP",
+                    asset_ids=[pot, other],
+                )
+            with patch("savings.services.timezone.now", return_value=june_start):
+                create_distribution(
+                    user_id=user.pk,
+                    scope=SavingsScope.PERSONAL,
+                    budget_amount=Decimal("99"),
+                    currency="CLP",
+                    asset_ids=[pot, other],
+                )
+            done_id = create_asset(
+                user_id=user.pk,
+                scope=SavingsScope.PERSONAL,
+                name="Done",
+                weight=Decimal("1"),
+                current_amount=Decimal("0"),
+                target_amount=None,
+                currency="CLP",
+            )
+            set_asset_completion(user_id=user.pk, asset_id=done_id, completed=True)
+
+            stats = get_statistics(user_id=user.pk, scope=SavingsScope.PERSONAL)
+            assert stats.distributions_count_this_month == 1
+            assert stats.distributions_net_budget_this_month == Decimal("40")
+            assert stats.positive_allocations_sum_this_month == Decimal("40")
+            assert stats.targets_hit_all_time == 1
+            assert stats.active_assets_count == 2
+            assert stats.completed_assets_count == 1
+            assert stats.assets_total_count == 3
+            assert stats.period_month_start == may_start
+            assert stats.period_month_end_exclusive == june_start
+
+
+@pytest.mark.django_db
+def test_get_statistics_rush_counts_distribution_positive_lines_only():
+    user = _user()
+    rush_id = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="R",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="D",
+        weight=Decimal("1"),
+        current_amount=Decimal("100"),
+        target_amount=None,
+        currency="CLP",
+    )
+    may_mid = datetime(2025, 5, 15, 12, 0, 0, tzinfo=dt_timezone.utc)
+    june_start = datetime(2025, 6, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
+    with patch("savings.services.timezone.localdate", return_value=date(2025, 5, 20)):
+        with patch("savings.services.timezone.get_current_timezone", return_value=dt_timezone.utc):
+            with patch("savings.services.timezone.now", return_value=may_mid):
+                rush_asset(user_id=user.pk, beneficiary_asset_id=rush_id)
+            stats = get_statistics(user_id=user.pk, scope=SavingsScope.PERSONAL)
+            assert stats.distributions_count_this_month == 1
+            assert stats.distributions_net_budget_this_month == Decimal("0")
+            assert stats.positive_allocations_sum_this_month == Decimal("100")
+            assert stats.period_month_end_exclusive == june_start
+
+
+@pytest.mark.django_db
+def test_get_statistics_family_empty_without_membership():
+    user = _user()
+    stats = get_statistics(user_id=user.pk, scope=SavingsScope.FAMILY)
+    assert stats.distributions_count_this_month == 0
+    assert stats.targets_hit_all_time == 0
+    assert stats.assets_total_count == 0
 
 
 @pytest.mark.django_db
