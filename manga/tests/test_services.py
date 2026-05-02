@@ -121,6 +121,17 @@ def test_list_manga_directories_hides_configured_paths(tmp_path):
 
 
 @pytest.mark.django_db
+def test_list_manga_directories_hidden_top_level_not_promoted(tmp_path):
+    root = tmp_path / "m"
+    (root / "keep").mkdir(parents=True)
+    (root / "series" / "visible").mkdir(parents=True)
+    MangaHiddenDirectory.objects.create(rel_path="series")
+
+    node = list_manga_directories(manga_root=str(root))
+    assert [c.name for c in node.children] == ["keep"]
+
+
+@pytest.mark.django_db
 def test_list_manga_directories_hides_prefix_under_parent(tmp_path):
     root = tmp_path / "m"
     (root / "series" / "visible").mkdir(parents=True)

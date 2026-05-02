@@ -100,7 +100,7 @@ def list_manga_items(*, manga_root: str, path: str) -> list[MangaListItem]:
     return flagged
 
 
-_MANGA_DIRECTORIES_CACHE_KEY = "manga:directories:v4:{root}:{hidden_fp}:{ver}"
+_MANGA_DIRECTORIES_CACHE_KEY = "manga:directories:v5:{root}:{hidden_fp}:{ver}"
 
 
 def _manga_directories_ver_key(manga_root: str) -> str:
@@ -153,12 +153,18 @@ def invalidate_manga_directories_cache(*, manga_root: str) -> None:
     _bump_manga_directories_cache_ver(manga_root)
 
 
-def _promote_top_level_directory_children(node: MangaDirectoryNode) -> MangaDirectoryNode:
+def _promote_top_level_directory_children(
+    node: MangaDirectoryNode,
+    *,
+    hidden: frozenset[str],
+) -> MangaDirectoryNode:
     """Under manga root, list grandchildren when top-level folder has subdirs; else keep folder."""
     if node.path != "" or node.name != "":
         return node
     promoted: list[MangaDirectoryNode] = []
     for top in node.children:
+        if top.path and _directory_hidden_by_config(top.path, hidden):
+            continue
         if top.children:
             promoted.extend(top.children)
         else:
@@ -167,11 +173,28 @@ def _promote_top_level_directory_children(node: MangaDirectoryNode) -> MangaDire
     return MangaDirectoryNode(name="", path="", children=tuple(promoted))
 
 
+def _strip_hidden_directory_nodes(
+    node: MangaDirectoryNode,
+    *,
+    hidden: frozenset[str],
+) -> MangaDirectoryNode | None:
+    """Drop directory subtrees whose path matches hidden config (needed after promotion)."""
+    if node.path and _directory_hidden_by_config(node.path, hidden):
+        return None
+    kept: list[MangaDirectoryNode] = []
+    for c in node.children:
+        stripped = _strip_hidden_directory_nodes(c, hidden=hidden)
+        if stripped is not None:
+            kept.append(stripped)
+    return MangaDirectoryNode(name=node.name, path=node.path, children=tuple(kept))
+
+
 def list_manga_directories(*, manga_root: str) -> MangaDirectoryNode:
     """Nested directory tree under manga_root (directories only).
 
     Immediate children of manga root are not listed as nodes when they contain
     subdirectories; those subdirectories appear at the root of the tree instead.
+    Hidden-path rules apply to promoted paths as well as top-level directories.
     """
     hidden = _manga_hidden_rel_paths()
     key = _manga_directories_cache_key(manga_root, hidden=hidden)
@@ -186,7 +209,9 @@ def list_manga_directories(*, manga_root: str) -> MangaDirectoryNode:
             rel_posix="",
             hidden=hidden,
         )
-        node = _promote_top_level_directory_children(raw)
+        promoted = _promote_top_level_directory_children(raw, hidden=hidden)
+        stripped = _strip_hidden_directory_nodes(promoted, hidden=hidden)
+        node = stripped if stripped is not None else MangaDirectoryNode(name="", path="", children=())
     timeout = getattr(settings, "MANGA_DIRECTORIES_CACHE_TIMEOUT_SECONDS", 300)
     cache.set(key, node, timeout=timeout)
     return node
