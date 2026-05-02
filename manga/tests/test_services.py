@@ -11,6 +11,7 @@ from manga.services import (
     list_manga_series,
     resolve_cbz_download,
     sync_manga_library_cache,
+    sync_series_items_for_cbz_path,
 )
 
 
@@ -162,6 +163,41 @@ def test_list_manga_series_hides_prefix_under_parent(tmp_path):
 
 
 @pytest.mark.django_db
+def test_sync_series_items_for_cbz_path_updates_dropbox_flags(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "MySeries").mkdir()
+    (root / "MySeries" / "ch.cbz").write_bytes(b"x")
+
+    abs_root = str(root.resolve())
+
+    class FakeDf:
+        name = "ch.cbz"
+
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _seg: [FakeDf()])
+
+    sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
+
+    s = Series.objects.get(library_root=abs_root, series_rel_path="MySeries")
+    row = SeriesItem.objects.get(series=s, rel_path="MySeries/ch.cbz")
+    assert row.in_dropbox is True
+
+
+@pytest.mark.django_db
+def test_sync_series_items_for_cbz_path_skips_hidden_series(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "secret").mkdir()
+    (root / "secret" / "x.cbz").write_bytes(b"x")
+    MangaHiddenDirectory.objects.create(rel_path="secret")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _seg: [])
+
+    sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="secret/x.cbz")
+
+    assert Series.objects.count() == 0
+
+
+@pytest.mark.django_db
 @override_settings(MANGA_DIRECTORIES_CACHE_TIMEOUT_SECONDS=3600)
 def test_convert_cbz_invalidates_directories_cache(tmp_path, monkeypatch):
     root = tmp_path / "m"
@@ -172,7 +208,7 @@ def test_convert_cbz_invalidates_directories_cache(tmp_path, monkeypatch):
 
     monkeypatch.setattr(manga_services, "process_manga", lambda _paths: str(cbz))
     monkeypatch.setattr(manga_services, "upload_to_dropbox", lambda *_a, **_k: None)
-    monkeypatch.setattr(manga_services, "sync_manga_library_cache", lambda **_k: (0, 0))
+    monkeypatch.setattr(manga_services, "sync_series_items_for_cbz_path", lambda **_k: None)
 
     root_str = str(root)
     list_manga_series(manga_root=root_str)

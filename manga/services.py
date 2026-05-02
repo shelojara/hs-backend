@@ -395,6 +395,42 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
     return series_count, chapter_total
 
 
+def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> None:
+    """Upsert ``Series`` / ``SeriesItem`` for directory containing ``cbz_rel_path`` (Dropbox flags via listing).
+
+    Used after ``convert_cbz`` upload so DB tracks Dropbox state without full-library ``sync_manga_library_cache``.
+    """
+    rel = normalize_manga_hidden_rel_path(cbz_rel_path)
+    series_rel = posixpath.dirname(rel)
+    hidden = _manga_hidden_rel_paths()
+    if series_rel and _directory_hidden_by_config(series_rel, hidden):
+        return
+
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    items = list_manga_cbz_files(manga_root=manga_root, path=series_rel)
+    display_name = Path(series_rel).name if series_rel else Path(root_norm).name
+
+    with transaction.atomic():
+        series, _created = Series.objects.update_or_create(
+            library_root=root_norm,
+            series_rel_path=series_rel,
+            defaults={"name": display_name},
+        )
+        want_rel = {i.path.replace("\\", "/") for i in items}
+        series.items.exclude(rel_path__in=want_rel).delete()
+        for item in items:
+            rp = item.path.replace("\\", "/")
+            SeriesItem.objects.update_or_create(
+                series=series,
+                rel_path=rp,
+                defaults={
+                    "filename": item.name,
+                    "size_bytes": item.size,
+                    "in_dropbox": item.in_dropbox,
+                },
+            )
+
+
 def convert_cbz(
     *,
     manga_root: str,
@@ -425,4 +461,4 @@ def convert_cbz(
 
     upload_to_dropbox(output_path, path, download_name)
     invalidate_manga_directories_cache(manga_root=manga_root)
-    sync_manga_library_cache(manga_root=manga_root)
+    sync_series_items_for_cbz_path(manga_root=manga_root, cbz_rel_path=path)
