@@ -21,7 +21,7 @@ class PingSavingsResponse(Schema):
 class CreateAssetRequest(Schema):
     scope: str
     name: str
-    weight: Decimal = Field(default=Decimal("1"), ge=0)
+    weight: Decimal = Field(default=Decimal("1"), gt=0)
     current_amount: Decimal = Field(default=Decimal("0"), ge=0)
     target_amount: Optional[Decimal] = Field(default=None, ge=0)
     currency: str = "CLP"
@@ -293,7 +293,7 @@ class GetStatisticsResponse(Schema):
 class UpdateAssetRequest(Schema):
     asset_id: int
     name: str
-    weight: Decimal = Field(default=Decimal("1"), ge=0)
+    weight: Decimal = Field(default=Decimal("1"), gt=0)
     current_amount: Decimal = Field(default=Decimal("0"), ge=0)
     target_amount: Optional[Decimal] = Field(default=None, ge=0)
     currency: str = "CLP"

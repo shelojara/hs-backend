@@ -5,6 +5,7 @@ from unittest.mock import call, patch
 import pytest
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
+from django.utils import timezone
 
 from savings.models import (
     Asset,
@@ -999,6 +1000,99 @@ def test_delete_asset_updates_distribution_budget_to_sum_of_remaining_lines():
 
 
 @pytest.mark.django_db
+def test_delete_asset_redistributes_current_amount_to_active_peers_by_weight():
+    user = _user()
+    heavy = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Heavy",
+        weight=Decimal("3"),
+        current_amount=Decimal("100"),
+        target_amount=None,
+        currency="CLP",
+    )
+    light = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Light",
+        weight=Decimal("1"),
+        current_amount=Decimal("50"),
+        target_amount=None,
+        currency="CLP",
+    )
+    gone = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Gone",
+        weight=Decimal("1"),
+        current_amount=Decimal("40"),
+        target_amount=None,
+        currency="CLP",
+    )
+    delete_asset(user_id=user.pk, asset_id=gone)
+    assert not Asset.objects.filter(pk=gone).exists()
+    # 40 split 3:1 → 30 + 10; sums to 40
+    assert Asset.objects.get(pk=heavy).current_amount == Decimal("130")
+    assert Asset.objects.get(pk=light).current_amount == Decimal("60")
+    redist = Distribution.objects.get(notes__startswith="Redistributed balance from deleted")
+    assert redist.budget_amount == Decimal("40")
+    assert redist.currency == "CLP"
+    assert redist.scope == SavingsScope.PERSONAL
+    lines = list(
+        DistributionLine.objects.filter(distribution_id=redist.pk).order_by("asset_id")
+    )
+    assert len(lines) == 2
+    assert {ln.asset_id: ln.allocated_amount for ln in lines} == {
+        heavy: Decimal("30"),
+        light: Decimal("10"),
+    }
+    assert "Redistributed balance from deleted asset" in redist.notes
+    assert "Gone" in redist.notes and str(gone) in redist.notes
+
+
+@pytest.mark.django_db
+def test_delete_asset_skips_completed_peers_for_balance_redistribution():
+    user = _user()
+    active = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Active",
+        weight=Decimal("1"),
+        current_amount=Decimal("10"),
+        target_amount=None,
+        currency="CLP",
+    )
+    done = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Done",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    Asset.objects.filter(pk=done).update(
+        state=AssetState.COMPLETED,
+        completed_at=timezone.now(),
+    )
+    gone = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Gone",
+        weight=Decimal("1"),
+        current_amount=Decimal("25"),
+        target_amount=None,
+        currency="CLP",
+    )
+    delete_asset(user_id=user.pk, asset_id=gone)
+    assert Asset.objects.get(pk=active).current_amount == Decimal("35")
+    assert Asset.objects.get(pk=done).current_amount == Decimal("0")
+    redist = Distribution.objects.get(notes__startswith="Redistributed balance from deleted")
+    assert redist.budget_amount == Decimal("25")
+    assert DistributionLine.objects.filter(distribution_id=redist.pk).count() == 1
+
+
+@pytest.mark.django_db
 def test_create_distribution_personal_updates_balances():
     user = _user()
     a1 = create_asset(
@@ -1150,33 +1244,43 @@ def test_update_distribution_notes_not_found_wrong_user():
 
 
 @pytest.mark.django_db
-def test_create_distribution_rejects_zero_total_weight():
+def test_create_asset_rejects_nonpositive_weight():
     user = _user()
-    a1 = create_asset(
-        user_id=user.pk,
-        scope=SavingsScope.PERSONAL,
-        name="A",
-        weight=Decimal("0"),
-        current_amount=Decimal("0"),
-        target_amount=None,
-        currency="CLP",
-    )
-    a2 = create_asset(
-        user_id=user.pk,
-        scope=SavingsScope.PERSONAL,
-        name="B",
-        weight=Decimal("0"),
-        current_amount=Decimal("0"),
-        target_amount=None,
-        currency="CLP",
-    )
-    with pytest.raises(DistributionMutationError) as ei:
-        create_distribution(
+    with pytest.raises(AssetMutationError) as ei:
+        create_asset(
             user_id=user.pk,
             scope=SavingsScope.PERSONAL,
-            budget_amount=Decimal("100"),
+            name="Bad",
+            weight=Decimal("0"),
+            current_amount=Decimal("0"),
+            target_amount=None,
             currency="CLP",
-            asset_ids=[a1, a2],
+        )
+    assert ei.value.status_code == 400
+    assert "weight" in str(ei.value).lower()
+
+
+@pytest.mark.django_db
+def test_update_asset_rejects_nonpositive_weight():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Ok",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    with pytest.raises(AssetMutationError) as ei:
+        update_asset(
+            user_id=user.pk,
+            asset_id=aid,
+            name="Ok",
+            weight=Decimal("0"),
+            current_amount=Decimal("0"),
+            target_amount=None,
+            currency="CLP",
         )
     assert ei.value.status_code == 400
 
