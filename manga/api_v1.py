@@ -7,6 +7,8 @@ from manga import services
 from manga.schemas import (
     ConvertCbzRequest,
     ConvertCbzResponse,
+    ListMangaDirectoriesRequest,
+    ListMangaDirectoriesResponse,
     ListMangaItemsRequest,
     ListMangaItemsResponse,
     MangaItemSchema,
@@ -33,6 +35,12 @@ def list_manga_items(request, payload: ListMangaItemsRequest):
             for i in raw
         ],
     )
+
+
+@router.post("/v1.Manga.ListMangaDirectories", response=ListMangaDirectoriesResponse)
+def list_manga_directories(request, payload: ListMangaDirectoriesRequest):
+    dirs = services.list_manga_directories(manga_root=settings.MANGA_ROOT)
+    return ListMangaDirectoriesResponse(directories=dirs)
 
 
 @router.post("/v1.Manga.ConvertCbz", response=ConvertCbzResponse)

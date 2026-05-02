@@ -52,6 +52,21 @@ def list_manga_items(*, manga_root: str, path: str) -> list[MangaListItem]:
     return flagged
 
 
+def list_manga_directories(*, manga_root: str) -> list[str]:
+    """Paths relative to manga_root for every directory under it (recursive)."""
+    if not os.path.isdir(manga_root):
+        return []
+    root = os.path.abspath(manga_root)
+    out: list[str] = []
+    for dirpath, dirnames, _filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        rel = os.path.relpath(dirpath, root)
+        rel_path = "" if rel == "." else rel.replace(os.sep, "/")
+        out.append(rel_path)
+    sort_nicely(out)
+    return out
+
+
 def convert_cbz(
     *,
     manga_root: str,
