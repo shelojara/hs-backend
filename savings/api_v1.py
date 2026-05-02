@@ -53,6 +53,7 @@ def create_asset(request, payload: CreateAssetRequest) -> CreateAssetResponse:
             current_amount=payload.current_amount,
             target_amount=payload.target_amount,
             currency=payload.currency,
+            state=payload.state,
         )
     except AssetMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc

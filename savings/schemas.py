@@ -25,6 +25,7 @@ class CreateAssetRequest(Schema):
     current_amount: Decimal = Field(default=Decimal("0"), ge=0)
     target_amount: Optional[Decimal] = Field(default=None, ge=0)
     currency: str = "CLP"
+    state: str = AssetState.ACTIVE
 
     @field_validator("name", mode="before")
     @classmethod
@@ -64,6 +65,20 @@ class CreateAssetRequest(Schema):
             msg = "currency must be a 3-letter ISO 4217 code."
             raise ValueError(msg)
         return cur
+
+    @field_validator("state", mode="before")
+    @classmethod
+    def validate_create_state(cls, v: object) -> str:
+        if v is None:
+            return AssetState.ACTIVE
+        if not isinstance(v, str):
+            msg = "state must be a string."
+            raise TypeError(msg)
+        s = v.strip().upper()
+        if s not in (AssetState.ACTIVE, AssetState.PAUSED):
+            msg = "Invalid initial state; use ACTIVE or PAUSED."
+            raise ValueError(msg)
+        return s
 
 
 class CreateAssetResponse(Schema):

@@ -62,11 +62,18 @@ def create_asset(
     current_amount: Decimal,
     target_amount: Decimal | None,
     currency: str,
+    state: str = AssetState.ACTIVE,
 ) -> int:
     """Create asset for authenticated user. Returns new asset primary key.
 
     Caller must pass values already validated (e.g. from ``CreateAssetRequest``).
+    ``state`` may be ACTIVE or PAUSED only (not COMPLETED).
     """
+    if state not in (AssetState.ACTIVE, AssetState.PAUSED):
+        raise AssetMutationError(
+            "Invalid initial state; use ACTIVE or PAUSED.",
+            status_code=400,
+        )
     if weight <= 0:
         raise AssetMutationError(
             "Asset weight must be greater than zero.",
@@ -108,6 +115,7 @@ def create_asset(
                 target_amount=target_amount,
                 currency=currency,
                 emoji=emoji,
+                state=state,
             )
     except IntegrityError as exc:
         raise AssetMutationError(
