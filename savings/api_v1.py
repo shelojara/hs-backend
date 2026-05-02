@@ -161,6 +161,7 @@ def get_statistics(request, payload: GetStatisticsRequest) -> GetStatisticsRespo
         active_assets_count=stats.active_assets_count,
         completed_assets_count=stats.completed_assets_count,
         assets_total_count=stats.assets_total_count,
+        scope_overall_progress_percent=stats.scope_overall_progress_percent,
     )
 
 

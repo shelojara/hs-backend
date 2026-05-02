@@ -601,6 +601,7 @@ def test_get_statistics_personal_month_and_lifetime():
             assert stats.assets_total_count == 3
             assert stats.period_month_start == may_start
             assert stats.period_month_end_exclusive == june_start
+            assert stats.scope_overall_progress_percent == Decimal("70")
 
 
 @pytest.mark.django_db
@@ -635,6 +636,7 @@ def test_get_statistics_rush_counts_distribution_positive_lines_only():
             assert stats.distributions_net_budget_this_month == Decimal("0")
             assert stats.positive_allocations_sum_this_month == Decimal("100")
             assert stats.period_month_end_exclusive == june_start
+            assert stats.scope_overall_progress_percent == Decimal("100")
 
 
 @pytest.mark.django_db
@@ -644,6 +646,37 @@ def test_get_statistics_family_empty_without_membership():
     assert stats.distributions_count_this_month == 0
     assert stats.targets_hit_all_time == 0
     assert stats.assets_total_count == 0
+    assert stats.scope_overall_progress_percent == Decimal("0")
+
+
+@pytest.mark.django_db
+def test_get_statistics_scope_overall_progress_multiple_targets():
+    user = _user()
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="A",
+        weight=Decimal("1"),
+        current_amount=Decimal("50"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="B",
+        weight=Decimal("1"),
+        current_amount=Decimal("25"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    with patch("savings.services.timezone.localdate", return_value=date(2025, 5, 15)):
+        with patch(
+            "savings.services.timezone.get_current_timezone",
+            return_value=dt_timezone.utc,
+        ):
+            stats = get_statistics(user_id=user.pk, scope=SavingsScope.PERSONAL)
+    assert stats.scope_overall_progress_percent == Decimal("37.5")
 
 
 @pytest.mark.django_db

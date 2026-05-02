@@ -3,10 +3,11 @@
 import logging
 from dataclasses import dataclass
 from datetime import date, datetime, time as dt_time
-from decimal import ROUND_DOWN, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Sum
+from django.db.models import Case, Count, DecimalField, F, Q, Sum, Value, When
+from django.db.models.functions import Least
 from django.utils import timezone
 
 from savings import gemini_service
@@ -179,6 +180,7 @@ class SavingsStatistics:
     active_assets_count: int
     completed_assets_count: int
     assets_total_count: int
+    scope_overall_progress_percent: Decimal
 
 
 def _distributions_base_qs(*, user_id: int, scope: str):
@@ -262,6 +264,45 @@ def get_statistics(*, user_id: int, scope: str) -> SavingsStatistics:
     active = assets_qs.filter(state=AssetState.ACTIVE).count()
     total = assets_qs.count()
 
+    dec_out = DecimalField(max_digits=24, decimal_places=2)
+    progress_row = assets_qs.aggregate(
+        total_target=Sum(
+            Case(
+                When(
+                    Q(target_amount__isnull=True) | Q(target_amount__lte=0),
+                    then=Value(Decimal("0")),
+                ),
+                default=F("target_amount"),
+                output_field=dec_out,
+            )
+        ),
+        total_saved=Sum(
+            Case(
+                When(
+                    state=AssetState.COMPLETED,
+                    target_amount__isnull=False,
+                    target_amount__gt=0,
+                    then=F("target_amount"),
+                ),
+                When(
+                    Q(target_amount__isnull=False) & Q(target_amount__gt=0),
+                    then=Least(F("current_amount"), F("target_amount")),
+                ),
+                default=Value(Decimal("0")),
+                output_field=dec_out,
+            )
+        ),
+    )
+    sum_target = progress_row["total_target"] or Decimal("0")
+    sum_saved = progress_row["total_saved"] or Decimal("0")
+    if sum_target > 0:
+        scope_pct = (sum_saved / sum_target * Decimal("100")).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+    else:
+        scope_pct = Decimal("0")
+
     return SavingsStatistics(
         period_month_start=start,
         period_month_end_exclusive=end_excl,
@@ -272,6 +313,7 @@ def get_statistics(*, user_id: int, scope: str) -> SavingsStatistics:
         active_assets_count=active,
         completed_assets_count=completed,
         assets_total_count=total,
+        scope_overall_progress_percent=scope_pct,
     )
 
 

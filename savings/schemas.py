@@ -272,7 +272,11 @@ class GetStatisticsRequest(Schema):
 
 
 class GetStatisticsResponse(Schema):
-    """Scope-level rollups: current local calendar month plus lifetime completion totals."""
+    """Scope-level rollups: current local calendar month plus lifetime completion totals.
+
+    ``scope_overall_progress_percent``: sum(min(current, target)) / sum(target) over assets
+    with positive targets; completed assets use full target; 0% when denominator is zero.
+    """
 
     period_month_start: datetime
     period_month_end_exclusive: datetime
@@ -283,6 +287,7 @@ class GetStatisticsResponse(Schema):
     active_assets_count: int
     completed_assets_count: int
     assets_total_count: int
+    scope_overall_progress_percent: Decimal
 
 
 class UpdateAssetRequest(Schema):
