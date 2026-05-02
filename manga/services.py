@@ -16,6 +16,13 @@ class MangaListItem:
     in_dropbox: bool
 
 
+@dataclass(frozen=True)
+class MangaDirectoryNode:
+    name: str
+    path: str
+    children: tuple["MangaDirectoryNode", ...]
+
+
 def list_manga_items(*, manga_root: str, path: str) -> list[MangaListItem]:
     full_path = os.path.join(manga_root, path)
     children = os.listdir(full_path)
@@ -50,6 +57,26 @@ def list_manga_items(*, manga_root: str, path: str) -> list[MangaListItem]:
             )
         )
     return flagged
+
+
+def list_manga_directories(*, manga_root: str) -> MangaDirectoryNode:
+    """Nested directory tree under manga_root (directories only)."""
+    if not os.path.isdir(manga_root):
+        return MangaDirectoryNode(name="", path="", children=())
+    return _manga_directory_subtree(os.path.abspath(manga_root), rel_posix="")
+
+
+def _manga_directory_subtree(full_path: str, *, rel_posix: str) -> MangaDirectoryNode:
+    name = "" if not rel_posix else rel_posix.split("/")[-1]
+    entries = [e for e in os.listdir(full_path) if not e.startswith(".")]
+    dirs_only = [e for e in entries if os.path.isdir(os.path.join(full_path, e))]
+    sort_nicely(dirs_only)
+    children: list[MangaDirectoryNode] = []
+    for d in dirs_only:
+        child_rel = f"{rel_posix}/{d}" if rel_posix else d
+        child_full = os.path.join(full_path, d)
+        children.append(_manga_directory_subtree(child_full, rel_posix=child_rel))
+    return MangaDirectoryNode(name=name, path=rel_posix, children=tuple(children))
 
 
 def convert_cbz(
