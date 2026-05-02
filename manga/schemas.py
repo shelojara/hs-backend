@@ -23,8 +23,17 @@ class ListMangaDirectoriesRequest(Schema):
     pass
 
 
+class MangaDirectoryNodeSchema(Schema):
+    name: str
+    path: str
+    children: list["MangaDirectoryNodeSchema"]
+
+
 class ListMangaDirectoriesResponse(Schema):
-    directories: list[str]
+    root: MangaDirectoryNodeSchema
+
+
+MangaDirectoryNodeSchema.model_rebuild()
 
 
 class ConvertCbzRequest(Schema):
