@@ -7,15 +7,15 @@ from manga.models import MangaHiddenDirectory
 from manga.services import (
     convert_cbz,
     invalidate_manga_directories_cache,
-    list_manga_directories,
+    list_manga_series,
     resolve_cbz_download,
 )
 
 
 @pytest.mark.django_db
-def test_list_manga_directories_missing_root_returns_empty_node(tmp_path):
+def test_list_manga_series_missing_root_returns_empty_node(tmp_path):
     missing = tmp_path / "nope"
-    node = list_manga_directories(manga_root=str(missing))
+    node = list_manga_series(manga_root=str(missing))
     assert node.name == ""
     assert node.path == ""
     assert node.parent_name == ""
@@ -23,25 +23,25 @@ def test_list_manga_directories_missing_root_returns_empty_node(tmp_path):
 
 
 @pytest.mark.django_db
-def test_list_manga_directories_leaf_top_level_stays_at_root(tmp_path):
+def test_list_manga_series_leaf_top_level_stays_at_root(tmp_path):
     root = tmp_path / "m"
     (root / "only_series").mkdir(parents=True)
 
-    node = list_manga_directories(manga_root=str(root))
+    node = list_manga_series(manga_root=str(root))
     assert [c.name for c in node.children] == ["only_series"]
     assert node.children[0].path == "only_series"
     assert node.children[0].parent_name == ""
 
 
 @pytest.mark.django_db
-def test_list_manga_directories_nested_only_dirs(tmp_path):
+def test_list_manga_series_nested_only_dirs(tmp_path):
     root = tmp_path / "manga"
     (root / "a" / "b").mkdir(parents=True)
     (root / "c").mkdir()
     (root / "p" / "q" / "r").mkdir(parents=True)
     (root / "a" / "file.cbz").write_text("x")
 
-    node = list_manga_directories(manga_root=str(root))
+    node = list_manga_series(manga_root=str(root))
     assert node.name == ""
     assert node.path == ""
     assert node.parent_name == ""
@@ -68,19 +68,19 @@ def test_list_manga_directories_nested_only_dirs(tmp_path):
 
 
 @pytest.mark.django_db
-def test_list_manga_directories_skips_dot_dirs(tmp_path):
+def test_list_manga_series_skips_dot_dirs(tmp_path):
     root = tmp_path / "m"
     (root / "visible").mkdir(parents=True)
     (root / ".hidden").mkdir()
 
-    node = list_manga_directories(manga_root=str(root))
+    node = list_manga_series(manga_root=str(root))
     names = [c.name for c in node.children]
     assert ".hidden" not in names
     assert "visible" in names
 
 
 @pytest.mark.django_db
-def test_list_manga_directories_uses_cache_between_calls(tmp_path, monkeypatch):
+def test_list_manga_series_uses_cache_between_calls(tmp_path, monkeypatch):
     root = tmp_path / "m"
     root.mkdir()
     calls = {"n": 0}
@@ -91,8 +91,8 @@ def test_list_manga_directories_uses_cache_between_calls(tmp_path, monkeypatch):
         return real(full_path, rel_posix=rel_posix, hidden=hidden)
 
     monkeypatch.setattr(manga_services, "_manga_directory_subtree", wrapped)
-    list_manga_directories(manga_root=str(root))
-    list_manga_directories(manga_root=str(root))
+    list_manga_series(manga_root=str(root))
+    list_manga_series(manga_root=str(root))
     assert calls["n"] == 1
 
 
@@ -104,7 +104,7 @@ def _dir_cache_key(manga_root: str) -> str:
 
 
 @pytest.mark.django_db
-def test_invalidate_manga_directories_cache_forces_rebuild(tmp_path, monkeypatch):
+def test_invalidate_manga_directories_cache_forces_series_rebuild(tmp_path, monkeypatch):
     root = tmp_path / "m"
     root.mkdir()
     calls = {"n": 0}
@@ -115,44 +115,44 @@ def test_invalidate_manga_directories_cache_forces_rebuild(tmp_path, monkeypatch
         return real(full_path, rel_posix=rel_posix, hidden=hidden)
 
     monkeypatch.setattr(manga_services, "_manga_directory_subtree", wrapped)
-    list_manga_directories(manga_root=str(root))
+    list_manga_series(manga_root=str(root))
     invalidate_manga_directories_cache(manga_root=str(root))
-    list_manga_directories(manga_root=str(root))
+    list_manga_series(manga_root=str(root))
     assert calls["n"] == 2
 
 
 @pytest.mark.django_db
-def test_list_manga_directories_hides_configured_paths(tmp_path):
+def test_list_manga_series_hides_configured_paths(tmp_path):
     root = tmp_path / "m"
     (root / "keep").mkdir(parents=True)
     (root / "hide_me").mkdir()
     (root / "hide_me" / "nested").mkdir()
     MangaHiddenDirectory.objects.create(rel_path="hide_me")
 
-    node = list_manga_directories(manga_root=str(root))
+    node = list_manga_series(manga_root=str(root))
     names = [c.name for c in node.children]
     assert names == ["keep"]
 
 
 @pytest.mark.django_db
-def test_list_manga_directories_hidden_top_level_not_promoted(tmp_path):
+def test_list_manga_series_hidden_top_level_not_promoted(tmp_path):
     root = tmp_path / "m"
     (root / "keep").mkdir(parents=True)
     (root / "series" / "visible").mkdir(parents=True)
     MangaHiddenDirectory.objects.create(rel_path="series")
 
-    node = list_manga_directories(manga_root=str(root))
+    node = list_manga_series(manga_root=str(root))
     assert [c.name for c in node.children] == ["keep"]
 
 
 @pytest.mark.django_db
-def test_list_manga_directories_hides_prefix_under_parent(tmp_path):
+def test_list_manga_series_hides_prefix_under_parent(tmp_path):
     root = tmp_path / "m"
     (root / "series" / "visible").mkdir(parents=True)
     (root / "series" / "old" / "x").mkdir(parents=True)
     MangaHiddenDirectory.objects.create(rel_path="series/old")
 
-    node = list_manga_directories(manga_root=str(root))
+    node = list_manga_series(manga_root=str(root))
     visible = next(c for c in node.children if c.name == "visible")
     assert visible.path == "series/visible"
     assert visible.parent_name == "series"
@@ -172,7 +172,7 @@ def test_convert_cbz_invalidates_directories_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(manga_services, "upload_to_dropbox", lambda *_a, **_k: None)
 
     root_str = str(root)
-    list_manga_directories(manga_root=root_str)
+    list_manga_series(manga_root=root_str)
     key = _dir_cache_key(root_str)
     assert cache.get(key) is not None
 
