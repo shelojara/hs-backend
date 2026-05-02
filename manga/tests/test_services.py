@@ -18,7 +18,19 @@ def test_list_manga_directories_missing_root_returns_empty_node(tmp_path):
     node = list_manga_directories(manga_root=str(missing))
     assert node.name == ""
     assert node.path == ""
+    assert node.parent_name == ""
     assert node.children == ()
+
+
+@pytest.mark.django_db
+def test_list_manga_directories_leaf_top_level_stays_at_root(tmp_path):
+    root = tmp_path / "m"
+    (root / "only_series").mkdir(parents=True)
+
+    node = list_manga_directories(manga_root=str(root))
+    assert [c.name for c in node.children] == ["only_series"]
+    assert node.children[0].path == "only_series"
+    assert node.children[0].parent_name == ""
 
 
 @pytest.mark.django_db
@@ -26,25 +38,33 @@ def test_list_manga_directories_nested_only_dirs(tmp_path):
     root = tmp_path / "manga"
     (root / "a" / "b").mkdir(parents=True)
     (root / "c").mkdir()
+    (root / "p" / "q" / "r").mkdir(parents=True)
     (root / "a" / "file.cbz").write_text("x")
 
     node = list_manga_directories(manga_root=str(root))
     assert node.name == ""
     assert node.path == ""
+    assert node.parent_name == ""
 
+    # Top-level "a" skipped when it has subdirs; "b" promoted to root.
     by_name = {c.name: c for c in node.children}
-    assert set(by_name) == {"a", "c"}
+    assert set(by_name) == {"b", "c", "q"}
 
-    a = by_name["a"]
-    assert a.path == "a"
-    assert len(a.children) == 1
-    b = a.children[0]
-    assert b.name == "b"
-    assert b.path == "a/b"
-    assert b.children == ()
+    assert by_name["b"].path == "a/b"
+    assert by_name["b"].parent_name == "a"
+    assert by_name["b"].children == ()
 
     assert by_name["c"].path == "c"
+    assert by_name["c"].parent_name == ""
     assert by_name["c"].children == ()
+
+    assert by_name["q"].path == "p/q"
+    assert by_name["q"].parent_name == "p"
+    assert len(by_name["q"].children) == 1
+    deep = by_name["q"].children[0]
+    assert deep.name == "r"
+    assert deep.path == "p/q/r"
+    assert deep.parent_name == "q"
 
 
 @pytest.mark.django_db
@@ -115,6 +135,17 @@ def test_list_manga_directories_hides_configured_paths(tmp_path):
 
 
 @pytest.mark.django_db
+def test_list_manga_directories_hidden_top_level_not_promoted(tmp_path):
+    root = tmp_path / "m"
+    (root / "keep").mkdir(parents=True)
+    (root / "series" / "visible").mkdir(parents=True)
+    MangaHiddenDirectory.objects.create(rel_path="series")
+
+    node = list_manga_directories(manga_root=str(root))
+    assert [c.name for c in node.children] == ["keep"]
+
+
+@pytest.mark.django_db
 def test_list_manga_directories_hides_prefix_under_parent(tmp_path):
     root = tmp_path / "m"
     (root / "series" / "visible").mkdir(parents=True)
@@ -122,9 +153,10 @@ def test_list_manga_directories_hides_prefix_under_parent(tmp_path):
     MangaHiddenDirectory.objects.create(rel_path="series/old")
 
     node = list_manga_directories(manga_root=str(root))
-    series = next(c for c in node.children if c.name == "series")
-    child_names = [c.name for c in series.children]
-    assert child_names == ["visible"]
+    visible = next(c for c in node.children if c.name == "visible")
+    assert visible.path == "series/visible"
+    assert visible.parent_name == "series"
+    assert visible.children == ()
 
 
 @pytest.mark.django_db

@@ -26,6 +26,7 @@ class ListMangaDirectoriesRequest(Schema):
 class MangaDirectoryNodeSchema(Schema):
     name: str
     path: str
+    parent_name: str
     children: list["MangaDirectoryNodeSchema"]
 
 

@@ -24,6 +24,7 @@ def _directory_node_schema(node: services.MangaDirectoryNode) -> MangaDirectoryN
     return MangaDirectoryNodeSchema(
         name=node.name,
         path=node.path,
+        parent_name=node.parent_name,
         children=[_directory_node_schema(c) for c in node.children],
     )
 
