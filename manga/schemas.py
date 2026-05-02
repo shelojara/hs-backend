@@ -3,20 +3,21 @@ from typing import Literal
 from ninja import Schema
 
 
-class MangaItemSchema(Schema):
+class MangaFileSchema(Schema):
     name: str
     path: str
-    is_dir: bool
     size: int | None = None
     in_dropbox: bool = False
 
 
-class ListMangaItemsRequest(Schema):
+class ListMangaFilesRequest(Schema):
+    """Directory under manga root (``""`` = root). Lists ``.cbz`` files in that folder only."""
+
     path: str = ""
 
 
-class ListMangaItemsResponse(Schema):
-    items: list[MangaItemSchema]
+class ListMangaFilesResponse(Schema):
+    items: list[MangaFileSchema]
 
 
 class ListMangaSeriesRequest(Schema):

@@ -7,6 +7,7 @@ from manga.models import MangaHiddenDirectory
 from manga.services import (
     convert_cbz,
     invalidate_manga_directories_cache,
+    list_manga_cbz_files,
     list_manga_series,
     resolve_cbz_download,
 )
@@ -211,6 +212,108 @@ def test_resolve_cbz_download_missing_file(tmp_path):
     root.mkdir()
     with pytest.raises(ValueError, match="CBZ not found"):
         resolve_cbz_download(manga_root=str(root), path="missing.cbz")
+
+
+@pytest.mark.django_db
+def test_list_manga_cbz_files_missing_root_returns_empty(tmp_path):
+    missing = tmp_path / "no_manga"
+    assert list_manga_cbz_files(manga_root=str(missing), path="") == []
+
+
+@pytest.mark.django_db
+def test_list_manga_cbz_files_shallow_only_cbz(tmp_path, monkeypatch):
+    root = tmp_path / "manga"
+    (root / "a").mkdir(parents=True)
+    (root / "b" / "nested").mkdir(parents=True)
+    (root / "a" / "1.cbz").write_bytes(b"x")
+    (root / "b" / "nested" / "2.cbz").write_bytes(b"yy")
+    (root / "root.cbz").write_bytes(b"r")
+    (root / "readme.txt").write_text("nope", encoding="utf-8")
+    (root / "b" / "archive.zip").write_bytes(b"z")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    got = list_manga_cbz_files(manga_root=str(root), path="")
+    assert len(got) == 1
+    assert got[0].path.replace("\\", "/") == "root.cbz"
+    assert got[0].size == 1
+
+    nested_only = list_manga_cbz_files(manga_root=str(root), path="b/nested")
+    assert [i.path.replace("\\", "/") for i in nested_only] == ["b/nested/2.cbz"]
+
+
+@pytest.mark.django_db
+def test_list_manga_cbz_files_uppercase_ext(tmp_path, monkeypatch):
+    root = tmp_path / "m"
+    root.mkdir()
+    (root / "X.CBZ").write_bytes(b"")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    got = list_manga_cbz_files(manga_root=str(root), path="")
+    assert len(got) == 1
+    assert got[0].name == "X.CBZ"
+
+
+@pytest.mark.django_db
+def test_list_manga_cbz_files_respects_hidden_directories(tmp_path, monkeypatch):
+    root = tmp_path / "manga"
+    root.mkdir()
+    (root / "visible").mkdir()
+    (root / "hide_me").mkdir()
+    (root / "visible" / "ok.cbz").write_bytes(b"")
+    (root / "hide_me" / "secret.cbz").write_bytes(b"")
+    MangaHiddenDirectory.objects.create(rel_path="hide_me")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    got = list_manga_cbz_files(manga_root=str(root), path="visible")
+    assert [i.path.replace("\\", "/") for i in got] == ["visible/ok.cbz"]
+
+    assert list_manga_cbz_files(manga_root=str(root), path="hide_me") == []
+
+
+@pytest.mark.django_db
+def test_list_manga_cbz_files_scoped_to_path(tmp_path, monkeypatch):
+    root = tmp_path / "manga"
+    (root / "a").mkdir(parents=True)
+    (root / "b" / "nested").mkdir(parents=True)
+    (root / "a" / "1.cbz").write_bytes(b"x")
+    (root / "b" / "nested" / "2.cbz").write_bytes(b"yy")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    only_a = list_manga_cbz_files(manga_root=str(root), path="a")
+    assert [i.path.replace("\\", "/") for i in only_a] == ["a/1.cbz"]
+
+    only_b = list_manga_cbz_files(manga_root=str(root), path="b")
+    assert only_b == []
+
+
+@pytest.mark.django_db
+def test_list_manga_cbz_files_file_path_raises(tmp_path):
+    root = tmp_path / "m"
+    root.mkdir()
+    (root / "sub").mkdir()
+    (root / "sub" / "ch.cbz").write_bytes(b"abc")
+
+    with pytest.raises(ValueError, match="Path must be a directory"):
+        list_manga_cbz_files(manga_root=str(root), path="sub/ch.cbz")
+
+
+@pytest.mark.django_db
+def test_list_manga_cbz_files_non_cbz_file_path_raises(tmp_path):
+    root = tmp_path / "m"
+    root.mkdir()
+    (root / "x.txt").write_text("n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Path must be a directory"):
+        list_manga_cbz_files(manga_root=str(root), path="x.txt")
+
+
+@pytest.mark.django_db
+def test_list_manga_cbz_files_missing_subpath_returns_empty(tmp_path, monkeypatch):
+    root = tmp_path / "m"
+    root.mkdir()
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    assert list_manga_cbz_files(manga_root=str(root), path="no_such_dir") == []
 
 
 @pytest.mark.django_db
