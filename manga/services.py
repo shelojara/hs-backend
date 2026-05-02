@@ -8,6 +8,7 @@ import hashlib
 from django.conf import settings
 from django.core.cache import cache
 
+from manga.models import normalize_manga_hidden_rel_path
 from manga.cbztools.manga_v2 import process_manga
 from manga.cbztools.manhwa_v3 import process_manhwa_v3
 from manga.cbztools.utils import (
@@ -66,40 +67,80 @@ def resolve_cbz_download(*, manga_root: str, path: str) -> CbzDownload:
     return CbzDownload(absolute_path=abs_path, filename=filename)
 
 
-def list_manga_items(*, manga_root: str, path: str) -> list[MangaListItem]:
-    full_path = os.path.join(manga_root, path)
-    children = os.listdir(full_path)
-    children = [f for f in children if not f.startswith(".")]
-    sort_nicely(children)
-    items = [
-        MangaListItem(
-            name=f,
-            path=os.path.join(path, f),
-            is_dir=os.path.isdir(os.path.join(full_path, f)),
-            size=(
-                os.path.getsize(os.path.join(full_path, f))
-                if os.path.isfile(os.path.join(full_path, f))
-                else None
-            ),
-            in_dropbox=False,
-        )
-        for f in children
-    ]
+def _dropbox_list_segment_for_folder(*, parent_rel: str) -> str:
+    """Last path segment for Dropbox folder listing (matches ``list_dropbox_files`` query)."""
+    if not parent_rel:
+        return os.path.split("")[1]
+    return os.path.split(parent_rel.replace("/", os.sep))[-1]
 
-    dropbox_files = list_dropbox_files(os.path.split(path)[-1])
-    flagged = []
-    for item in items:
-        in_dropbox = any(item.name in df.name for df in dropbox_files)
-        flagged.append(
-            MangaListItem(
-                name=item.name,
-                path=item.path,
-                is_dir=item.is_dir,
-                size=item.size,
-                in_dropbox=in_dropbox,
-            )
+
+def list_manga_cbz_files(*, manga_root: str, path: str) -> list[MangaListItem]:
+    """``.cbz`` files directly in ``path`` (directory under ``manga_root``). Non-recursive."""
+    root_abs = os.path.abspath(os.path.expanduser(manga_root))
+    hidden = _manga_hidden_rel_paths()
+    if not os.path.isdir(root_abs):
+        return []
+
+    rel = normalize_manga_hidden_rel_path(path)
+    try:
+        base_abs = _path_under_manga_root(manga_root=manga_root, rel_path=rel)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+    if rel and _directory_hidden_by_config(rel, hidden):
+        return []
+
+    if os.path.isfile(base_abs):
+        raise ValueError("Path must be a directory")
+
+    if not os.path.isdir(base_abs):
+        return []
+
+    base_prefix = rel
+    pending: list[tuple[str, str, int, str]] = []
+
+    try:
+        names = os.listdir(base_abs)
+    except OSError:
+        return []
+
+    for fn in names:
+        if fn.startswith("."):
+            continue
+        full = os.path.join(base_abs, fn)
+        if not os.path.isfile(full) or not fn.lower().endswith(".cbz"):
+            continue
+        rel_file_posix = f"{base_prefix}/{fn}" if base_prefix else fn
+        parent_posix = posixpath.dirname(rel_file_posix)
+        if parent_posix and _directory_hidden_by_config(parent_posix, hidden):
+            continue
+        rel_path_os = (
+            os.path.join(base_prefix.replace("/", os.sep), fn) if base_prefix else fn
         )
-    return flagged
+        pending.append((fn, rel_path_os, os.path.getsize(full), parent_posix))
+
+    dropbox_by_segment: dict[str, list] = {}
+    for _name, _rel, _size, parent_posix in pending:
+        seg = _dropbox_list_segment_for_folder(parent_rel=parent_posix)
+        if seg not in dropbox_by_segment:
+            dropbox_by_segment[seg] = list_dropbox_files(seg)
+
+    out: list[MangaListItem] = []
+    for name, rel_path_os, size, parent_posix in pending:
+        seg = _dropbox_list_segment_for_folder(parent_rel=parent_posix)
+        dfs = dropbox_by_segment[seg]
+        in_dropbox = any(name in df.name for df in dfs)
+        out.append(
+            MangaListItem(
+                name=name,
+                path=rel_path_os,
+                is_dir=False,
+                size=size,
+                in_dropbox=in_dropbox,
+            ),
+        )
+    out.sort(key=lambda i: alphanum_key(i.path.replace(os.sep, "/")))
+    return out
 
 
 _MANGA_DIRECTORIES_CACHE_KEY = "manga:directories:v6:{root}:{hidden_fp}:{ver}"

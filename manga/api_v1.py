@@ -9,12 +9,12 @@ from manga.schemas import (
     ConvertCbzRequest,
     ConvertCbzResponse,
     DownloadCbzRequest,
+    ListMangaFilesRequest,
+    ListMangaFilesResponse,
     ListMangaSeriesRequest,
     ListMangaSeriesResponse,
-    ListMangaItemsRequest,
-    ListMangaItemsResponse,
     MangaDirectoryNodeSchema,
-    MangaItemSchema,
+    MangaFileSchema,
 )
 
 router = Router(auth=protected_api_auth, tags=["Manga"])
@@ -29,18 +29,20 @@ def _directory_node_schema(node: services.MangaDirectoryNode) -> MangaDirectoryN
     )
 
 
-@router.post("/v1.Manga.ListMangaItems", response=ListMangaItemsResponse)
-def list_manga_items(request, payload: ListMangaItemsRequest):
-    raw = services.list_manga_items(
-        manga_root=settings.MANGA_ROOT,
-        path=payload.path,
-    )
-    return ListMangaItemsResponse(
+@router.post("/v1.Manga.ListMangaFiles", response=ListMangaFilesResponse)
+def list_manga_files(request, payload: ListMangaFilesRequest):
+    try:
+        raw = services.list_manga_cbz_files(
+            manga_root=settings.MANGA_ROOT,
+            path=payload.path,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return ListMangaFilesResponse(
         items=[
-            MangaItemSchema(
+            MangaFileSchema(
                 name=i.name,
                 path=i.path,
-                is_dir=i.is_dir,
                 size=i.size,
                 in_dropbox=i.in_dropbox,
             )
