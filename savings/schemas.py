@@ -255,6 +255,36 @@ class ListDistributionsResponse(Schema):
     distributions: list[DistributionWithLinesSchema]
 
 
+class GetStatisticsRequest(Schema):
+    scope: str
+
+    @field_validator("scope", mode="before")
+    @classmethod
+    def validate_scope(cls, v: object) -> str:
+        if not isinstance(v, str):
+            msg = "scope must be a string."
+            raise TypeError(msg)
+        s = v.strip().upper()
+        if s not in (SavingsScope.PERSONAL, SavingsScope.FAMILY):
+            msg = "Invalid scope; use PERSONAL or FAMILY."
+            raise ValueError(msg)
+        return s
+
+
+class GetStatisticsResponse(Schema):
+    """Scope-level rollups: current local calendar month plus lifetime completion totals."""
+
+    period_month_start: datetime
+    period_month_end_exclusive: datetime
+    distributions_count_this_month: int
+    distributions_net_budget_this_month: Decimal
+    positive_allocations_sum_this_month: Decimal
+    targets_hit_all_time: int
+    active_assets_count: int
+    completed_assets_count: int
+    assets_total_count: int
+
+
 class UpdateAssetRequest(Schema):
     asset_id: int
     name: str

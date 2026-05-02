@@ -1,10 +1,12 @@
 """Business logic for savings app."""
 
 import logging
+from dataclasses import dataclass
+from datetime import date, datetime, time as dt_time
 from decimal import ROUND_DOWN, Decimal
 
 from django.db import IntegrityError, transaction
-from django.db.models import Sum
+from django.db.models import Count, Sum
 from django.utils import timezone
 
 from savings import gemini_service
@@ -164,6 +166,115 @@ def list_assets(
     return rows
 
 
+@dataclass(frozen=True)
+class SavingsStatistics:
+    """Aggregates for one scope (same visibility rules as ``list_assets`` / ``list_distributions``)."""
+
+    period_month_start: datetime
+    period_month_end_exclusive: datetime
+    distributions_count_this_month: int
+    distributions_net_budget_this_month: Decimal
+    positive_allocations_sum_this_month: Decimal
+    targets_hit_all_time: int
+    active_assets_count: int
+    completed_assets_count: int
+    assets_total_count: int
+
+
+def _distributions_base_qs(*, user_id: int, scope: str):
+    """Queryset of distributions visible to ``user_id`` in ``scope`` (no ordering)."""
+    if scope == SavingsScope.PERSONAL:
+        return Distribution.objects.filter(
+            owner_id=user_id,
+            scope=SavingsScope.PERSONAL,
+        )
+    membership = FamilyMembership.objects.filter(user_id=user_id).first()
+    if membership is None:
+        return Distribution.objects.none()
+    return Distribution.objects.filter(
+        scope=SavingsScope.FAMILY,
+        family_id=membership.family_id,
+    )
+
+
+def _assets_base_qs(*, user_id: int, scope: str):
+    """Queryset of assets visible to ``user_id`` in ``scope``."""
+    if scope == SavingsScope.PERSONAL:
+        return Asset.objects.filter(
+            owner_id=user_id,
+            scope=SavingsScope.PERSONAL,
+        )
+    membership = FamilyMembership.objects.filter(user_id=user_id).first()
+    if membership is None:
+        return Asset.objects.none()
+    return Asset.objects.filter(
+        scope=SavingsScope.FAMILY,
+        family_id=membership.family_id,
+    )
+
+
+def _calendar_month_bounds_local() -> tuple[datetime, datetime]:
+    """Start of local calendar month and start of next month (exclusive end), timezone-aware."""
+    tz = timezone.get_current_timezone()
+    today = timezone.localdate()
+    start_local = datetime.combine(
+        date(today.year, today.month, 1),
+        dt_time.min,
+        tzinfo=tz,
+    )
+    if today.month == 12:
+        end_local = datetime.combine(
+            date(today.year + 1, 1, 1),
+            dt_time.min,
+            tzinfo=tz,
+        )
+    else:
+        end_local = datetime.combine(
+            date(today.year, today.month + 1, 1),
+            dt_time.min,
+            tzinfo=tz,
+        )
+    return start_local, end_local
+
+
+def get_statistics(*, user_id: int, scope: str) -> SavingsStatistics:
+    """Rollups for current local month and lifetime completion counts."""
+    start, end_excl = _calendar_month_bounds_local()
+    dist_qs = _distributions_base_qs(user_id=user_id, scope=scope)
+    in_month = dist_qs.filter(created_at__gte=start, created_at__lt=end_excl)
+    month_row = in_month.aggregate(
+        c=Count("id"),
+        net=Sum("budget_amount"),
+    )
+    dist_count = int(month_row["c"] or 0)
+    net_budget = month_row["net"] or Decimal("0")
+
+    pos_sum = (
+        DistributionLine.objects.filter(
+            distribution__in=in_month,
+            allocated_amount__gt=0,
+        ).aggregate(s=Sum("allocated_amount"))["s"]
+        or Decimal("0")
+    )
+
+    assets_qs = _assets_base_qs(user_id=user_id, scope=scope)
+    completed = assets_qs.filter(state=AssetState.COMPLETED).count()
+    active = assets_qs.filter(state=AssetState.ACTIVE).count()
+    total = assets_qs.count()
+
+    return SavingsStatistics(
+        period_month_start=start,
+        period_month_end_exclusive=end_excl,
+        distributions_count_this_month=dist_count,
+        distributions_net_budget_this_month=net_budget,
+        positive_allocations_sum_this_month=pos_sum,
+        targets_hit_all_time=completed,
+        active_assets_count=active,
+        completed_assets_count=completed,
+        assets_total_count=total,
+    )
+
+
 def list_distributions(
     *,
     user_id: int,
@@ -174,25 +285,8 @@ def list_distributions(
     """List distributions for scope with lines prefetched (newest first); paginated slice."""
     lim = max(1, min(int(limit), _LIST_DISTRIBUTIONS_MAX_LIMIT))
     off = max(0, int(offset))
-    if scope == SavingsScope.PERSONAL:
-        qs = (
-            Distribution.objects.filter(
-                owner_id=user_id,
-                scope=SavingsScope.PERSONAL,
-            )
-            .prefetch_related("lines")
-            .order_by("-created_at", "-id")
-        )
-        return list(qs[off : off + lim])
-
-    membership = FamilyMembership.objects.filter(user_id=user_id).first()
-    if membership is None:
-        return []
     qs = (
-        Distribution.objects.filter(
-            scope=SavingsScope.FAMILY,
-            family_id=membership.family_id,
-        )
+        _distributions_base_qs(user_id=user_id, scope=scope)
         .prefetch_related("lines")
         .order_by("-created_at", "-id")
     )
