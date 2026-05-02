@@ -9,7 +9,12 @@ from django.core.cache import cache
 
 from manga.cbztools.manga_v2 import process_manga
 from manga.cbztools.manhwa_v3 import process_manhwa_v3
-from manga.cbztools.utils import list_dropbox_files, sort_nicely, upload_to_dropbox
+from manga.cbztools.utils import (
+    alphanum_key,
+    list_dropbox_files,
+    sort_nicely,
+    upload_to_dropbox,
+)
 
 
 @dataclass(frozen=True)
@@ -95,7 +100,7 @@ def list_manga_items(*, manga_root: str, path: str) -> list[MangaListItem]:
     return flagged
 
 
-_MANGA_DIRECTORIES_CACHE_KEY = "manga:directories:v3:{root}:{hidden_fp}:{ver}"
+_MANGA_DIRECTORIES_CACHE_KEY = "manga:directories:v4:{root}:{hidden_fp}:{ver}"
 
 
 def _manga_directories_ver_key(manga_root: str) -> str:
@@ -148,8 +153,26 @@ def invalidate_manga_directories_cache(*, manga_root: str) -> None:
     _bump_manga_directories_cache_ver(manga_root)
 
 
+def _promote_top_level_directory_children(node: MangaDirectoryNode) -> MangaDirectoryNode:
+    """Under manga root, list grandchildren when top-level folder has subdirs; else keep folder."""
+    if node.path != "" or node.name != "":
+        return node
+    promoted: list[MangaDirectoryNode] = []
+    for top in node.children:
+        if top.children:
+            promoted.extend(top.children)
+        else:
+            promoted.append(top)
+    promoted.sort(key=lambda n: (alphanum_key(n.name), n.path))
+    return MangaDirectoryNode(name="", path="", children=tuple(promoted))
+
+
 def list_manga_directories(*, manga_root: str) -> MangaDirectoryNode:
-    """Nested directory tree under manga_root (directories only)."""
+    """Nested directory tree under manga_root (directories only).
+
+    Immediate children of manga root are not listed as nodes when they contain
+    subdirectories; those subdirectories appear at the root of the tree instead.
+    """
     hidden = _manga_hidden_rel_paths()
     key = _manga_directories_cache_key(manga_root, hidden=hidden)
     cached = cache.get(key)
@@ -158,11 +181,12 @@ def list_manga_directories(*, manga_root: str) -> MangaDirectoryNode:
     if not os.path.isdir(manga_root):
         node = MangaDirectoryNode(name="", path="", children=())
     else:
-        node = _manga_directory_subtree(
+        raw = _manga_directory_subtree(
             os.path.abspath(manga_root),
             rel_posix="",
             hidden=hidden,
         )
+        node = _promote_top_level_directory_children(raw)
     timeout = getattr(settings, "MANGA_DIRECTORIES_CACHE_TIMEOUT_SECONDS", 300)
     cache.set(key, node, timeout=timeout)
     return node
