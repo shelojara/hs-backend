@@ -428,7 +428,7 @@ def _field_fuzzy_gate_score(query_normalized: str, field_normalized: str) -> int
 
 
 # Best per-field gate score below this → skip row.
-_MIN_PRODUCT_SEARCH_WEIGHTED_RATIO = 65
+_MIN_PRODUCT_SEARCH_WEIGHTED_RATIO = 72
 
 
 def load_user_catalog_standard_names_normalized(*, user_id: int) -> frozenset[str]:
