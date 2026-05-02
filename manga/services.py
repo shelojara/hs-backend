@@ -10,7 +10,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
 
-from manga.models import MangaLibraryChapter, MangaLibrarySeries, normalize_manga_hidden_rel_path
+from manga.models import Series, SeriesItem, normalize_manga_hidden_rel_path
 from manga.cbztools.manga_v2 import process_manga
 from manga.cbztools.manhwa_v3 import process_manhwa_v3
 from manga.cbztools.utils import (
@@ -346,7 +346,7 @@ def _iter_series_rel_paths_with_direct_cbz(
 
 
 def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
-    """Walk filesystem; upsert ``MangaLibrarySeries`` / ``MangaLibraryChapter`` rows (drops vanished).
+    """Walk filesystem; upsert ``Series`` / ``SeriesItem`` rows (drops vanished).
 
     Series = directory with ≥1 ``.cbz`` directly inside (same rule as user-facing ``list_manga_cbz_files`` scope).
 
@@ -357,14 +357,14 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
     wanted_paths = set(_iter_series_rel_paths_with_direct_cbz(manga_root=manga_root, hidden=hidden))
 
     with transaction.atomic():
-        stale_qs = MangaLibrarySeries.objects.filter(library_root=root_norm).exclude(
+        stale_qs = Series.objects.filter(library_root=root_norm).exclude(
             series_rel_path__in=wanted_paths,
         )
         stale_qs.delete()
 
         for rel_path in sorted(wanted_paths, key=alphanum_key):
             display_name = Path(rel_path).name if rel_path else Path(root_norm).name
-            series, _created = MangaLibrarySeries.objects.update_or_create(
+            series, _created = Series.objects.update_or_create(
                 library_root=root_norm,
                 series_rel_path=rel_path,
                 defaults={"name": display_name},
@@ -373,11 +373,11 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
             items = list_manga_cbz_files(manga_root=manga_root, path=rel_path)
             want_rel = {i.path.replace("\\", "/") for i in items}
 
-            series.chapters.exclude(rel_path__in=want_rel).delete()
+            series.items.exclude(rel_path__in=want_rel).delete()
 
             for item in items:
                 rp = item.path.replace("\\", "/")
-                MangaLibraryChapter.objects.update_or_create(
+                SeriesItem.objects.update_or_create(
                     series=series,
                     rel_path=rp,
                     defaults={
@@ -387,8 +387,8 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
                     },
                 )
 
-        series_count = MangaLibrarySeries.objects.filter(library_root=root_norm).count()
-        chapter_total = MangaLibraryChapter.objects.filter(series__library_root=root_norm).count()
+        series_count = Series.objects.filter(library_root=root_norm).count()
+        chapter_total = SeriesItem.objects.filter(series__library_root=root_norm).count()
 
     invalidate_manga_directories_cache(manga_root=manga_root)
 

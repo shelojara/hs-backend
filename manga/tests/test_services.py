@@ -3,7 +3,7 @@ from django.core.cache import cache
 from django.test import override_settings
 
 import manga.services as manga_services
-from manga.models import MangaHiddenDirectory, MangaLibraryChapter, MangaLibrarySeries
+from manga.models import MangaHiddenDirectory, Series, SeriesItem
 from manga.services import (
     convert_cbz,
     invalidate_manga_directories_cache,
@@ -333,11 +333,11 @@ def test_sync_manga_library_cache_series_is_dir_with_direct_cbz(tmp_path, monkey
     assert n_ch == 2
 
     abs_root = str(root.resolve())
-    s_alpha = MangaLibrarySeries.objects.get(library_root=abs_root, series_rel_path="Alpha")
+    s_alpha = Series.objects.get(library_root=abs_root, series_rel_path="Alpha")
     assert s_alpha.name == "Alpha"
-    assert MangaLibraryChapter.objects.filter(series=s_alpha).count() == 1
+    assert SeriesItem.objects.filter(series=s_alpha).count() == 1
 
-    s_nested = MangaLibrarySeries.objects.get(library_root=abs_root, series_rel_path="nested")
+    s_nested = Series.objects.get(library_root=abs_root, series_rel_path="nested")
     assert s_nested.name == "nested"
 
 
@@ -351,7 +351,7 @@ def test_sync_manga_library_cache_skips_hidden_series_dirs(tmp_path, monkeypatch
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
 
     sync_manga_library_cache(manga_root=str(root))
-    assert MangaLibrarySeries.objects.filter(series_rel_path="gone").count() == 0
+    assert Series.objects.filter(series_rel_path="gone").count() == 0
 
 
 @pytest.mark.django_db

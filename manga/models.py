@@ -46,7 +46,7 @@ class MangaHiddenDirectory(models.Model):
         return self.rel_path
 
 
-class MangaLibrarySeries(models.Model):
+class Series(models.Model):
     """Cached manga series: directory under ``library_root`` that directly contains ≥1 ``.cbz`` file."""
 
     library_root = models.CharField(
@@ -65,8 +65,8 @@ class MangaLibrarySeries(models.Model):
 
     class Meta:
         ordering = ("library_root", "series_rel_path")
-        verbose_name = "manga library series (cached)"
-        verbose_name_plural = "manga library series (cached)"
+        verbose_name = "manga series (cached)"
+        verbose_name_plural = "manga series (cached)"
         constraints = [
             models.UniqueConstraint(
                 fields=("library_root", "series_rel_path"),
@@ -78,13 +78,13 @@ class MangaLibrarySeries(models.Model):
         return f"{self.name} ({self.series_rel_path or '.'})"
 
 
-class MangaLibraryChapter(models.Model):
-    """Cached chapter file: one ``.cbz`` directly inside a series directory."""
+class SeriesItem(models.Model):
+    """Cached CBZ: one file directly inside a series directory."""
 
     series = models.ForeignKey(
-        MangaLibrarySeries,
+        Series,
         on_delete=models.CASCADE,
-        related_name="chapters",
+        related_name="items",
     )
     rel_path = models.CharField(
         max_length=1024,
@@ -96,8 +96,8 @@ class MangaLibraryChapter(models.Model):
 
     class Meta:
         ordering = ("series", "rel_path")
-        verbose_name = "manga library chapter (cached)"
-        verbose_name_plural = "manga library chapters (cached)"
+        verbose_name = "manga series item (cached)"
+        verbose_name_plural = "manga series items (cached)"
         constraints = [
             models.UniqueConstraint(
                 fields=("series", "rel_path"),
