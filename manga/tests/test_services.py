@@ -3,6 +3,7 @@ from django.core.cache import cache
 from django.test import override_settings
 
 import manga.services as manga_services
+from manga.models import MangaHiddenDirectory
 from manga.services import (
     convert_cbz,
     invalidate_manga_directories_cache,
@@ -64,14 +65,21 @@ def test_list_manga_directories_uses_cache_between_calls(tmp_path, monkeypatch):
     calls = {"n": 0}
     real = manga_services._manga_directory_subtree
 
-    def wrapped(full_path: str, *, rel_posix: str):
+    def wrapped(full_path: str, *, rel_posix: str, hidden):
         calls["n"] += 1
-        return real(full_path, rel_posix=rel_posix)
+        return real(full_path, rel_posix=rel_posix, hidden=hidden)
 
     monkeypatch.setattr(manga_services, "_manga_directory_subtree", wrapped)
     list_manga_directories(manga_root=str(root))
     list_manga_directories(manga_root=str(root))
     assert calls["n"] == 1
+
+
+def _dir_cache_key(manga_root: str) -> str:
+    return manga_services._manga_directories_cache_key(
+        manga_root,
+        hidden=manga_services._manga_hidden_rel_paths(),
+    )
 
 
 @pytest.mark.django_db
@@ -81,15 +89,41 @@ def test_invalidate_manga_directories_cache_forces_rebuild(tmp_path, monkeypatch
     calls = {"n": 0}
     real = manga_services._manga_directory_subtree
 
-    def wrapped(full_path: str, *, rel_posix: str):
+    def wrapped(full_path: str, *, rel_posix: str, hidden):
         calls["n"] += 1
-        return real(full_path, rel_posix=rel_posix)
+        return real(full_path, rel_posix=rel_posix, hidden=hidden)
 
     monkeypatch.setattr(manga_services, "_manga_directory_subtree", wrapped)
     list_manga_directories(manga_root=str(root))
     invalidate_manga_directories_cache(manga_root=str(root))
     list_manga_directories(manga_root=str(root))
     assert calls["n"] == 2
+
+
+@pytest.mark.django_db
+def test_list_manga_directories_hides_configured_paths(tmp_path):
+    root = tmp_path / "m"
+    (root / "keep").mkdir(parents=True)
+    (root / "hide_me").mkdir()
+    (root / "hide_me" / "nested").mkdir()
+    MangaHiddenDirectory.objects.create(rel_path="hide_me")
+
+    node = list_manga_directories(manga_root=str(root))
+    names = [c.name for c in node.children]
+    assert names == ["keep"]
+
+
+@pytest.mark.django_db
+def test_list_manga_directories_hides_prefix_under_parent(tmp_path):
+    root = tmp_path / "m"
+    (root / "series" / "visible").mkdir(parents=True)
+    (root / "series" / "old" / "x").mkdir(parents=True)
+    MangaHiddenDirectory.objects.create(rel_path="series/old")
+
+    node = list_manga_directories(manga_root=str(root))
+    series = next(c for c in node.children if c.name == "series")
+    child_names = [c.name for c in series.children]
+    assert child_names == ["visible"]
 
 
 @pytest.mark.django_db
@@ -104,8 +138,11 @@ def test_convert_cbz_invalidates_directories_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(manga_services, "process_manga", lambda _paths: str(cbz))
     monkeypatch.setattr(manga_services, "upload_to_dropbox", lambda *_a, **_k: None)
 
-    list_manga_directories(manga_root=str(root))
-    assert cache.get(manga_services._manga_directories_cache_key(str(root))) is not None
+    root_str = str(root)
+    list_manga_directories(manga_root=root_str)
+    key = _dir_cache_key(root_str)
+    assert cache.get(key) is not None
 
-    convert_cbz(manga_root=str(root), path="series/ch.cbz", kind="manga")
-    assert cache.get(manga_services._manga_directories_cache_key(str(root))) is None
+    convert_cbz(manga_root=root_str, path="series/ch.cbz", kind="manga")
+    assert manga_services._manga_directories_cache_ver(root_str) == 1
+    assert cache.get(_dir_cache_key(root_str)) is None
