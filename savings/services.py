@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, time as dt_time
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
+from typing import Protocol
 
 from django.db import IntegrityError, transaction
 from django.db.models import Case, Count, DecimalField, F, Q, Sum, Value, When
@@ -25,6 +26,21 @@ _LIST_DISTRIBUTIONS_DEFAULT_LIMIT = 20
 _LIST_DISTRIBUTIONS_MAX_LIMIT = 100
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _SplitTargetView:
+    """Minimal row for ``_allocate_budget_respecting_targets`` (weight + balances)."""
+
+    weight: Decimal
+    current_amount: Decimal
+    target_amount: Decimal | None
+
+
+class _SupportsAllocationSplit(Protocol):
+    weight: Decimal
+    current_amount: Decimal
+    target_amount: Decimal | None
 
 
 class AssetMutationError(Exception):
@@ -498,7 +514,9 @@ def _min_currency_step(currency: str) -> Decimal:
     return Decimal("1") if currency == "CLP" else Decimal("0.01")
 
 
-def _receive_headroom(asset: Asset, allocated_so_far: Decimal) -> Decimal | None:
+def _receive_headroom(
+    asset: _SupportsAllocationSplit, allocated_so_far: Decimal
+) -> Decimal | None:
     """Room for additional **positive** allocation without crossing ``target_amount``.
 
     ``None`` means no cap. ``Decimal('0')`` means already at or over target.
@@ -512,7 +530,7 @@ def _receive_headroom(asset: Asset, allocated_so_far: Decimal) -> Decimal | None
 
 def _allocate_budget_respecting_targets(
     budget_amount: Decimal,
-    resolved_assets: list[Asset],
+    resolved_assets: list[_SupportsAllocationSplit],
     currency: str,
 ) -> list[Decimal]:
     """Pro-rata split with iterative cap when ``target_amount`` would be exceeded.
@@ -633,11 +651,10 @@ def _list_peer_assets_for_balance_on_delete(
 def delete_asset(*, user_id: int, asset_id: int) -> None:
     """Delete asset if visible to user.
 
-    Non-zero ``current_amount`` split to other ACTIVE assets in same scope/currency by
-    weight (Hamilton remainder via ``_split_budget_by_weights``). Persists one
-    ``Distribution`` plus ``DistributionLine`` rows on peers (``budget_amount`` = moved
-    total; note explains delete) for audit. No peers → balance discarded with row.
-    Then removes distribution lines on the deleted asset and realigns budgets.
+    Non-zero ``current_amount``: normally ``create_distribution`` to peers (same rules as
+    manual distributions). Peers with combined weight ≤ 0 use equal-weight split via same
+    persist path as ``create_distribution``. ``DistributionMutationError`` from allocation
+    becomes ``AssetMutationError`` so API stays 4xx on delete. No peers → balance discarded.
     """
     row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
     if row is None:
@@ -654,34 +671,51 @@ def delete_asset(*, user_id: int, asset_id: int) -> None:
         victim_locked = locked[row.pk]
         amount = victim_locked.current_amount
         if amount != 0 and peer_ids:
-            peer_locked = [locked[pid] for pid in sorted(peer_ids)]
-            weights = [a.weight for a in peer_locked]
-            if sum(weights, Decimal("0")) <= 0:
-                weights = [Decimal("1")] * len(peer_locked)
-            splits = _split_budget_by_weights(amount, weights, victim_locked.currency)
-            total_moved = sum(splits, Decimal("0"))
             delete_notes = (
                 f'Redistributed balance from deleted asset "{victim_locked.name}" '
                 f"(asset_id={victim_locked.pk})"
             )
-            dist = Distribution.objects.create(
-                owner_id=user_id,
-                scope=victim_locked.scope,
-                family=victim_locked.family,
-                budget_amount=total_moved,
-                currency=victim_locked.currency,
-                notes=delete_notes,
-            )
-            for peer, extra in zip(peer_locked, splits, strict=True):
-                if extra == 0:
-                    continue
-                DistributionLine.objects.create(
-                    distribution=dist,
-                    asset=peer,
-                    allocated_amount=extra,
-                )
-                peer.current_amount += extra
-                peer.save(update_fields=("current_amount", "updated_at"))
+            peer_locked_sorted = [locked[pid] for pid in sorted(peer_ids)]
+            total_w = sum((a.weight for a in peer_locked_sorted), Decimal("0"))
+            try:
+                if total_w > 0:
+                    create_distribution(
+                        user_id=user_id,
+                        scope=victim_locked.scope,
+                        budget_amount=amount,
+                        currency=victim_locked.currency,
+                        asset_ids=sorted(peer_ids),
+                        notes=delete_notes,
+                    )
+                else:
+                    stand_ins = [
+                        _SplitTargetView(
+                            weight=Decimal("1"),
+                            current_amount=a.current_amount,
+                            target_amount=a.target_amount,
+                        )
+                        for a in peer_locked_sorted
+                    ]
+                    allocated_amounts = _allocate_budget_respecting_targets(
+                        amount, stand_ins, victim_locked.currency
+                    )
+                    total_allocated = sum(allocated_amounts, Decimal("0"))
+                    if amount > 0 and total_allocated <= 0:
+                        raise AssetMutationError(
+                            "No room to allocate toward selected assets (all at or above target).",
+                            status_code=400,
+                        )
+                    _persist_distribution_lines_and_balances(
+                        user_id=user_id,
+                        scope=victim_locked.scope,
+                        family=victim_locked.family,
+                        currency=victim_locked.currency,
+                        notes=delete_notes,
+                        locked_assets=peer_locked_sorted,
+                        allocated_amounts=allocated_amounts,
+                    )
+            except DistributionMutationError as exc:
+                raise AssetMutationError(str(exc), status_code=exc.status_code) from exc
         touched_distribution_ids = list(
             DistributionLine.objects.filter(asset_id=victim_locked.pk)
             .values_list("distribution_id", flat=True)
@@ -788,6 +822,37 @@ def simulate_distribution(
     ]
 
 
+def _persist_distribution_lines_and_balances(
+    *,
+    user_id: int,
+    scope: str,
+    family: Family | None,
+    currency: str,
+    notes: str,
+    locked_assets: list[Asset],
+    allocated_amounts: list[Decimal],
+) -> int:
+    """Create ``Distribution`` + lines and credit ``locked_assets`` (caller holds locks)."""
+    total_allocated = sum(allocated_amounts, Decimal("0"))
+    dist = Distribution.objects.create(
+        owner_id=user_id,
+        scope=scope,
+        family=family,
+        budget_amount=total_allocated,
+        currency=currency,
+        notes=notes,
+    )
+    for asset_row, amt in zip(locked_assets, allocated_amounts, strict=True):
+        DistributionLine.objects.create(
+            distribution=dist,
+            asset=asset_row,
+            allocated_amount=amt,
+        )
+        asset_row.current_amount += amt
+        asset_row.save(update_fields=("current_amount", "updated_at"))
+    return dist.pk
+
+
 def create_distribution(
     *,
     user_id: int,
@@ -832,24 +897,15 @@ def create_distribution(
                 status_code=400,
             )
 
-        dist = Distribution.objects.create(
-            owner_id=user_id,
+        return _persist_distribution_lines_and_balances(
+            user_id=user_id,
             scope=scope,
             family=fam,
-            budget_amount=total_allocated,
             currency=currency,
             notes=notes,
+            locked_assets=locked_assets,
+            allocated_amounts=allocated_amounts,
         )
-        for asset_row, amt in zip(locked_assets, allocated_amounts, strict=True):
-            DistributionLine.objects.create(
-                distribution=dist,
-                asset=asset_row,
-                allocated_amount=amt,
-            )
-            asset_row.current_amount += amt
-            asset_row.save(update_fields=("current_amount", "updated_at"))
-
-    return dist.pk
 
 
 def _list_peer_assets_for_rush(*, user_id: int, beneficiary: Asset) -> list[Asset]:
