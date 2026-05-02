@@ -4,8 +4,6 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, time as dt_time
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
-from typing import Protocol
-
 from django.db import IntegrityError, transaction
 from django.db.models import Case, Count, DecimalField, F, Q, Sum, Value, When
 from django.db.models.functions import Least
@@ -26,21 +24,6 @@ _LIST_DISTRIBUTIONS_DEFAULT_LIMIT = 20
 _LIST_DISTRIBUTIONS_MAX_LIMIT = 100
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class _SplitTargetView:
-    """Minimal row for ``_allocate_budget_respecting_targets`` (weight + balances)."""
-
-    weight: Decimal
-    current_amount: Decimal
-    target_amount: Decimal | None
-
-
-class _SupportsAllocationSplit(Protocol):
-    weight: Decimal
-    current_amount: Decimal
-    target_amount: Decimal | None
 
 
 class AssetMutationError(Exception):
@@ -84,6 +67,11 @@ def create_asset(
 
     Caller must pass values already validated (e.g. from ``CreateAssetRequest``).
     """
+    if weight <= 0:
+        raise AssetMutationError(
+            "Asset weight must be greater than zero.",
+            status_code=400,
+        )
     if scope == SavingsScope.PERSONAL:
         fam = None
     else:
@@ -420,6 +408,11 @@ def update_asset(
     row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
     if row is None:
         raise AssetMutationError("Asset not found.", status_code=404)
+    if weight <= 0:
+        raise AssetMutationError(
+            "Asset weight must be greater than zero.",
+            status_code=400,
+        )
 
     old_name = row.name
     row.name = name
@@ -514,9 +507,7 @@ def _min_currency_step(currency: str) -> Decimal:
     return Decimal("1") if currency == "CLP" else Decimal("0.01")
 
 
-def _receive_headroom(
-    asset: _SupportsAllocationSplit, allocated_so_far: Decimal
-) -> Decimal | None:
+def _receive_headroom(asset: Asset, allocated_so_far: Decimal) -> Decimal | None:
     """Room for additional **positive** allocation without crossing ``target_amount``.
 
     ``None`` means no cap. ``Decimal('0')`` means already at or over target.
@@ -530,7 +521,7 @@ def _receive_headroom(
 
 def _allocate_budget_respecting_targets(
     budget_amount: Decimal,
-    resolved_assets: list[_SupportsAllocationSplit],
+    resolved_assets: list[Asset],
     currency: str,
 ) -> list[Decimal]:
     """Pro-rata split with iterative cap when ``target_amount`` would be exceeded.
@@ -651,10 +642,9 @@ def _list_peer_assets_for_balance_on_delete(
 def delete_asset(*, user_id: int, asset_id: int) -> None:
     """Delete asset if visible to user.
 
-    Non-zero ``current_amount``: normally ``create_distribution`` to peers (same rules as
-    manual distributions). Peers with combined weight ≤ 0 use equal-weight split via same
-    persist path as ``create_distribution``. ``DistributionMutationError`` from allocation
-    becomes ``AssetMutationError`` so API stays 4xx on delete. No peers → balance discarded.
+    Non-zero ``current_amount``: ``create_distribution`` to peers (same rules as manual
+    distributions). ``DistributionMutationError`` from allocation becomes
+    ``AssetMutationError`` so API stays 4xx on delete. No peers → balance discarded with row.
     """
     row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
     if row is None:
@@ -675,45 +665,15 @@ def delete_asset(*, user_id: int, asset_id: int) -> None:
                 f'Redistributed balance from deleted asset "{victim_locked.name}" '
                 f"(asset_id={victim_locked.pk})"
             )
-            peer_locked_sorted = [locked[pid] for pid in sorted(peer_ids)]
-            total_w = sum((a.weight for a in peer_locked_sorted), Decimal("0"))
             try:
-                if total_w > 0:
-                    create_distribution(
-                        user_id=user_id,
-                        scope=victim_locked.scope,
-                        budget_amount=amount,
-                        currency=victim_locked.currency,
-                        asset_ids=sorted(peer_ids),
-                        notes=delete_notes,
-                    )
-                else:
-                    stand_ins = [
-                        _SplitTargetView(
-                            weight=Decimal("1"),
-                            current_amount=a.current_amount,
-                            target_amount=a.target_amount,
-                        )
-                        for a in peer_locked_sorted
-                    ]
-                    allocated_amounts = _allocate_budget_respecting_targets(
-                        amount, stand_ins, victim_locked.currency
-                    )
-                    total_allocated = sum(allocated_amounts, Decimal("0"))
-                    if amount > 0 and total_allocated <= 0:
-                        raise AssetMutationError(
-                            "No room to allocate toward selected assets (all at or above target).",
-                            status_code=400,
-                        )
-                    _persist_distribution_lines_and_balances(
-                        user_id=user_id,
-                        scope=victim_locked.scope,
-                        family=victim_locked.family,
-                        currency=victim_locked.currency,
-                        notes=delete_notes,
-                        locked_assets=peer_locked_sorted,
-                        allocated_amounts=allocated_amounts,
-                    )
+                create_distribution(
+                    user_id=user_id,
+                    scope=victim_locked.scope,
+                    budget_amount=amount,
+                    currency=victim_locked.currency,
+                    asset_ids=sorted(peer_ids),
+                    notes=delete_notes,
+                )
             except DistributionMutationError as exc:
                 raise AssetMutationError(str(exc), status_code=exc.status_code) from exc
         touched_distribution_ids = list(
