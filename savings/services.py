@@ -634,8 +634,10 @@ def delete_asset(*, user_id: int, asset_id: int) -> None:
     """Delete asset if visible to user.
 
     Non-zero ``current_amount`` split to other ACTIVE assets in same scope/currency by
-    weight (Hamilton remainder via ``_split_budget_by_weights``). No peers → balance
-    discarded with row. Then removes distribution lines and realigns budgets.
+    weight (Hamilton remainder via ``_split_budget_by_weights``). Persists one
+    ``Distribution`` plus ``DistributionLine`` rows on peers (``budget_amount`` = moved
+    total; note explains delete) for audit. No peers → balance discarded with row.
+    Then removes distribution lines on the deleted asset and realigns budgets.
     """
     row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
     if row is None:
@@ -657,9 +659,27 @@ def delete_asset(*, user_id: int, asset_id: int) -> None:
             if sum(weights, Decimal("0")) <= 0:
                 weights = [Decimal("1")] * len(peer_locked)
             splits = _split_budget_by_weights(amount, weights, victim_locked.currency)
+            total_moved = sum(splits, Decimal("0"))
+            delete_notes = (
+                f'Redistributed balance from deleted asset "{victim_locked.name}" '
+                f"(asset_id={victim_locked.pk})"
+            )
+            dist = Distribution.objects.create(
+                owner_id=user_id,
+                scope=victim_locked.scope,
+                family=victim_locked.family,
+                budget_amount=total_moved,
+                currency=victim_locked.currency,
+                notes=delete_notes,
+            )
             for peer, extra in zip(peer_locked, splits, strict=True):
                 if extra == 0:
                     continue
+                DistributionLine.objects.create(
+                    distribution=dist,
+                    asset=peer,
+                    allocated_amount=extra,
+                )
                 peer.current_amount += extra
                 peer.save(update_fields=("current_amount", "updated_at"))
         touched_distribution_ids = list(

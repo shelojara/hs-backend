@@ -1034,6 +1034,20 @@ def test_delete_asset_redistributes_current_amount_to_active_peers_by_weight():
     # 40 split 3:1 → 30 + 10; sums to 40
     assert Asset.objects.get(pk=heavy).current_amount == Decimal("130")
     assert Asset.objects.get(pk=light).current_amount == Decimal("60")
+    redist = Distribution.objects.get(notes__startswith="Redistributed balance from deleted")
+    assert redist.budget_amount == Decimal("40")
+    assert redist.currency == "CLP"
+    assert redist.scope == SavingsScope.PERSONAL
+    lines = list(
+        DistributionLine.objects.filter(distribution_id=redist.pk).order_by("asset_id")
+    )
+    assert len(lines) == 2
+    assert {ln.asset_id: ln.allocated_amount for ln in lines} == {
+        heavy: Decimal("30"),
+        light: Decimal("10"),
+    }
+    assert "Redistributed balance from deleted asset" in redist.notes
+    assert "Gone" in redist.notes and str(gone) in redist.notes
 
 
 @pytest.mark.django_db
@@ -1069,6 +1083,8 @@ def test_delete_asset_redistributes_when_peer_weights_sum_zero_uses_equal_split(
     delete_asset(user_id=user.pk, asset_id=gone)
     assert Asset.objects.get(pk=a1).current_amount == Decimal("3")
     assert Asset.objects.get(pk=a2).current_amount == Decimal("2")
+    redist = Distribution.objects.get(notes__startswith="Redistributed balance from deleted")
+    assert redist.budget_amount == Decimal("5")
 
 
 @pytest.mark.django_db
@@ -1108,6 +1124,9 @@ def test_delete_asset_skips_completed_peers_for_balance_redistribution():
     delete_asset(user_id=user.pk, asset_id=gone)
     assert Asset.objects.get(pk=active).current_amount == Decimal("35")
     assert Asset.objects.get(pk=done).current_amount == Decimal("0")
+    redist = Distribution.objects.get(notes__startswith="Redistributed balance from deleted")
+    assert redist.budget_amount == Decimal("25")
+    assert DistributionLine.objects.filter(distribution_id=redist.pk).count() == 1
 
 
 @pytest.mark.django_db
