@@ -2,6 +2,9 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
+from django.conf import settings
+from django.core.cache import cache
+
 from manga.cbztools.manga_v2 import process_manga
 from manga.cbztools.manhwa_v3 import process_manhwa_v3
 from manga.cbztools.utils import list_dropbox_files, sort_nicely, upload_to_dropbox
@@ -59,11 +62,32 @@ def list_manga_items(*, manga_root: str, path: str) -> list[MangaListItem]:
     return flagged
 
 
+_MANGA_DIRECTORIES_CACHE_KEY = "manga:directories:v1:{root}"
+
+
+def _manga_directories_cache_key(manga_root: str) -> str:
+    root = os.path.abspath(os.path.expanduser(manga_root))
+    return _MANGA_DIRECTORIES_CACHE_KEY.format(root=root)
+
+
+def invalidate_manga_directories_cache(*, manga_root: str) -> None:
+    """Drop cached directory tree for manga_root (e.g. after filesystem changes)."""
+    cache.delete(_manga_directories_cache_key(manga_root))
+
+
 def list_manga_directories(*, manga_root: str) -> MangaDirectoryNode:
     """Nested directory tree under manga_root (directories only)."""
+    key = _manga_directories_cache_key(manga_root)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
     if not os.path.isdir(manga_root):
-        return MangaDirectoryNode(name="", path="", children=())
-    return _manga_directory_subtree(os.path.abspath(manga_root), rel_posix="")
+        node = MangaDirectoryNode(name="", path="", children=())
+    else:
+        node = _manga_directory_subtree(os.path.abspath(manga_root), rel_posix="")
+    timeout = getattr(settings, "MANGA_DIRECTORIES_CACHE_TIMEOUT_SECONDS", 300)
+    cache.set(key, node, timeout=timeout)
+    return node
 
 
 def _manga_directory_subtree(full_path: str, *, rel_posix: str) -> MangaDirectoryNode:
@@ -108,3 +132,4 @@ def convert_cbz(
     download_name += ext
 
     upload_to_dropbox(output_path, path, download_name)
+    invalidate_manga_directories_cache(manga_root=manga_root)
