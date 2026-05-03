@@ -46,3 +46,9 @@ class ConvertCbzResponse(Schema):
 
 class DownloadCbzRequest(Schema):
     item_id: int
+
+
+class DownloadCbzPagesRequest(Schema):
+    item_id: int
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=50, ge=1, le=500)

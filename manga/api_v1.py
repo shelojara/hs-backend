@@ -8,6 +8,7 @@ from manga import services
 from manga.schemas import (
     ConvertCbzRequest,
     ConvertCbzResponse,
+    DownloadCbzPagesRequest,
     DownloadCbzRequest,
     ListSeriesItemRequest,
     ListSeriesItemResponse,
@@ -91,5 +92,27 @@ def download_cbz(request, payload: DownloadCbzRequest):
         open(resolved.absolute_path, "rb"),
         as_attachment=True,
         filename=resolved.filename,
+        content_type="application/vnd.comicbook+zip",
+    )
+
+
+@router.post("/v1.Manga.DownloadCbzPages")
+def download_cbz_pages(request, payload: DownloadCbzPagesRequest):
+    try:
+        built = services.build_cbz_page_slice(
+            manga_root=settings.MANGA_ROOT,
+            item_id=payload.item_id,
+            offset=payload.offset,
+            limit=payload.limit,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg in ("CBZ not found", "Item not found"):
+            raise HttpError(404, msg) from exc
+        raise HttpError(400, msg) from exc
+    return FileResponse(
+        built.content,
+        as_attachment=True,
+        filename=built.filename,
         content_type="application/vnd.comicbook+zip",
     )
