@@ -18,6 +18,23 @@ class ListSeriesResponse(Schema):
     items: list[SeriesSchema]
 
 
+class SeriesItemSchema(Schema):
+    id: int
+    filename: str
+    size_bytes: int | None
+    in_dropbox: bool
+
+
+class ListSeriesItemRequest(Schema):
+    series_id: int = Field(ge=1)
+    limit: int = Field(default=100, ge=1, le=500)
+    offset: int = Field(default=0, ge=0)
+
+
+class ListSeriesItemResponse(Schema):
+    items: list[SeriesItemSchema]
+
+
 class ConvertCbzRequest(Schema):
     path: str
     kind: Literal["manga", "manhwa"] = "manga"

@@ -45,6 +45,24 @@ def list_series(
     return list(qs[offset : offset + limit])
 
 
+def list_series_items(
+    *,
+    manga_root: str,
+    series_id: int,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[SeriesItem]:
+    """Query ``SeriesItem`` for ``series_id`` under ``manga_root`` (natural order by ``filename``)."""
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    try:
+        series = Series.objects.get(pk=series_id, library_root=root_norm)
+    except Series.DoesNotExist as exc:
+        raise ValueError("Series not found") from exc
+    rows = list(series.items.all())
+    rows.sort(key=lambda r: alphanum_key(r.filename))
+    return rows[offset : offset + limit]
+
+
 def _path_under_manga_root(*, manga_root: str, rel_path: str) -> str:
     root_abs = os.path.abspath(os.path.expanduser(manga_root))
     joined = os.path.abspath(os.path.join(root_abs, rel_path))
