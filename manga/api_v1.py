@@ -41,6 +41,7 @@ def list_series_items(request, payload: ListSeriesItemsRequest):
             series_id=payload.series_id,
             limit=payload.limit,
             offset=payload.offset,
+            in_dropbox=payload.in_dropbox,
         )
     except ValueError as exc:
         msg = str(exc)

@@ -29,6 +29,7 @@ class ListSeriesItemsRequest(Schema):
     series_id: int = Field(ge=1)
     limit: int = Field(default=100, ge=1, le=500)
     offset: int = Field(default=0, ge=0)
+    in_dropbox: bool | None = None
 
 
 class ListSeriesItemsResponse(Schema):

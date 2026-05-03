@@ -62,6 +62,7 @@ def list_series_items(
     series_id: int,
     limit: int = 100,
     offset: int = 0,
+    in_dropbox: bool | None = None,
 ) -> list[SeriesItem]:
     """Query ``SeriesItem`` for ``series_id`` under ``manga_root`` (natural order by ``filename``)."""
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
@@ -69,7 +70,10 @@ def list_series_items(
         series = Series.objects.get(pk=series_id, library_root=root_norm)
     except Series.DoesNotExist as exc:
         raise ValueError("Series not found") from exc
-    rows = list(series.items.all())
+    qs = series.items.all()
+    if in_dropbox is not None:
+        qs = qs.filter(in_dropbox=in_dropbox)
+    rows = list(qs)
     rows.sort(key=lambda r: alphanum_key(r.filename))
     return rows[offset : offset + limit]
 
