@@ -99,6 +99,7 @@ def list_series(request, payload: ListSeriesRequest):
             limit=payload.limit,
             offset=payload.offset,
             category=payload.category,
+            search=payload.search,
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc

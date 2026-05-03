@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import BinaryIO, Literal
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from django_q.tasks import async_task
 from PIL import Image
@@ -78,12 +79,17 @@ def list_series(
     limit: int = 100,
     offset: int = 0,
     category: str | None = None,
+    search: str | None = None,
 ) -> list[Series]:
     """Query ``Series`` for ``manga_root`` (normalized), ordered by display ``name``.
 
     *category* ``None``: no category filter. Non-empty *category*: filter rows whose
     stored category equals that string. Empty or whitespace-only *category* raises
     ``ValueError``.
+
+    *search* ``None``: no text filter. Non-empty *search*: case-insensitive substring
+    match on ``name``, ``series_rel_path``, or ``category``. Empty or whitespace-only
+    *search* raises ``ValueError``.
     """
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
     qs = Series.objects.filter(library_root=root_norm).order_by("name", "series_rel_path")
@@ -92,6 +98,15 @@ def list_series(
         if not cat:
             raise ValueError("category filter must be a non-empty string when set")
         qs = qs.filter(category=cat)
+    if search is not None:
+        q = search.strip()
+        if not q:
+            raise ValueError("search must be a non-empty string when set")
+        qs = qs.filter(
+            Q(name__icontains=q)
+            | Q(series_rel_path__icontains=q)
+            | Q(category__icontains=q),
+        )
     return list(qs[offset : offset + limit])
 
 
