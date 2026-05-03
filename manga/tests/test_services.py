@@ -372,6 +372,36 @@ def test_list_series_items_sorts_filenames_naturally(tmp_path, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_list_series_items_filters_by_in_dropbox(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    (root / "S" / "a.cbz").write_bytes(b"x")
+    (root / "S" / "b.cbz").write_bytes(b"y")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_manga_library_cache(manga_root=str(root))
+    s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
+    a = SeriesItem.objects.get(series=s, filename="a.cbz")
+    b = SeriesItem.objects.get(series=s, filename="b.cbz")
+    a.in_dropbox = True
+    a.save(update_fields=["in_dropbox"])
+
+    only_dropbox = list_series_items(
+        manga_root=str(root), series_id=s.id, in_dropbox=True
+    )
+    assert [r.id for r in only_dropbox] == [a.id]
+
+    not_dropbox = list_series_items(
+        manga_root=str(root), series_id=s.id, in_dropbox=False
+    )
+    assert [r.id for r in not_dropbox] == [b.id]
+
+    all_items = list_series_items(manga_root=str(root), series_id=s.id)
+    assert {r.id for r in all_items} == {a.id, b.id}
+
+
+@pytest.mark.django_db
 def test_list_series_items_unknown_series_raises(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
