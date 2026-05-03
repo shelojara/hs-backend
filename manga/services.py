@@ -75,8 +75,21 @@ def _path_under_manga_root(*, manga_root: str, rel_path: str) -> str:
     return joined
 
 
-def resolve_cbz_download(*, manga_root: str, path: str) -> CbzDownload:
-    """Resolve relative path to a readable .cbz under manga_root."""
+def _series_item_for_manga_root(*, manga_root: str, item_id: int) -> SeriesItem:
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    try:
+        item = SeriesItem.objects.select_related("series").get(pk=item_id)
+    except SeriesItem.DoesNotExist:
+        raise ValueError("Item not found") from None
+    if item.series.library_root != root_norm:
+        raise ValueError("Item not found") from None
+    return item
+
+
+def resolve_cbz_download(*, manga_root: str, item_id: int) -> CbzDownload:
+    """Resolve cached ``SeriesItem`` to a readable ``.cbz`` under ``manga_root``."""
+    item = _series_item_for_manga_root(manga_root=manga_root, item_id=item_id)
+    path = item.rel_path
     filename = os.path.basename(path)
     if not filename.lower().endswith(".cbz"):
         raise ValueError("Not a CBZ file")
@@ -307,9 +320,11 @@ def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> Non
 def convert_cbz(
     *,
     manga_root: str,
-    path: str,
+    item_id: int,
     kind: Literal["manga", "manhwa"],
 ) -> None:
+    item = _series_item_for_manga_root(manga_root=manga_root, item_id=item_id)
+    path = item.rel_path
     filename = os.path.basename(path)
 
     if ".cbz" not in filename:

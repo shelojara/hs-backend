@@ -64,11 +64,14 @@ def convert_cbz(request, payload: ConvertCbzRequest):
     try:
         services.convert_cbz(
             manga_root=settings.MANGA_ROOT,
-            path=payload.path,
+            item_id=payload.item_id,
             kind=payload.kind,
         )
     except ValueError as exc:
-        raise HttpError(400, str(exc)) from exc
+        msg = str(exc)
+        if msg == "Item not found":
+            raise HttpError(404, msg) from exc
+        raise HttpError(400, msg) from exc
     return ConvertCbzResponse()
 
 
@@ -77,11 +80,11 @@ def download_cbz(request, payload: DownloadCbzRequest):
     try:
         resolved = services.resolve_cbz_download(
             manga_root=settings.MANGA_ROOT,
-            path=payload.path,
+            item_id=payload.item_id,
         )
     except ValueError as exc:
         msg = str(exc)
-        if msg == "CBZ not found":
+        if msg in ("CBZ not found", "Item not found"):
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     return FileResponse(
