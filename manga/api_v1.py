@@ -60,7 +60,17 @@ def create_cbz_convert_job(request, payload: CreateCbzConvertJobRequest):
 
 @router.post("/v1.Manga.ListCbzConvertJobs", response=ListCbzConvertJobsResponse)
 def list_cbz_convert_jobs(request, payload: ListCbzConvertJobsRequest):
-    rows = services.list_cbz_convert_jobs(user_id=request.auth.pk)
+    try:
+        rows = services.list_cbz_convert_jobs(
+            manga_root=settings.MANGA_ROOT,
+            series_id=payload.series_id,
+            user_id=request.auth.pk,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "Series not found":
+            raise HttpError(404, msg) from exc
+        raise HttpError(400, msg) from exc
     return ListCbzConvertJobsResponse(
         jobs=[_cbz_convert_job_schema(j) for j in rows],
     )

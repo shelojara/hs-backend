@@ -58,7 +58,7 @@ class CreateCbzConvertJobResponse(Schema):
 
 
 class ListCbzConvertJobsRequest(Schema):
-    """No fields; POST body may be ``{}`` for RPC transport."""
+    series_id: int = Field(ge=1)
 
 
 class CbzConvertJobSchema(Schema):
