@@ -7,6 +7,8 @@ from pydantic import Field
 class SeriesSchema(Schema):
     id: int
     name: str
+    cover_image_base64: str | None = None
+    cover_image_mime_type: str = ""
 
 
 class ListSeriesRequest(Schema):
