@@ -235,6 +235,26 @@ def test_sync_manga_library_cache_series_is_dir_with_direct_cbz(tmp_path, monkey
 
 
 @pytest.mark.django_db
+def test_list_series_orders_by_name_not_series_rel_path(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "zzz" / "nested").mkdir(parents=True)
+    (root / "zzz" / "nested" / "a.cbz").write_bytes(b"x")
+    (root / "aaa" / "top").mkdir(parents=True)
+    (root / "aaa" / "top" / "b.cbz").write_bytes(b"y")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_manga_library_cache(manga_root=str(root))
+    listed = list_series(manga_root=str(root))
+    assert [r.name for r in listed] == ["nested", "top"]
+    assert [r.series_rel_path for r in listed] == ["zzz/nested", "aaa/top"]
+
+    paged = list_series(manga_root=str(root), limit=1, offset=1)
+    assert paged[0].name == "top"
+    assert paged[0].series_rel_path == "aaa/top"
+
+
+@pytest.mark.django_db
 def test_sync_manga_library_cache_skips_hidden_series_dirs(tmp_path, monkeypatch):
     root = tmp_path / "lib"
     root.mkdir()
