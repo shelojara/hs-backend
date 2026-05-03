@@ -132,13 +132,6 @@ def _sorted_image_names_in_cbz(abs_cbz_path: str) -> list[str]:
     return names
 
 
-_EXT_TO_MIME = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".webp": "image/webp",
-}
-
 # Stored series cover: fixed width, portrait 11:17; vertical overflow crops from bottom (top-aligned).
 COVER_THUMB_WIDTH = 128
 COVER_THUMB_ASPECT_W = 11
@@ -177,28 +170,35 @@ def _cover_thumb_jpeg_base64_from_image_bytes(raw: bytes) -> str | None:
 
 
 def first_cbz_page_as_base64(abs_cbz_path: str) -> tuple[str | None, str | None]:
-    """First image in CBZ (natural sort). Returns JPEG thumb (128w, 11:17, top crop if tall) when decodable."""
+    """First archive member with image-like name that PIL decodes (natural sort).
+
+    Skips extension-only matches and corrupt/truncated bytes so cover is always
+    a normalized JPEG thumb (128w, 11:17, top crop if tall), or ``(None, None)``.
+    """
     try:
         names = _sorted_image_names_in_cbz(abs_cbz_path)
     except ValueError:
         return None, None
     if not names:
         return None, None
-    first = names[0].replace("\\", "/")
-    _, ext = os.path.splitext(os.path.basename(first))
-    mime = _EXT_TO_MIME.get(ext.lower())
     try:
-        with zipfile.ZipFile(abs_cbz_path, "r") as zf:
-            data = zf.read(names[0])
-    except (zipfile.BadZipFile, OSError, KeyError):
+        zf = zipfile.ZipFile(abs_cbz_path, "r")
+    except (zipfile.BadZipFile, OSError):
         return None, None
-    if not data:
-        return None, None
-    thumb_b64 = _cover_thumb_jpeg_base64_from_image_bytes(data)
-    if thumb_b64 is not None:
-        return thumb_b64, "image/jpeg"
-    b64 = base64.standard_b64encode(data).decode("ascii")
-    return b64, mime
+    try:
+        for name in names:
+            try:
+                data = zf.read(name)
+            except KeyError:
+                continue
+            if not data:
+                continue
+            thumb_b64 = _cover_thumb_jpeg_base64_from_image_bytes(data)
+            if thumb_b64 is not None:
+                return thumb_b64, "image/jpeg"
+    finally:
+        zf.close()
+    return None, None
 
 
 def _refresh_series_cover_from_first_cbz(*, manga_root: str, series: Series) -> None:

@@ -149,6 +149,12 @@ def _write_cbz_member_bytes(path, members: dict[str, bytes]) -> None:
             zf.writestr(name, data)
 
 
+def _minimal_jpeg_bytes() -> bytes:
+    buf = BytesIO()
+    Image.new("RGB", (1, 1), (0, 0, 0)).save(buf, format="JPEG")
+    return buf.getvalue()
+
+
 @pytest.mark.django_db
 def test_build_cbz_page_slice_returns_slice_sorted_natural(tmp_path):
     root = tmp_path / "m"
@@ -469,11 +475,13 @@ def test_convert_cbz_rejects_item_wrong_library(tmp_path, monkeypatch):
 
 def test_first_cbz_page_as_base64_sorted_natural_order(tmp_path):
     cbz = tmp_path / "x.cbz"
-    want = b"\xff\xd8\xff\xd9"
+    want = _minimal_jpeg_bytes()
     _write_cbz_member_bytes(cbz, {"010.jpg": b"old", "001.jpg": want})
     b64, mime = first_cbz_page_as_base64(str(cbz))
     assert mime == "image/jpeg"
-    assert b64 == base64.standard_b64encode(want).decode("ascii")
+    out = Image.open(BytesIO(base64.standard_b64decode(b64)))
+    assert out.format == "JPEG"
+    assert out.width == manga_services.COVER_THUMB_WIDTH
 
 
 def test_first_cbz_page_as_base64_cover_thumb_tall_top_aligned(tmp_path):
@@ -501,6 +509,18 @@ def test_first_cbz_page_as_base64_no_images_returns_none(tmp_path):
     assert first_cbz_page_as_base64(str(cbz)) == (None, None)
 
 
+def test_first_cbz_page_as_base64_skips_undecodable_uses_next_sorted_image(tmp_path):
+    cbz = tmp_path / "x.cbz"
+    want = _minimal_jpeg_bytes()
+    _write_cbz_member_bytes(cbz, {"a.jpg": b"not jpeg", "b.jpg": want})
+    b64, mime = first_cbz_page_as_base64(str(cbz))
+    assert mime == "image/jpeg"
+    assert b64 is not None
+    out = Image.open(BytesIO(base64.standard_b64decode(b64)))
+    assert out.format == "JPEG"
+    assert out.width == manga_services.COVER_THUMB_WIDTH
+
+
 @pytest.mark.django_db
 def test_sync_manga_library_cache_sets_cover_from_first_cbz_first_page(tmp_path, monkeypatch):
     root = tmp_path / "lib"
@@ -510,14 +530,16 @@ def test_sync_manga_library_cache_sets_cover_from_first_cbz_first_page(tmp_path,
     _write_cbz_member_bytes(root / "S" / "ch2.cbz", {"p.png": page_bytes})
     _write_cbz_member_bytes(
         root / "S" / "ch1.cbz",
-        {"b.jpg": b"skip", "a.jpg": b"\xff\xd8\xff\xd9"},
+        {"b.jpg": b"skip", "a.jpg": _minimal_jpeg_bytes()},
     )
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
 
     sync_manga_library_cache(manga_root=str(root))
     s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
     assert s.cover_image_mime_type == "image/jpeg"
-    assert s.cover_image_base64 == base64.standard_b64encode(b"\xff\xd8\xff\xd9").decode("ascii")
+    assert s.cover_image_base64 is not None
+    out = Image.open(BytesIO(base64.standard_b64decode(s.cover_image_base64)))
+    assert out.format == "JPEG"
 
 
 @pytest.mark.django_db
@@ -525,10 +547,12 @@ def test_sync_series_items_for_cbz_path_refreshes_cover(tmp_path, monkeypatch):
     root = tmp_path / "lib"
     root.mkdir()
     (root / "S").mkdir()
-    _write_cbz_member_bytes(root / "S" / "only.cbz", {"x.webp": b"w"})
+    _write_cbz_member_bytes(root / "S" / "only.cbz", {"x.webp": _minimal_jpeg_bytes()})
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
 
     sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="S/only.cbz")
     s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
-    assert s.cover_image_mime_type == "image/webp"
-    assert s.cover_image_base64 == base64.standard_b64encode(b"w").decode("ascii")
+    assert s.cover_image_mime_type == "image/jpeg"
+    assert s.cover_image_base64 is not None
+    out = Image.open(BytesIO(base64.standard_b64decode(s.cover_image_base64)))
+    assert out.format == "JPEG"
