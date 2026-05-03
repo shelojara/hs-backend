@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from django.contrib.auth import get_user_model
 from django.db import connection
+from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
@@ -1022,16 +1023,20 @@ def test_sync_running_low_clears_running_low_even_when_snoozed(mock_suggest):
 )
 def test_sync_running_low_flags_after_snooze_expires(mock_suggest):
     utc = ZoneInfo("UTC")
+    santiago = ZoneInfo("America/Santiago")
     user = _user(username="snooze_exp")
     milk = _catalog_product("Milk", owner=user)
     Product.objects.filter(pk=milk.pk).update(purchase_count=2)
-    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b = Basket.objects.create(
+        owner=user,
+        purchased_at=datetime(2026, 4, 30, 10, 0, 0, tzinfo=santiago),
+    )
     b.products.add(milk)
     Product.objects.filter(pk=milk.pk).update(
         running_low_snoozed_until=datetime(2026, 5, 1, 12, 0, 0, tzinfo=utc),
     )
     with patch("groceries.services.timezone.now") as mock_now:
-        mock_now.return_value = datetime(2026, 5, 2, 12, 0, 0, tzinfo=utc)
+        mock_now.return_value = datetime(2026, 5, 3, 12, 0, 0, tzinfo=santiago)
         mock_suggest.return_value = [
             RunningLowSuggestion(
                 product_name="Milk",
@@ -1653,10 +1658,12 @@ def test_sync_running_low_clears_when_no_purchased_baskets():
 
 
 @pytest.mark.django_db
+@override_settings(TIME_ZONE="America/Santiago")
 @patch(
     "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
 )
 def test_sync_running_low_calls_gemini_and_sets_flags(mock_suggest):
+    chile = ZoneInfo("America/Santiago")
     mock_suggest.return_value = [
         RunningLowSuggestion(
             product_name="Leche",
@@ -1668,10 +1675,15 @@ def test_sync_running_low_calls_gemini_and_sets_flags(mock_suggest):
     user = _user(username="runlow")
     milk = _catalog_product("Leche entera", owner=user)
     Product.objects.filter(pk=milk.pk).update(purchase_count=2)
-    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b = Basket.objects.create(
+        owner=user,
+        purchased_at=datetime(2026, 4, 28, 10, 0, 0, tzinfo=chile),
+    )
     b.products.add(milk)
 
-    sync_running_low_flags_for_user(user_id=user.pk)
+    with patch("groceries.services.timezone.now") as mock_now:
+        mock_now.return_value = datetime(2026, 5, 3, 12, 0, 0, tzinfo=chile)
+        sync_running_low_flags_for_user(user_id=user.pk)
 
     mock_suggest.assert_called_once()
     call_kw = mock_suggest.call_args.kwargs
@@ -1689,22 +1701,58 @@ def test_sync_running_low_calls_gemini_and_sets_flags(mock_suggest):
             product_ids=(milk.pk,),
         ),
     ]
-    sync_running_low_flags_for_user(user_id=user.pk)
+    with patch("groceries.services.timezone.now") as mock_now:
+        mock_now.return_value = datetime(2026, 5, 3, 12, 0, 0, tzinfo=chile)
+        sync_running_low_flags_for_user(user_id=user.pk)
     assert Product.objects.get(pk=milk.pk).running_low
 
 
 @pytest.mark.django_db
+@override_settings(TIME_ZONE="America/Santiago")
+@patch(
+    "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
+)
+def test_sync_running_low_skips_flag_when_purchased_today_or_yesterday(mock_suggest):
+    chile = ZoneInfo("America/Santiago")
+    user = _user(username="recent_buy")
+    milk = _catalog_product("Milk", owner=user)
+    Product.objects.filter(pk=milk.pk).update(purchase_count=2)
+    b = Basket.objects.create(
+        owner=user,
+        purchased_at=datetime(2026, 5, 3, 9, 0, 0, tzinfo=chile),
+    )
+    b.products.add(milk)
+    mock_suggest.return_value = [
+        RunningLowSuggestion(
+            product_name="Milk",
+            reason="stock low",
+            urgency="high",
+            product_ids=(milk.pk,),
+        ),
+    ]
+    with patch("groceries.services.timezone.now") as mock_now:
+        mock_now.return_value = datetime(2026, 5, 3, 18, 0, 0, tzinfo=chile)
+        sync_running_low_flags_for_user(user_id=user.pk)
+    assert not Product.objects.get(pk=milk.pk).running_low
+
+
+@pytest.mark.django_db
+@override_settings(TIME_ZONE="America/Santiago")
 @patch("groceries.services.send_email_via_gmail")
 @patch(
     "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
 )
 def test_sync_running_low_sends_digest_email_still_and_new(mock_suggest, mock_mail):
+    chile = ZoneInfo("America/Santiago")
     user = _user(username="digest", email="shopper@example.com")
     milk = _catalog_product("Leche entera", owner=user)
     bread = _catalog_product("Pan integral", owner=user)
     Product.objects.filter(pk__in=[milk.pk, bread.pk]).update(purchase_count=2)
     Product.objects.filter(pk=milk.pk).update(running_low=True)
-    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b = Basket.objects.create(
+        owner=user,
+        purchased_at=datetime(2026, 4, 25, 10, 0, 0, tzinfo=chile),
+    )
     b.products.add(milk, bread)
     mock_suggest.return_value = [
         RunningLowSuggestion(
@@ -1721,7 +1769,9 @@ def test_sync_running_low_sends_digest_email_still_and_new(mock_suggest, mock_ma
         ),
     ]
 
-    sync_running_low_flags_for_user(user_id=user.pk)
+    with patch("groceries.services.timezone.now") as mock_now:
+        mock_now.return_value = datetime(2026, 5, 3, 12, 0, 0, tzinfo=chile)
+        sync_running_low_flags_for_user(user_id=user.pk)
 
     mock_mail.assert_called_once()
     kw = mock_mail.call_args.kwargs
@@ -1737,15 +1787,20 @@ def test_sync_running_low_sends_digest_email_still_and_new(mock_suggest, mock_ma
 
 
 @pytest.mark.django_db
+@override_settings(TIME_ZONE="America/Santiago")
 @patch("groceries.services.send_email_via_gmail")
 @patch(
     "groceries.services.gemini_service.suggest_running_low_from_purchase_history",
 )
 def test_sync_running_low_skips_email_when_user_has_no_email(mock_suggest, mock_mail):
+    chile = ZoneInfo("America/Santiago")
     user = _user(username="noaddr", email="")
     milk = _catalog_product("Leche", owner=user)
     Product.objects.filter(pk=milk.pk).update(purchase_count=2)
-    b = Basket.objects.create(owner=user, purchased_at=timezone.now())
+    b = Basket.objects.create(
+        owner=user,
+        purchased_at=datetime(2026, 4, 20, 10, 0, 0, tzinfo=chile),
+    )
     b.products.add(milk)
     mock_suggest.return_value = [
         RunningLowSuggestion(
@@ -1756,7 +1811,9 @@ def test_sync_running_low_skips_email_when_user_has_no_email(mock_suggest, mock_
         ),
     ]
 
-    sync_running_low_flags_for_user(user_id=user.pk)
+    with patch("groceries.services.timezone.now") as mock_now:
+        mock_now.return_value = datetime(2026, 5, 3, 12, 0, 0, tzinfo=chile)
+        sync_running_low_flags_for_user(user_id=user.pk)
 
     mock_mail.assert_not_called()
 

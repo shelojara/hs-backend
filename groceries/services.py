@@ -99,6 +99,34 @@ LIST_PURCHASED_BASKETS_LIMIT = 20
 RUNNING_LOW_MANUAL_SNOOZE_DAYS = 7
 
 
+def _recent_running_low_purchase_product_ids(
+    *,
+    user_id: int,
+    as_of: datetime,
+) -> set[int]:
+    """Catalog ids bought on local calendar yesterday or today (relative to *as_of*).
+
+    Running-low sync skips flagging these — shopper stocked recently.
+    """
+    if timezone.is_naive(as_of):
+        as_of = timezone.make_aware(as_of, timezone.get_current_timezone())
+    local = timezone.localtime(as_of)
+    today = local.date()
+    yday = today - timedelta(days=1)
+    rows = (
+        BasketProduct.objects.filter(
+            basket__owner_id=user_id,
+            basket__purchased_at__isnull=False,
+            purchase=True,
+        )
+        .filter(
+            Q(basket__purchased_at__date=yday) | Q(basket__purchased_at__date=today),
+        )
+        .values_list("product_id", flat=True)
+    )
+    return set(rows)
+
+
 def _fetch_merchant_product_info_by_identity_or_none(
     *,
     standard_name: str,
@@ -1094,7 +1122,8 @@ def sync_running_low_flags_for_user(*, user_id: int) -> None:
 
     Clears ``running_low`` for all of the user's products first. Snoozed products
     (``running_low_snoozed_until`` after *now*) are omitted from the history text
-    sent to Gemini. Suggested ids for snoozed rows are still ignored when applying
+    sent to Gemini. Products purchased on local yesterday or today are never
+    flagged. Suggested ids for snoozed rows are still ignored when applying
     updates (defense in depth). After a successful sync that flags at least one
     product, emails the user a digest (still low vs newly flagged).
     """
@@ -1142,6 +1171,9 @@ def sync_running_low_flags_for_user(*, user_id: int) -> None:
     eligible = Product.objects.filter(user_id=user_id, pk__in=pids).exclude(
         running_low_snoozed_until__gt=now,
     )
+    recent_ids = _recent_running_low_purchase_product_ids(user_id=user_id, as_of=now)
+    if recent_ids:
+        eligible = eligible.exclude(pk__in=recent_ids)
     final_running_low_ids = set(eligible.values_list("pk", flat=True))
     if not final_running_low_ids:
         return
