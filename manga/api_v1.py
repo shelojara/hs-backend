@@ -11,10 +11,25 @@ from manga.schemas import (
     DownloadCbzRequest,
     ListMangaFilesRequest,
     ListMangaFilesResponse,
+    ListSeriesRequest,
+    ListSeriesResponse,
     MangaFileSchema,
+    SeriesSchema,
 )
 
 router = Router(auth=protected_api_auth, tags=["Manga"])
+
+
+@router.post("/v1.Manga.ListSeries", response=ListSeriesResponse)
+def list_series(request, payload: ListSeriesRequest):
+    rows = services.list_series(
+        manga_root=settings.MANGA_ROOT,
+        limit=payload.limit,
+        offset=payload.offset,
+    )
+    return ListSeriesResponse(
+        items=[SeriesSchema(id=r.id, name=r.name) for r in rows],
+    )
 
 
 @router.post("/v1.Manga.ListMangaFiles", response=ListMangaFilesResponse)

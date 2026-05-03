@@ -33,6 +33,18 @@ class CbzDownload:
     filename: str
 
 
+def list_series(
+    *,
+    manga_root: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[Series]:
+    """Query ``Series`` for ``manga_root`` (normalized), ordered by ``series_rel_path``."""
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    qs = Series.objects.filter(library_root=root_norm).order_by("series_rel_path")
+    return list(qs[offset : offset + limit])
+
+
 def _path_under_manga_root(*, manga_root: str, rel_path: str) -> str:
     root_abs = os.path.abspath(os.path.expanduser(manga_root))
     joined = os.path.abspath(os.path.join(root_abs, rel_path))
