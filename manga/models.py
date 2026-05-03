@@ -72,9 +72,7 @@ class CbzConvertJob(models.Model):
     )
     series = models.ForeignKey(
         "Series",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         related_name="cbz_convert_jobs",
         help_text="Series containing series_item_id; denormalized for efficient job listing.",
     )
