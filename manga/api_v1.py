@@ -9,11 +9,8 @@ from manga.schemas import (
     ConvertCbzRequest,
     ConvertCbzResponse,
     DownloadCbzRequest,
-    ListMangaFilesRequest,
-    ListMangaFilesResponse,
     ListSeriesRequest,
     ListSeriesResponse,
-    MangaFileSchema,
     SeriesSchema,
 )
 
@@ -29,28 +26,6 @@ def list_series(request, payload: ListSeriesRequest):
     )
     return ListSeriesResponse(
         items=[SeriesSchema(id=r.id, name=r.name) for r in rows],
-    )
-
-
-@router.post("/v1.Manga.ListMangaFiles", response=ListMangaFilesResponse)
-def list_manga_files(request, payload: ListMangaFilesRequest):
-    try:
-        raw = services.list_manga_cbz_files(
-            manga_root=settings.MANGA_ROOT,
-            path=payload.path,
-        )
-    except ValueError as exc:
-        raise HttpError(400, str(exc)) from exc
-    return ListMangaFilesResponse(
-        items=[
-            MangaFileSchema(
-                name=i.name,
-                path=i.path,
-                size=i.size,
-                in_dropbox=i.in_dropbox,
-            )
-            for i in raw
-        ],
     )
 
 
