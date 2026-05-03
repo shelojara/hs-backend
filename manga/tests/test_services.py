@@ -487,6 +487,47 @@ def test_list_series_rejects_empty_category_filter(tmp_path, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_list_series_filters_by_search(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "Shonen" / "Naruto").mkdir(parents=True)
+    (root / "Shonen" / "Naruto" / "a.cbz").write_bytes(b"x")
+    (root / "Seinen" / "Berserk").mkdir(parents=True)
+    (root / "Seinen" / "Berserk" / "b.cbz").write_bytes(b"y")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_manga_library_cache(manga_root=str(root))
+
+    by_name = list_series(manga_root=str(root), search="naruto")
+    assert [r.series_rel_path for r in by_name] == ["Shonen/Naruto"]
+
+    by_rel = list_series(manga_root=str(root), search="Seinen/Ber")
+    assert [r.series_rel_path for r in by_rel] == ["Seinen/Berserk"]
+
+    by_cat = list_series(manga_root=str(root), search="shonen")
+    assert [r.series_rel_path for r in by_cat] == ["Shonen/Naruto"]
+
+    combined = list_series(manga_root=str(root), category="Seinen", search="ser")
+    assert [r.series_rel_path for r in combined] == ["Seinen/Berserk"]
+
+
+@pytest.mark.django_db
+def test_list_series_rejects_empty_search_filter(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    (root / "S" / "a.cbz").write_bytes(b"x")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_manga_library_cache(manga_root=str(root))
+
+    with pytest.raises(ValueError, match="non-empty"):
+        list_series(manga_root=str(root), search="")
+    with pytest.raises(ValueError, match="non-empty"):
+        list_series(manga_root=str(root), search="   ")
+
+
+@pytest.mark.django_db
 def test_sync_manga_library_cache_commits_series_before_failing_one(tmp_path, monkeypatch):
     """Per-series transactions: earlier series stay persisted when a later series raises."""
     root = tmp_path / "lib"
