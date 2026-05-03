@@ -193,6 +193,14 @@ class SeriesItem(models.Model):
         default="",
         help_text="MIME type for decoded cover bytes (e.g. image/jpeg).",
     )
+    file_created_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Best-effort filesystem birth/creation time for the CBZ when synced "
+            "(platform-dependent; falls back to metadata change time)."
+        ),
+    )
 
     class Meta:
         ordering = ("series", "rel_path")

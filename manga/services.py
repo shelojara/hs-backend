@@ -2,6 +2,7 @@ import base64
 import logging
 import os
 import posixpath
+from datetime import UTC, datetime
 import shutil
 import tempfile
 import zipfile
@@ -35,6 +36,16 @@ from manga.models import (
 logger = logging.getLogger(__name__)
 
 
+def _filesystem_created_at_from_stat(st: os.stat_result) -> datetime | None:
+    """UTC timestamp from ``st_birthtime`` when present, else ``st_ctime`` (platform-dependent)."""
+    birth = getattr(st, "st_birthtime", None)
+    ts = float(birth) if birth is not None else float(st.st_ctime)
+    try:
+        return datetime.fromtimestamp(ts, tz=UTC)
+    except (OSError, OverflowError, ValueError):
+        return None
+
+
 @dataclass(frozen=True)
 class MangaListItem:
     name: str
@@ -42,6 +53,7 @@ class MangaListItem:
     is_dir: bool
     size: int | None
     in_dropbox: bool
+    file_created_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -317,7 +329,7 @@ def list_manga_cbz_files(*, manga_root: str, path: str) -> list[MangaListItem]:
         return []
 
     base_prefix = rel
-    pending: list[tuple[str, str, int, str]] = []
+    pending: list[tuple[str, str, int, str, datetime | None]] = []
 
     try:
         names = os.listdir(base_abs)
@@ -337,16 +349,21 @@ def list_manga_cbz_files(*, manga_root: str, path: str) -> list[MangaListItem]:
         rel_path_os = (
             os.path.join(base_prefix.replace("/", os.sep), fn) if base_prefix else fn
         )
-        pending.append((fn, rel_path_os, os.path.getsize(full), parent_posix))
+        try:
+            st = os.stat(full)
+        except OSError:
+            continue
+        file_created_at = _filesystem_created_at_from_stat(st)
+        pending.append((fn, rel_path_os, st.st_size, parent_posix, file_created_at))
 
     dropbox_by_segment: dict[str, list] = {}
-    for _name, _rel, _size, parent_posix in pending:
+    for _name, _rel, _size, parent_posix, _fca in pending:
         seg = _dropbox_list_segment_for_folder(parent_rel=parent_posix)
         if seg not in dropbox_by_segment:
             dropbox_by_segment[seg] = list_dropbox_files(seg)
 
     out: list[MangaListItem] = []
-    for name, rel_path_os, size, parent_posix in pending:
+    for name, rel_path_os, size, parent_posix, file_created_at in pending:
         seg = _dropbox_list_segment_for_folder(parent_rel=parent_posix)
         dfs = dropbox_by_segment[seg]
         in_dropbox = any(name in df.name for df in dfs)
@@ -357,6 +374,7 @@ def list_manga_cbz_files(*, manga_root: str, path: str) -> list[MangaListItem]:
                 is_dir=False,
                 size=size,
                 in_dropbox=in_dropbox,
+                file_created_at=file_created_at,
             ),
         )
     out.sort(key=lambda i: alphanum_key(i.path.replace(os.sep, "/")))
@@ -464,6 +482,7 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
                         "filename": item.name,
                         "size_bytes": item.size,
                         "in_dropbox": item.in_dropbox,
+                        "file_created_at": item.file_created_at,
                     },
                 )
                 _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
@@ -510,6 +529,7 @@ def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> Non
                     "filename": item.name,
                     "size_bytes": item.size,
                     "in_dropbox": item.in_dropbox,
+                    "file_created_at": item.file_created_at,
                 },
             )
             _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
