@@ -95,6 +95,18 @@ def list_series(
     return list(qs[offset : offset + limit])
 
 
+def list_distinct_series_categories(*, manga_root: str) -> list[str]:
+    """Non-empty distinct ``Series.category`` values for *manga_root*, sorted ascending."""
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    return list(
+        Series.objects.filter(library_root=root_norm)
+        .exclude(category="")
+        .values_list("category", flat=True)
+        .distinct()
+        .order_by("category")
+    )
+
+
 def list_series_items(
     *,
     manga_root: str,

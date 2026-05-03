@@ -12,6 +12,7 @@ from manga.services import (
     build_cbz_page_slice,
     convert_cbz,
     first_cbz_page_as_base64,
+    list_distinct_series_categories,
     list_manga_cbz_files,
     list_series,
     list_series_items,
@@ -449,6 +450,24 @@ def test_list_series_filters_by_category(tmp_path, monkeypatch):
 
     all_rows = list_series(manga_root=str(root))
     assert len(all_rows) == 4
+
+
+@pytest.mark.django_db
+def test_list_distinct_series_categories(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "Shonen" / "A").mkdir(parents=True)
+    (root / "Shonen" / "A" / "a.cbz").write_bytes(b"x")
+    (root / "Shonen" / "B").mkdir(parents=True)
+    (root / "Shonen" / "B" / "b.cbz").write_bytes(b"y")
+    (root / "Seinen" / "C").mkdir(parents=True)
+    (root / "Seinen" / "C" / "c.cbz").write_bytes(b"z")
+    (root / "root.cbz").write_bytes(b"w")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_manga_library_cache(manga_root=str(root))
+
+    assert list_distinct_series_categories(manga_root=str(root)) == ["Seinen", "Shonen"]
 
 
 @pytest.mark.django_db

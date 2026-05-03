@@ -40,6 +40,10 @@ class ListSeriesResponse(Schema):
     items: list[SeriesSchema]
 
 
+class ListSeriesCategoriesResponse(Schema):
+    categories: list[str]
+
+
 class SeriesItemSchema(Schema):
     id: int
     filename: str

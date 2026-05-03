@@ -20,6 +20,7 @@ from manga.schemas import (
     ListCbzConvertJobsResponse,
     ListSeriesItemsRequest,
     ListSeriesItemsResponse,
+    ListSeriesCategoriesResponse,
     ListSeriesRequest,
     ListSeriesResponse,
     SeriesItemSchema,
@@ -115,6 +116,12 @@ def list_series(request, payload: ListSeriesRequest):
             for r in rows
         ],
     )
+
+
+@router.post("/v1.Manga.ListSeriesCategories", response=ListSeriesCategoriesResponse)
+def list_series_categories(request):
+    categories = services.list_distinct_series_categories(manga_root=settings.MANGA_ROOT)
+    return ListSeriesCategoriesResponse(categories=categories)
 
 
 @router.post("/v1.Manga.ListSeriesItems", response=ListSeriesItemsResponse)
