@@ -136,6 +136,10 @@ class Series(models.Model):
         default="",
         help_text="MIME type for decoded cover bytes (e.g. image/jpeg).",
     )
+    item_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of cached SeriesItem rows (CBZ files) for this series; set by library sync.",
+    )
     scanned_at = models.DateTimeField(auto_now=True)
 
     class Meta:

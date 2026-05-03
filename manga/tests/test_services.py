@@ -37,6 +37,7 @@ def test_sync_series_items_for_cbz_path_updates_dropbox_flags(tmp_path, monkeypa
     sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
 
     s = Series.objects.get(library_root=abs_root, series_rel_path="MySeries")
+    assert s.item_count == 1
     row = SeriesItem.objects.get(series=s, rel_path="MySeries/ch.cbz")
     assert row.in_dropbox is True
 
@@ -353,10 +354,12 @@ def test_sync_manga_library_cache_series_is_dir_with_direct_cbz(tmp_path, monkey
     abs_root = str(root.resolve())
     s_alpha = Series.objects.get(library_root=abs_root, series_rel_path="Alpha")
     assert s_alpha.name == "Alpha"
+    assert s_alpha.item_count == 1
     assert SeriesItem.objects.filter(series=s_alpha).count() == 1
 
     s_nested = Series.objects.get(library_root=abs_root, series_rel_path="nested")
     assert s_nested.name == "nested"
+    assert s_nested.item_count == 1
 
     listed = list_series(manga_root=str(root))
     assert [r.series_rel_path for r in listed] == ["Alpha", "nested"]
@@ -399,6 +402,7 @@ def test_sync_manga_library_cache_commits_series_before_failing_one(tmp_path, mo
     assert Series.objects.filter(library_root=abs_root).count() == 1
     kept = Series.objects.get(library_root=abs_root)
     assert kept.series_rel_path == "Alpha"
+    assert kept.item_count == 1
     assert SeriesItem.objects.filter(series=kept).count() == 1
 
 
@@ -413,6 +417,7 @@ def test_list_series_items_sorts_filenames_naturally(tmp_path, monkeypatch):
 
     sync_manga_library_cache(manga_root=str(root))
     s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
+    assert s.item_count == 3
     names = [r.filename for r in list_series_items(manga_root=str(root), series_id=s.id)]
     assert names == ["ch1.cbz", "ch2.cbz", "ch10.cbz"]
 

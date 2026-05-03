@@ -469,6 +469,8 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
                 _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
 
             _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
+            series.item_count = series.items.count()
+            series.save(update_fields=["item_count"])
 
     series_count = Series.objects.filter(library_root=root_norm).count()
     chapter_total = SeriesItem.objects.filter(series__library_root=root_norm).count()
@@ -513,6 +515,8 @@ def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> Non
             _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
 
         _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
+        series.item_count = series.items.count()
+        series.save(update_fields=["item_count"])
 
 
 def convert_cbz(
