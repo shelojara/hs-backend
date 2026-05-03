@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -44,6 +45,70 @@ class MangaHiddenDirectory(models.Model):
 
     def __str__(self) -> str:
         return self.rel_path
+
+
+class CbzConvertJobStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    COMPLETED = "completed", "Completed"
+    FAILED = "failed", "Failed"
+
+
+class ActiveCbzConvertJobManager(models.Manager):
+    """Rows with ``deleted_at`` unset (not soft-deleted)."""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted_at__isnull=True)
+
+
+class CbzConvertKind(models.TextChoices):
+    MANGA = "manga", "Manga"
+    MANHWA = "manhwa", "Manhwa"
+
+
+class CbzConvertJob(models.Model):
+    """Async CBZ conversion (Dropbox upload); same lifecycle pattern as groceries ``Search``."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="manga_cbz_convert_jobs",
+    )
+    manga_root = models.CharField(
+        max_length=4096,
+        help_text="Normalized absolute manga library root when job was created.",
+    )
+    series_item_id = models.PositiveIntegerField(
+        help_text="Primary key of SeriesItem to convert.",
+    )
+    kind = models.CharField(
+        max_length=16,
+        choices=CbzConvertKind.choices,
+        default=CbzConvertKind.MANGA,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=16,
+        choices=CbzConvertJobStatus.choices,
+        default=CbzConvertJobStatus.PENDING,
+        db_index=True,
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    failure_message = models.TextField(null=True, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    all_objects = models.Manager()
+    objects = ActiveCbzConvertJobManager()
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        base_manager_name = "all_objects"
+        default_manager_name = "objects"
+
+    def __str__(self) -> str:
+        return (
+            f"CbzConvertJob(item={self.series_item_id}, kind={self.kind}, "
+            f"status={self.status}, user={self.user_id})"
+        )
 
 
 class Series(models.Model):

@@ -5,11 +5,21 @@ from ninja.errors import HttpError
 
 from auth.security import protected_api_auth
 from manga import services
+from manga.models import CbzConvertJob
 from manga.schemas import (
     ConvertCbzRequest,
     ConvertCbzResponse,
+    CreateCbzConvertJobRequest,
+    CreateCbzConvertJobResponse,
+    CbzConvertJobSchema,
+    DeleteCbzConvertJobRequest,
+    DeleteCbzConvertJobResponse,
     DownloadCbzPagesRequest,
     DownloadCbzRequest,
+    GetCbzConvertJobRequest,
+    GetCbzConvertJobResponse,
+    ListCbzConvertJobsRequest,
+    ListCbzConvertJobsResponse,
     ListSeriesItemsRequest,
     ListSeriesItemsResponse,
     ListSeriesRequest,
@@ -19,6 +29,67 @@ from manga.schemas import (
 )
 
 router = Router(auth=protected_api_auth, tags=["Manga"])
+
+
+def _cbz_convert_job_schema(j: CbzConvertJob) -> CbzConvertJobSchema:
+    return CbzConvertJobSchema(
+        convert_job_id=j.pk,
+        created_at=j.created_at,
+        series_item_id=j.series_item_id,
+        kind=j.kind,
+        status=j.status,
+        completed_at=j.completed_at,
+        failure_message=((j.failure_message or "").strip() or None),
+    )
+
+
+@router.post("/v1.Manga.CreateCbzConvertJob", response=CreateCbzConvertJobResponse)
+def create_cbz_convert_job(request, payload: CreateCbzConvertJobRequest):
+    try:
+        job_id = services.create_cbz_convert_job(
+            manga_root=settings.MANGA_ROOT,
+            item_id=payload.item_id,
+            kind=payload.kind,
+            user_id=request.auth.pk,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "Item not found":
+            raise HttpError(404, msg) from exc
+        raise HttpError(400, msg) from exc
+    return CreateCbzConvertJobResponse(convert_job_id=job_id)
+
+
+@router.post("/v1.Manga.ListCbzConvertJobs", response=ListCbzConvertJobsResponse)
+def list_cbz_convert_jobs(request, payload: ListCbzConvertJobsRequest):
+    rows = services.list_cbz_convert_jobs(user_id=request.auth.pk)
+    return ListCbzConvertJobsResponse(
+        jobs=[_cbz_convert_job_schema(j) for j in rows],
+    )
+
+
+@router.post("/v1.Manga.GetCbzConvertJob", response=GetCbzConvertJobResponse)
+def get_cbz_convert_job(request, payload: GetCbzConvertJobRequest):
+    try:
+        j = services.get_cbz_convert_job(
+            job_id=payload.convert_job_id,
+            user_id=request.auth.pk,
+        )
+    except CbzConvertJob.DoesNotExist as exc:
+        raise HttpError(404, "Convert job not found.") from exc
+    return GetCbzConvertJobResponse(job=_cbz_convert_job_schema(j))
+
+
+@router.post("/v1.Manga.DeleteCbzConvertJob", response=DeleteCbzConvertJobResponse)
+def delete_cbz_convert_job(request, payload: DeleteCbzConvertJobRequest):
+    try:
+        services.delete_cbz_convert_job(
+            job_id=payload.convert_job_id,
+            user_id=request.auth.pk,
+        )
+    except CbzConvertJob.DoesNotExist as exc:
+        raise HttpError(404, "Convert job not found.") from exc
+    return DeleteCbzConvertJobResponse()
 
 
 @router.post("/v1.Manga.ListSeries", response=ListSeriesResponse)

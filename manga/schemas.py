@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from ninja import Schema
@@ -44,6 +45,49 @@ class ConvertCbzRequest(Schema):
 
 
 class ConvertCbzResponse(Schema):
+    pass
+
+
+class CreateCbzConvertJobRequest(Schema):
+    item_id: int = Field(ge=1)
+    kind: Literal["manga", "manhwa"] = "manga"
+
+
+class CreateCbzConvertJobResponse(Schema):
+    convert_job_id: int
+
+
+class ListCbzConvertJobsRequest(Schema):
+    """No fields; POST body may be ``{}`` for RPC transport."""
+
+
+class CbzConvertJobSchema(Schema):
+    convert_job_id: int
+    created_at: datetime
+    series_item_id: int
+    kind: str
+    status: str
+    completed_at: datetime | None
+    failure_message: str | None = None
+
+
+class ListCbzConvertJobsResponse(Schema):
+    jobs: list[CbzConvertJobSchema]
+
+
+class GetCbzConvertJobRequest(Schema):
+    convert_job_id: int
+
+
+class GetCbzConvertJobResponse(Schema):
+    job: CbzConvertJobSchema
+
+
+class DeleteCbzConvertJobRequest(Schema):
+    convert_job_id: int
+
+
+class DeleteCbzConvertJobResponse(Schema):
     pass
 
 
