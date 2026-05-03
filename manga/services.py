@@ -590,15 +590,9 @@ def get_cbz_convert_job(job_id: int, *, user_id: int) -> CbzConvertJob:
 def run_cbz_convert_job(*, job_id: int) -> None:
     """Background worker: ``convert_cbz`` using stored ``manga_root`` / ``series_item_id``."""
     try:
-        job = CbzConvertJob.all_objects.get(pk=job_id)
+        job = CbzConvertJob.objects.get(pk=job_id)
     except CbzConvertJob.DoesNotExist:
         logger.warning("run_cbz_convert_job: missing CbzConvertJob id=%s", job_id)
-        return
-    if job.deleted_at is not None:
-        logger.warning(
-            "run_cbz_convert_job: CbzConvertJob id=%s soft-deleted; skipping.",
-            job_id,
-        )
         return
     kind: Literal["manga", "manhwa"] = (
         "manhwa" if job.kind == CbzConvertKind.MANHWA else "manga"

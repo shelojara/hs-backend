@@ -53,13 +53,6 @@ class CbzConvertJobStatus(models.TextChoices):
     FAILED = "failed", "Failed"
 
 
-class ActiveCbzConvertJobManager(models.Manager):
-    """Rows with ``deleted_at`` unset (not soft-deleted)."""
-
-    def get_queryset(self):
-        return super().get_queryset().filter(deleted_at__isnull=True)
-
-
 class CbzConvertKind(models.TextChoices):
     MANGA = "manga", "Manga"
     MANHWA = "manhwa", "Manhwa"
@@ -94,15 +87,9 @@ class CbzConvertJob(models.Model):
     )
     completed_at = models.DateTimeField(null=True, blank=True)
     failure_message = models.TextField(null=True, blank=True)
-    deleted_at = models.DateTimeField(null=True, blank=True)
-
-    all_objects = models.Manager()
-    objects = ActiveCbzConvertJobManager()
 
     class Meta:
         ordering = ("-created_at", "-id")
-        base_manager_name = "all_objects"
-        default_manager_name = "objects"
 
     def __str__(self) -> str:
         return (
