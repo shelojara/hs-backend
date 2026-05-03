@@ -135,6 +135,7 @@ def list_series_items(request, payload: ListSeriesItemsRequest):
                 filename=r.filename,
                 size_bytes=r.size_bytes,
                 in_dropbox=r.in_dropbox,
+                file_created_at=r.file_created_at,
                 cover_image_base64=r.cover_image_base64,
                 cover_image_mime_type=r.cover_image_mime_type or "",
             )

@@ -30,8 +30,22 @@ class MangaHiddenDirectoryAdmin(admin.ModelAdmin):
 class SeriesItemInline(admin.TabularInline):
     model = SeriesItem
     extra = 0
-    fields = ("rel_path", "filename", "size_bytes", "in_dropbox", "item_cover_preview")
-    readonly_fields = ("rel_path", "filename", "size_bytes", "in_dropbox", "item_cover_preview")
+    fields = (
+        "rel_path",
+        "filename",
+        "size_bytes",
+        "file_created_at",
+        "in_dropbox",
+        "item_cover_preview",
+    )
+    readonly_fields = (
+        "rel_path",
+        "filename",
+        "size_bytes",
+        "file_created_at",
+        "in_dropbox",
+        "item_cover_preview",
+    )
     can_delete = False
 
     @admin.display(description="Item cover")

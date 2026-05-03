@@ -1,4 +1,5 @@
 import base64
+import os
 import zipfile
 from io import BytesIO
 
@@ -40,6 +41,26 @@ def test_sync_series_items_for_cbz_path_updates_dropbox_flags(tmp_path, monkeypa
     assert s.item_count == 1
     row = SeriesItem.objects.get(series=s, rel_path="MySeries/ch.cbz")
     assert row.in_dropbox is True
+
+
+@pytest.mark.django_db
+def test_sync_series_items_sets_file_created_at_from_filesystem(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "MySeries").mkdir()
+    cbz = root / "MySeries" / "ch.cbz"
+    cbz.write_bytes(b"x")
+
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
+
+    s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="MySeries")
+    row = SeriesItem.objects.get(series=s, rel_path="MySeries/ch.cbz")
+    assert row.file_created_at is not None
+    expected = manga_services._filesystem_created_at_from_stat(os.stat(cbz))
+    assert expected is not None
+    assert abs((row.file_created_at - expected).total_seconds()) < 1
 
 
 @pytest.mark.django_db
