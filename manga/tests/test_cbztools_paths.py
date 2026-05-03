@@ -35,7 +35,6 @@ def test_convert_cbz_removes_temp_work_dir_after_success(tmp_path, monkeypatch):
 
     monkeypatch.setattr(manga_services, "process_manga", fake_process_manga)
     monkeypatch.setattr(manga_services, "upload_to_dropbox", lambda *_a, **_k: None)
-    monkeypatch.setattr(manga_services, "sync_series_items_for_cbz_path", lambda **_k: None)
 
     convert_cbz(manga_root=str(root), item_id=row.pk, kind="manga")
 

@@ -130,7 +130,7 @@ def test_sync_series_items_for_cbz_path_skips_hidden_series(tmp_path, monkeypatc
 
 
 @pytest.mark.django_db
-def test_convert_cbz_calls_sync_series_items(tmp_path, monkeypatch):
+def test_convert_cbz_sets_dropbox_fields_without_series_resync(tmp_path, monkeypatch):
     root = tmp_path / "m"
     root.mkdir()
     cbz = root / "series" / "ch.cbz"
@@ -145,17 +145,10 @@ def test_convert_cbz_calls_sync_series_items(tmp_path, monkeypatch):
         size_bytes=4,
     )
 
-    calls = []
-
-    def capture(**kw):
-        calls.append(kw)
-
     monkeypatch.setattr(manga_services, "process_manga", lambda _paths, _wd: str(cbz))
     monkeypatch.setattr(manga_services, "upload_to_dropbox", lambda *_a, **_k: None)
-    monkeypatch.setattr(manga_services, "sync_series_items_for_cbz_path", capture)
 
     convert_cbz(manga_root=str(root), item_id=row.pk, kind="manga")
-    assert calls == [{"manga_root": str(root), "cbz_rel_path": "series/ch.cbz"}]
     row.refresh_from_db()
     assert row.in_dropbox is True
     assert row.dropbox_uploaded_at is not None

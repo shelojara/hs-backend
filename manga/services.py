@@ -542,10 +542,7 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
 
 
 def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> None:
-    """Upsert ``Series`` / ``SeriesItem`` for directory containing ``cbz_rel_path`` (Dropbox flags via listing).
-
-    Used after ``convert_cbz`` upload so DB tracks Dropbox state without full-library ``sync_manga_library_cache``.
-    """
+    """Upsert ``Series`` / ``SeriesItem`` for directory containing ``cbz_rel_path`` (Dropbox flags via listing)."""
     rel = normalize_manga_hidden_rel_path(cbz_rel_path)
     series_rel = posixpath.dirname(rel)
     hidden = _manga_hidden_rel_paths()
@@ -628,7 +625,6 @@ def convert_cbz(
             in_dropbox=True,
             dropbox_uploaded_at=now,
         )
-        sync_series_items_for_cbz_path(manga_root=manga_root, cbz_rel_path=path)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
