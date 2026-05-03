@@ -441,14 +441,30 @@ def test_list_series_filters_by_category(tmp_path, monkeypatch):
     shonen = list_series(manga_root=str(root), category="Shonen")
     assert {r.series_rel_path for r in shonen} == {"Shonen/A", "Shonen/B"}
 
+    shonen_stripped = list_series(manga_root=str(root), category="  Shonen  ")
+    assert {r.series_rel_path for r in shonen_stripped} == {"Shonen/A", "Shonen/B"}
+
     seinen = list_series(manga_root=str(root), category="Seinen")
     assert [r.series_rel_path for r in seinen] == ["Seinen/C"]
 
-    at_root = list_series(manga_root=str(root), category="")
-    assert [r.series_rel_path for r in at_root] == [""]
-
     all_rows = list_series(manga_root=str(root))
     assert len(all_rows) == 4
+
+
+@pytest.mark.django_db
+def test_list_series_rejects_empty_category_filter(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    (root / "S" / "a.cbz").write_bytes(b"x")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_manga_library_cache(manga_root=str(root))
+
+    with pytest.raises(ValueError, match="non-empty"):
+        list_series(manga_root=str(root), category="")
+    with pytest.raises(ValueError, match="non-empty"):
+        list_series(manga_root=str(root), category="   ")
 
 
 @pytest.mark.django_db

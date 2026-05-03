@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 
 from ninja import Schema
-from pydantic import Field
+from pydantic import Field, field_validator
 
 
 class SeriesSchema(Schema):
@@ -20,10 +20,20 @@ class ListSeriesRequest(Schema):
     category: str | None = Field(
         default=None,
         description=(
-            "If set (including empty string), return only series in that parent folder "
-            "under the library root. Omit for no category filter."
+            "Omit or null for all series; non-empty string filters by parent folder name "
+            "under the library root. Empty or whitespace-only values are invalid."
         ),
     )
+
+    @field_validator("category")
+    @classmethod
+    def category_non_empty_when_set(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        if not s:
+            raise ValueError("category must be a non-empty string when provided")
+        return s
 
 
 class ListSeriesResponse(Schema):
