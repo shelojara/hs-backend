@@ -26,6 +26,8 @@ class SeriesItemSchema(Schema):
     filename: str
     size_bytes: int | None
     in_dropbox: bool
+    cover_image_base64: str | None = None
+    cover_image_mime_type: str = ""
 
 
 class ListSeriesItemsRequest(Schema):

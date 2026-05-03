@@ -214,6 +214,19 @@ def first_cbz_page_as_base64(abs_cbz_path: str) -> tuple[str | None, str | None]
     return None, None
 
 
+def _refresh_series_item_cover_if_missing(*, manga_root: str, item: SeriesItem) -> None:
+    """Set ``cover_image_*`` from first archive image of this CBZ when still unset."""
+    if (item.cover_image_base64 or "").strip():
+        return
+    abs_cbz = _path_under_manga_root(manga_root=manga_root, rel_path=item.rel_path)
+    if not os.path.isfile(abs_cbz):
+        return
+    b64, mime = first_cbz_page_as_base64(abs_cbz)
+    item.cover_image_base64 = b64
+    item.cover_image_mime_type = mime or ""
+    item.save(update_fields=["cover_image_base64", "cover_image_mime_type"])
+
+
 def _refresh_series_cover_from_first_cbz(*, manga_root: str, series: Series) -> None:
     """Set ``cover_image_*`` from first page of lexically first ``.cbz`` in series."""
     rows = list(series.items.all())
@@ -440,7 +453,7 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
 
             for item in items:
                 rp = item.path.replace("\\", "/")
-                SeriesItem.objects.update_or_create(
+                row, _created = SeriesItem.objects.update_or_create(
                     series=series,
                     rel_path=rp,
                     defaults={
@@ -449,6 +462,7 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
                         "in_dropbox": item.in_dropbox,
                     },
                 )
+                _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
 
             _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
 
@@ -483,7 +497,7 @@ def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> Non
         series.items.exclude(rel_path__in=want_rel).delete()
         for item in items:
             rp = item.path.replace("\\", "/")
-            SeriesItem.objects.update_or_create(
+            row, _created = SeriesItem.objects.update_or_create(
                 series=series,
                 rel_path=rp,
                 defaults={
@@ -492,6 +506,7 @@ def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> Non
                     "in_dropbox": item.in_dropbox,
                 },
             )
+            _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
 
         _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
 
