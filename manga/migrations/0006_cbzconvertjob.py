@@ -60,7 +60,6 @@ class Migration(migrations.Migration):
                 ),
                 ("completed_at", models.DateTimeField(null=True, blank=True)),
                 ("failure_message", models.TextField(null=True, blank=True)),
-                ("deleted_at", models.DateTimeField(null=True, blank=True)),
                 (
                     "user",
                     models.ForeignKey(
@@ -72,8 +71,6 @@ class Migration(migrations.Migration):
             ],
             options={
                 "ordering": ("-created_at", "-id"),
-                "base_manager_name": "all_objects",
-                "default_manager_name": "objects",
             },
         ),
     ]
