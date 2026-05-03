@@ -51,4 +51,4 @@ class DownloadCbzRequest(Schema):
 class DownloadCbzPagesRequest(Schema):
     item_id: int
     offset: int = Field(default=0, ge=0)
-    limit: int = Field(default=20, ge=1, le=500)
+    limit: int = Field(default=25, ge=1, le=500)
