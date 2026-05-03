@@ -424,6 +424,50 @@ def test_series_category_parent_directory_basename(tmp_path, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_list_series_filters_by_category(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "Shonen" / "A").mkdir(parents=True)
+    (root / "Shonen" / "A" / "a.cbz").write_bytes(b"x")
+    (root / "Shonen" / "B").mkdir(parents=True)
+    (root / "Shonen" / "B" / "b.cbz").write_bytes(b"y")
+    (root / "Seinen" / "C").mkdir(parents=True)
+    (root / "Seinen" / "C" / "c.cbz").write_bytes(b"z")
+    (root / "root.cbz").write_bytes(b"w")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_manga_library_cache(manga_root=str(root))
+
+    shonen = list_series(manga_root=str(root), category="Shonen")
+    assert {r.series_rel_path for r in shonen} == {"Shonen/A", "Shonen/B"}
+
+    shonen_stripped = list_series(manga_root=str(root), category="  Shonen  ")
+    assert {r.series_rel_path for r in shonen_stripped} == {"Shonen/A", "Shonen/B"}
+
+    seinen = list_series(manga_root=str(root), category="Seinen")
+    assert [r.series_rel_path for r in seinen] == ["Seinen/C"]
+
+    all_rows = list_series(manga_root=str(root))
+    assert len(all_rows) == 4
+
+
+@pytest.mark.django_db
+def test_list_series_rejects_empty_category_filter(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    (root / "S" / "a.cbz").write_bytes(b"x")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_manga_library_cache(manga_root=str(root))
+
+    with pytest.raises(ValueError, match="non-empty"):
+        list_series(manga_root=str(root), category="")
+    with pytest.raises(ValueError, match="non-empty"):
+        list_series(manga_root=str(root), category="   ")
+
+
+@pytest.mark.django_db
 def test_sync_manga_library_cache_commits_series_before_failing_one(tmp_path, monkeypatch):
     """Per-series transactions: earlier series stay persisted when a later series raises."""
     root = tmp_path / "lib"

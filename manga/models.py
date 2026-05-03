@@ -4,6 +4,14 @@ from django.conf import settings
 from django.db import models
 
 
+def series_category_for_rel_path(series_rel_path: str) -> str:
+    """Parent directory basename under library root; empty when series sits at root or one level below."""
+    parent = posixpath.dirname(series_rel_path)
+    if not parent:
+        return ""
+    return posixpath.basename(parent)
+
+
 def normalize_manga_hidden_rel_path(raw: str) -> str:
     """POSIX-style path under manga root: no leading slash, no empty segments, no '..' left."""
     s = (raw or "").strip().replace("\\", "/").strip("/")
@@ -127,6 +135,13 @@ class Series(models.Model):
         max_length=1024,
         help_text="Directory basename for this series (or library folder name when series_rel_path is empty).",
     )
+    category = models.CharField(
+        max_length=1024,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Parent directory under library root (basename of dirname(series_rel_path)); empty at root.",
+    )
     cover_image_base64 = models.TextField(
         null=True,
         blank=True,
@@ -144,14 +159,6 @@ class Series(models.Model):
     )
     scanned_at = models.DateTimeField(auto_now=True)
 
-    @property
-    def category(self) -> str:
-        """Parent directory name under library root; empty at root or one level below root."""
-        parent = posixpath.dirname(self.series_rel_path)
-        if not parent:
-            return ""
-        return posixpath.basename(parent)
-
     class Meta:
         ordering = ("library_root", "name", "series_rel_path")
         verbose_name = "manga series (cached)"
@@ -162,6 +169,16 @@ class Series(models.Model):
                 name="manga_mangalibraryseries_unique_root_path",
             ),
         ]
+        indexes = [
+            models.Index(
+                fields=["library_root", "category"],
+                name="manga_series_root_category",
+            ),
+        ]
+
+    def save(self, *args, **kwargs) -> None:
+        self.category = series_category_for_rel_path(self.series_rel_path)
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"{self.name} ({self.series_rel_path or '.'})"

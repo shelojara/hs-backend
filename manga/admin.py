@@ -73,7 +73,7 @@ class SeriesAdmin(admin.ModelAdmin):
         "library_root",
         "scanned_at",
     )
-    list_filter = ("library_root",)
+    list_filter = ("library_root", "category")
     search_fields = ("name", "series_rel_path", "library_root")
     readonly_fields = (
         "scanned_at",

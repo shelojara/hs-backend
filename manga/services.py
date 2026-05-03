@@ -77,10 +77,21 @@ def list_series(
     manga_root: str,
     limit: int = 100,
     offset: int = 0,
+    category: str | None = None,
 ) -> list[Series]:
-    """Query ``Series`` for ``manga_root`` (normalized), ordered by display ``name``."""
+    """Query ``Series`` for ``manga_root`` (normalized), ordered by display ``name``.
+
+    *category* ``None``: no category filter. Non-empty *category*: filter rows whose
+    stored category equals that string. Empty or whitespace-only *category* raises
+    ``ValueError``.
+    """
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
     qs = Series.objects.filter(library_root=root_norm).order_by("name", "series_rel_path")
+    if category is not None:
+        cat = category.strip()
+        if not cat:
+            raise ValueError("category filter must be a non-empty string when set")
+        qs = qs.filter(category=cat)
     return list(qs[offset : offset + limit])
 
 

@@ -93,11 +93,15 @@ def get_cbz_convert_job(request, payload: GetCbzConvertJobRequest):
 
 @router.post("/v1.Manga.ListSeries", response=ListSeriesResponse)
 def list_series(request, payload: ListSeriesRequest):
-    rows = services.list_series(
-        manga_root=settings.MANGA_ROOT,
-        limit=payload.limit,
-        offset=payload.offset,
-    )
+    try:
+        rows = services.list_series(
+            manga_root=settings.MANGA_ROOT,
+            limit=payload.limit,
+            offset=payload.offset,
+            category=payload.category,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
     return ListSeriesResponse(
         items=[
             SeriesSchema(
