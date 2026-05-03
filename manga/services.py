@@ -4,10 +4,12 @@ import posixpath
 import tempfile
 import zipfile
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO, Literal
 
 from django.db import transaction
+from PIL import Image
 
 from manga.models import Series, SeriesItem, normalize_manga_hidden_rel_path
 from manga.cbztools.manga_v2 import process_manga
@@ -137,9 +139,45 @@ _EXT_TO_MIME = {
     ".webp": "image/webp",
 }
 
+# Stored series cover: fixed width, portrait 11:17; vertical overflow crops from bottom (top-aligned).
+COVER_THUMB_WIDTH = 128
+COVER_THUMB_ASPECT_W = 11
+COVER_THUMB_ASPECT_H = 17
+
+
+def _cover_thumb_jpeg_base64_from_image_bytes(raw: bytes) -> str | None:
+    """Crop to 11:17 (top-aligned when source taller), resize width to ``COVER_THUMB_WIDTH``, JPEG base64."""
+    try:
+        im = Image.open(BytesIO(raw))
+        im.load()
+    except OSError:
+        return None
+    rgb = im.convert("RGB")
+    w, h = rgb.size
+    if w < 1 or h < 1:
+        return None
+    tw, th = COVER_THUMB_ASPECT_W, COVER_THUMB_ASPECT_H
+    src_ratio = w / h
+    tgt_ratio = tw / th
+    if src_ratio > tgt_ratio:
+        crop_w = int(round(h * tw / th))
+        crop_w = min(crop_w, w)
+        left = (w - crop_w) // 2
+        box = (left, 0, left + crop_w, h)
+    else:
+        crop_h = int(round(w * th / tw))
+        crop_h = min(crop_h, h)
+        box = (0, 0, w, crop_h)
+    cropped = rgb.crop(box)
+    out_h = max(1, int(round(COVER_THUMB_WIDTH * th / tw)))
+    thumb = cropped.resize((COVER_THUMB_WIDTH, out_h), Image.Resampling.LANCZOS)
+    buf = BytesIO()
+    thumb.save(buf, format="JPEG", quality=85)
+    return base64.standard_b64encode(buf.getvalue()).decode("ascii")
+
 
 def first_cbz_page_as_base64(abs_cbz_path: str) -> tuple[str | None, str | None]:
-    """First image member in CBZ (natural sort), as standard base64 + MIME, or ``(None, None)``."""
+    """First image in CBZ (natural sort). Returns JPEG thumb (128w, 11:17, top crop if tall) when decodable."""
     try:
         names = _sorted_image_names_in_cbz(abs_cbz_path)
     except ValueError:
@@ -156,6 +194,9 @@ def first_cbz_page_as_base64(abs_cbz_path: str) -> tuple[str | None, str | None]
         return None, None
     if not data:
         return None, None
+    thumb_b64 = _cover_thumb_jpeg_base64_from_image_bytes(data)
+    if thumb_b64 is not None:
+        return thumb_b64, "image/jpeg"
     b64 = base64.standard_b64encode(data).decode("ascii")
     return b64, mime
 
