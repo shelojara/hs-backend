@@ -6,6 +6,7 @@ from manga.services import (
     convert_cbz,
     list_manga_cbz_files,
     list_series,
+    list_series_items,
     resolve_cbz_download,
     sync_manga_library_cache,
     sync_series_items_for_cbz_path,
@@ -232,6 +233,19 @@ def test_sync_manga_library_cache_series_is_dir_with_direct_cbz(tmp_path, monkey
     assert len(paged) == 1
     assert paged[0].series_rel_path == "nested"
     assert paged[0].name == "nested"
+
+    items = list_series_items(manga_root=str(root), series_id=s_alpha.id)
+    assert len(items) == 1
+    assert items[0].rel_path == "Alpha/c1.cbz"
+    assert items[0].filename == "c1.cbz"
+
+
+@pytest.mark.django_db
+def test_list_series_items_unknown_series_raises(tmp_path):
+    root = tmp_path / "lib"
+    root.mkdir()
+    with pytest.raises(ValueError, match="Series not found"):
+        list_series_items(manga_root=str(root), series_id=999)
 
 
 @pytest.mark.django_db
