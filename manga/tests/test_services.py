@@ -76,7 +76,7 @@ def test_convert_cbz_calls_sync_series_items(tmp_path, monkeypatch):
     def capture(**kw):
         calls.append(kw)
 
-    monkeypatch.setattr(manga_services, "process_manga", lambda _paths: str(cbz))
+    monkeypatch.setattr(manga_services, "process_manga", lambda _paths, _wd: str(cbz))
     monkeypatch.setattr(manga_services, "upload_to_dropbox", lambda *_a, **_k: None)
     monkeypatch.setattr(manga_services, "sync_series_items_for_cbz_path", capture)
 
@@ -467,7 +467,7 @@ def test_convert_cbz_rejects_item_wrong_library(tmp_path, monkeypatch):
     abs_a = str(root_a.resolve())
     s = Series.objects.create(library_root=abs_a, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=0)
-    monkeypatch.setattr(manga_services, "process_manga", lambda _paths: (_ for _ in ()).throw(AssertionError))
+    monkeypatch.setattr(manga_services, "process_manga", lambda _paths, _wd: (_ for _ in ()).throw(AssertionError))
 
     with pytest.raises(ValueError, match="Item not found"):
         convert_cbz(manga_root=str(root_b), item_id=row.pk, kind="manga")

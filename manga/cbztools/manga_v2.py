@@ -14,9 +14,6 @@ QUALITY = 70
 WORKERS = 6
 
 
-OUTPUT_DIR = "output"
-
-
 def trim(image: Image.Image) -> Image.Image:
     bg = Image.new(image.mode, image.size, "white")
     diff = ImageChops.difference(image, bg)
@@ -52,32 +49,34 @@ def zip_output(output_dir: str):
     shutil.move(output_dir + ".zip", output_dir + ".cbz")
 
 
-def process_manga(paths: list[str]) -> str:
+def process_manga(paths: list[str], work_dir: str) -> str:
     print("Starting format...")
+
+    output_dir = os.path.join(work_dir, "output")
 
     # clean previous execution stuff.
     try:
-        os.remove(OUTPUT_DIR + ".cbz")
-        shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
+        os.remove(output_dir + ".cbz")
+        shutil.rmtree(output_dir, ignore_errors=True)
     except FileNotFoundError:
         pass
 
-    os.mkdir(OUTPUT_DIR)
+    os.mkdir(output_dir)
 
     for index, path in enumerate(paths):
-        _process_manga_path(index, path)
+        _process_manga_path(work_dir, output_dir, index, path)
 
-    zip_output(OUTPUT_DIR)
+    zip_output(output_dir)
 
-    shutil.rmtree(OUTPUT_DIR)
+    shutil.rmtree(output_dir)
 
-    return OUTPUT_DIR + ".cbz"
+    return output_dir + ".cbz"
 
 
-def _process_manga_path(index: int, path: str):
+def _process_manga_path(work_dir: str, output_dir: str, index: int, path: str):
     print(f"Starting format for {path}...")
 
-    unzip_path = f"unzip_{index}"
+    unzip_path = os.path.join(work_dir, f"unzip_{index}")
 
     # extract zip file.
     with zipfile.ZipFile(path, "r") as zipr:
@@ -97,7 +96,7 @@ def _process_manga_path(index: int, path: str):
 
     p = Pool(processes=WORKERS)
     for i, filepath in enumerate(all_filepaths):
-        p.apply_async(process_file, (OUTPUT_DIR, filepath, i + 1000 * index))
+        p.apply_async(process_file, (output_dir, filepath, i + 1000 * index))
 
     p.close()
     p.join()
