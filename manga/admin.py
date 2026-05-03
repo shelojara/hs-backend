@@ -29,8 +29,20 @@ class MangaHiddenDirectoryAdmin(admin.ModelAdmin):
 class SeriesItemInline(admin.TabularInline):
     model = SeriesItem
     extra = 0
-    readonly_fields = ("rel_path", "filename", "size_bytes", "in_dropbox")
+    readonly_fields = ("rel_path", "filename", "size_bytes", "in_dropbox", "item_cover_preview")
     can_delete = False
+
+    @admin.display(description="Item cover")
+    def item_cover_preview(self, obj: SeriesItem) -> str:
+        b64 = (obj.cover_image_base64 or "").strip()
+        if not b64:
+            return "—"
+        mime = (obj.cover_image_mime_type or "").strip() or "image/jpeg"
+        data_url = f"data:{mime};base64,{b64}"
+        return format_html(
+            '<img src="{}" alt="" style="max-height: 40px; max-width: 32px; object-fit: contain; vertical-align: middle;" />',
+            data_url,
+        )
 
 
 @admin.register(Series)

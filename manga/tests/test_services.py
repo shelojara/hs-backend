@@ -522,6 +522,60 @@ def test_first_cbz_page_as_base64_skips_undecodable_uses_next_sorted_image(tmp_p
 
 
 @pytest.mark.django_db
+def test_sync_manga_library_cache_sets_item_covers_from_each_cbz_first_page(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    _write_cbz_member_bytes(root / "S" / "ch2.cbz", {"p.png": _minimal_jpeg_bytes()})
+    _write_cbz_member_bytes(
+        root / "S" / "ch1.cbz",
+        {"b.jpg": b"skip", "a.jpg": _minimal_jpeg_bytes()},
+    )
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_manga_library_cache(manga_root=str(root))
+    for rel in ("S/ch1.cbz", "S/ch2.cbz"):
+        row = SeriesItem.objects.get(rel_path=rel)
+        assert row.cover_image_mime_type == "image/jpeg"
+        assert row.cover_image_base64 is not None
+        out = Image.open(BytesIO(base64.standard_b64decode(row.cover_image_base64)))
+        assert out.format == "JPEG"
+
+
+@pytest.mark.django_db
+def test_sync_manga_library_cache_skips_item_cover_when_already_set(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    _write_cbz_member_bytes(root / "S" / "ch.cbz", {"a.jpg": _minimal_jpeg_bytes()})
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    calls = []
+
+    def track(path: str):
+        calls.append(path)
+        return first_cbz_page_as_base64(path)
+
+    monkeypatch.setattr(manga_services, "first_cbz_page_as_base64", track)
+
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S")
+    SeriesItem.objects.create(
+        series=s,
+        rel_path="S/ch.cbz",
+        filename="ch.cbz",
+        size_bytes=1,
+        cover_image_base64="preset",
+        cover_image_mime_type="image/jpeg",
+    )
+
+    sync_manga_library_cache(manga_root=str(root))
+    row = SeriesItem.objects.get(rel_path="S/ch.cbz")
+    assert row.cover_image_base64 == "preset"
+    assert calls == [str((root / "S" / "ch.cbz").resolve())]
+
+
+@pytest.mark.django_db
 def test_sync_manga_library_cache_sets_cover_from_first_cbz_first_page(tmp_path, monkeypatch):
     root = tmp_path / "lib"
     root.mkdir()

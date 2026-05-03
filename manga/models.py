@@ -156,6 +156,17 @@ class SeriesItem(models.Model):
     filename = models.CharField(max_length=512)
     size_bytes = models.BigIntegerField(null=True, blank=True)
     in_dropbox = models.BooleanField(default=False)
+    cover_image_base64 = models.TextField(
+        null=True,
+        blank=True,
+        help_text="First image page in this CBZ (natural sort), standard base64 JPEG thumb.",
+    )
+    cover_image_mime_type = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="MIME type for decoded cover bytes (e.g. image/jpeg).",
+    )
 
     class Meta:
         ordering = ("series", "rel_path")
