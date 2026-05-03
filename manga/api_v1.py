@@ -9,8 +9,8 @@ from manga.schemas import (
     ConvertCbzRequest,
     ConvertCbzResponse,
     DownloadCbzRequest,
-    ListSeriesItemRequest,
-    ListSeriesItemResponse,
+    ListSeriesItemsRequest,
+    ListSeriesItemsResponse,
     ListSeriesRequest,
     ListSeriesResponse,
     SeriesItemSchema,
@@ -32,8 +32,8 @@ def list_series(request, payload: ListSeriesRequest):
     )
 
 
-@router.post("/v1.Manga.ListSeriesItem", response=ListSeriesItemResponse)
-def list_series_item(request, payload: ListSeriesItemRequest):
+@router.post("/v1.Manga.ListSeriesItems", response=ListSeriesItemsResponse)
+def list_series_items(request, payload: ListSeriesItemsRequest):
     try:
         rows = services.list_series_items(
             manga_root=settings.MANGA_ROOT,
@@ -46,7 +46,7 @@ def list_series_item(request, payload: ListSeriesItemRequest):
         if msg == "Series not found":
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
-    return ListSeriesItemResponse(
+    return ListSeriesItemsResponse(
         items=[
             SeriesItemSchema(
                 id=r.id,

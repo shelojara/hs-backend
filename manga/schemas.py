@@ -25,13 +25,13 @@ class SeriesItemSchema(Schema):
     in_dropbox: bool
 
 
-class ListSeriesItemRequest(Schema):
+class ListSeriesItemsRequest(Schema):
     series_id: int = Field(ge=1)
     limit: int = Field(default=100, ge=1, le=500)
     offset: int = Field(default=0, ge=0)
 
 
-class ListSeriesItemResponse(Schema):
+class ListSeriesItemsResponse(Schema):
     items: list[SeriesItemSchema]
 
 
