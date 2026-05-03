@@ -36,6 +36,15 @@ RUNNING_LOW_SYSTEM_INSTRUCTION = (
     "Infer which items the shopper is likely running low on soon, based on: "
     "typical consumption rates for those product types, time since last purchase in each basket, "
     "and whether staples appear less often than expected. "
+    "Hard exclusions — never put these in the JSON array (use [] for that product): "
+    "(1) Any product that appears in **Basket 1** (the most recent basket section at the top): "
+    "those lines mean it was bought on the latest shopping trip, so it is not running low. "
+    "(2) Any product whose **most recent** line in the entire history is dated today or yesterday "
+    "in local time for that timestamp (compare basket purchased_at dates): "
+    "if they stocked it that recently, do not suggest it. "
+    "(3) Never contradict yourself: if you would mention in reason that the item was bought today, yesterday, "
+    "or on the latest trip, exclude it instead — running low means last meaningful purchase was longer ago. "
+    "Reason text must support inclusion (depletion soon), not argue both stocked recently and low. "
     "This is a rough heuristic — be practical and concise. "
     "Respond with a single JSON array only — no markdown, no code fences, no text before or after. "
     f"At most {RUNNING_LOW_MAX_SUGGESTIONS} elements. Each element is one JSON object with keys: "
@@ -1013,7 +1022,10 @@ def suggest_running_low_from_purchase_history(
 
     prompt = (
         "Below is the shopper's recent completed basket history (newest baskets first). "
-        "Suggest which products they may run low on soon.\n\n"
+        "Suggest which catalog products they may run low on soon. "
+        "Omit every product that appears in Basket 1 (newest section): those were just bought. "
+        "Omit any product whose latest purchase in this history is today or yesterday. "
+        "Do not output suggestions where the reason would say they bought it today, yesterday, or on the last trip.\n\n"
         f"{text}"
     )
 
