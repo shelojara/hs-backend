@@ -64,7 +64,7 @@ class Series(models.Model):
     scanned_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ("library_root", "series_rel_path")
+        ordering = ("library_root", "name", "series_rel_path")
         verbose_name = "manga series (cached)"
         verbose_name_plural = "manga series (cached)"
         constraints = [

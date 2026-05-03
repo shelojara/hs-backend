@@ -39,9 +39,9 @@ def list_series(
     limit: int = 100,
     offset: int = 0,
 ) -> list[Series]:
-    """Query ``Series`` for ``manga_root`` (normalized), ordered by ``series_rel_path``."""
+    """Query ``Series`` for ``manga_root`` (normalized), ordered by display ``name``."""
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
-    qs = Series.objects.filter(library_root=root_norm).order_by("series_rel_path")
+    qs = Series.objects.filter(library_root=root_norm).order_by("name", "series_rel_path")
     return list(qs[offset : offset + limit])
 
 
