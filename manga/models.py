@@ -1,3 +1,5 @@
+import posixpath
+
 from django.conf import settings
 from django.db import models
 
@@ -141,6 +143,14 @@ class Series(models.Model):
         help_text="Number of cached SeriesItem rows (CBZ files) for this series; set by library sync.",
     )
     scanned_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def category(self) -> str:
+        """Parent directory name under library root; empty at root or one level below root."""
+        parent = posixpath.dirname(self.series_rel_path)
+        if not parent:
+            return ""
+        return posixpath.basename(parent)
 
     class Meta:
         ordering = ("library_root", "name", "series_rel_path")

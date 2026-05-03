@@ -374,6 +374,33 @@ def test_sync_manga_library_cache_series_is_dir_with_direct_cbz(tmp_path, monkey
     assert len(items) == 1
     assert items[0].filename == "c1.cbz"
 
+    assert s_alpha.category == ""
+    assert s_nested.category == ""
+
+
+@pytest.mark.django_db
+def test_series_category_parent_directory_basename(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "TopOnly").mkdir()
+    (root / "TopOnly" / "a.cbz").write_bytes(b"x")
+    (root / "Shonen" / "Naruto").mkdir(parents=True)
+    (root / "Shonen" / "Naruto" / "ch.cbz").write_bytes(b"x")
+    (root / "root.cbz").write_bytes(b"z")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_manga_library_cache(manga_root=str(root))
+    abs_root = str(root.resolve())
+
+    top = Series.objects.get(library_root=abs_root, series_rel_path="TopOnly")
+    assert top.category == ""
+
+    nested = Series.objects.get(library_root=abs_root, series_rel_path="Shonen/Naruto")
+    assert nested.category == "Shonen"
+
+    at_lib_root = Series.objects.get(library_root=abs_root, series_rel_path="")
+    assert at_lib_root.category == ""
+
 
 @pytest.mark.django_db
 def test_sync_manga_library_cache_commits_series_before_failing_one(tmp_path, monkeypatch):

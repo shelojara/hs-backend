@@ -53,6 +53,7 @@ class SeriesAdmin(admin.ModelAdmin):
     list_display = (
         "cover_thumbnail",
         "name",
+        "category",
         "series_rel_path",
         "item_count",
         "library_root",
