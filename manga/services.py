@@ -212,12 +212,12 @@ def _ensure_dropbox_space_for_upload(
     reserve_item_id: int,
     upload_bytes: int,
 ) -> None:
-    """Delete oldest-in-Dropbox CBZs until quota allows upload + 100% headroom (free >= 2× upload size)."""
+    """Delete oldest-in-Dropbox CBZs until quota allows upload + 250% headroom (free >= 3.5× upload size)."""
     while True:
         used, allocated = get_dropbox_space_bytes()
         if allocated is None:
             break
-        need_remove = max(0, used - allocated + 2 * upload_bytes)
+        need_remove = max(0, used - allocated + int(3.5 * upload_bytes))
         if need_remove <= 0:
             break
         victim = (
