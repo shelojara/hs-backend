@@ -1,3 +1,4 @@
+import base64
 import zipfile
 
 import pytest
@@ -7,6 +8,7 @@ from manga.models import MangaHiddenDirectory, Series, SeriesItem
 from manga.services import (
     build_cbz_page_slice,
     convert_cbz,
+    first_cbz_page_as_base64,
     list_manga_cbz_files,
     list_series,
     list_series_items,
@@ -137,6 +139,12 @@ def _write_minimal_cbz(path, member_names: list[str]) -> None:
     with zipfile.ZipFile(path, "w") as zf:
         for name in member_names:
             zf.writestr(name, b"p")
+
+
+def _write_cbz_member_bytes(path, members: dict[str, bytes]) -> None:
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, data in members.items():
+            zf.writestr(name, data)
 
 
 @pytest.mark.django_db
@@ -455,3 +463,51 @@ def test_convert_cbz_rejects_item_wrong_library(tmp_path, monkeypatch):
 
     with pytest.raises(ValueError, match="Item not found"):
         convert_cbz(manga_root=str(root_b), item_id=row.pk, kind="manga")
+
+
+def test_first_cbz_page_as_base64_sorted_natural_order(tmp_path):
+    cbz = tmp_path / "x.cbz"
+    want = b"\xff\xd8\xff\xd9"
+    _write_cbz_member_bytes(cbz, {"010.jpg": b"old", "001.jpg": want})
+    b64, mime = first_cbz_page_as_base64(str(cbz))
+    assert mime == "image/jpeg"
+    assert b64 == base64.standard_b64encode(want).decode("ascii")
+
+
+def test_first_cbz_page_as_base64_no_images_returns_none(tmp_path):
+    cbz = tmp_path / "x.cbz"
+    _write_minimal_cbz(cbz, ["readme.txt"])
+    assert first_cbz_page_as_base64(str(cbz)) == (None, None)
+
+
+@pytest.mark.django_db
+def test_sync_manga_library_cache_sets_cover_from_first_cbz_first_page(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    page_bytes = b"\x89PNG\r\n\x1a\n"
+    _write_cbz_member_bytes(root / "S" / "ch2.cbz", {"p.png": page_bytes})
+    _write_cbz_member_bytes(
+        root / "S" / "ch1.cbz",
+        {"b.jpg": b"skip", "a.jpg": b"\xff\xd8\xff\xd9"},
+    )
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_manga_library_cache(manga_root=str(root))
+    s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
+    assert s.cover_image_mime_type == "image/jpeg"
+    assert s.cover_image_base64 == base64.standard_b64encode(b"\xff\xd8\xff\xd9").decode("ascii")
+
+
+@pytest.mark.django_db
+def test_sync_series_items_for_cbz_path_refreshes_cover(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    _write_cbz_member_bytes(root / "S" / "only.cbz", {"x.webp": b"w"})
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="S/only.cbz")
+    s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
+    assert s.cover_image_mime_type == "image/webp"
+    assert s.cover_image_base64 == base64.standard_b64encode(b"w").decode("ascii")

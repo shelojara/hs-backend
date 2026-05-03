@@ -21,5 +21,5 @@ class SeriesAdmin(admin.ModelAdmin):
     list_display = ("name", "series_rel_path", "library_root", "scanned_at")
     list_filter = ("library_root",)
     search_fields = ("name", "series_rel_path", "library_root")
-    readonly_fields = ("scanned_at",)
+    readonly_fields = ("scanned_at", "cover_image_base64", "cover_image_mime_type")
     inlines = (SeriesItemInline,)

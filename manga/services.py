@@ -1,3 +1,4 @@
+import base64
 import os
 import posixpath
 import tempfile
@@ -127,6 +128,57 @@ def _sorted_image_names_in_cbz(abs_cbz_path: str) -> list[str]:
         raise ValueError("Invalid CBZ file") from exc
     names.sort(key=lambda n: alphanum_key(n.replace("\\", "/")))
     return names
+
+
+_EXT_TO_MIME = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+
+
+def first_cbz_page_as_base64(abs_cbz_path: str) -> tuple[str | None, str | None]:
+    """First image member in CBZ (natural sort), as standard base64 + MIME, or ``(None, None)``."""
+    try:
+        names = _sorted_image_names_in_cbz(abs_cbz_path)
+    except ValueError:
+        return None, None
+    if not names:
+        return None, None
+    first = names[0].replace("\\", "/")
+    _, ext = os.path.splitext(os.path.basename(first))
+    mime = _EXT_TO_MIME.get(ext.lower())
+    try:
+        with zipfile.ZipFile(abs_cbz_path, "r") as zf:
+            data = zf.read(names[0])
+    except (zipfile.BadZipFile, OSError, KeyError):
+        return None, None
+    if not data:
+        return None, None
+    b64 = base64.standard_b64encode(data).decode("ascii")
+    return b64, mime
+
+
+def _refresh_series_cover_from_first_cbz(*, manga_root: str, series: Series) -> None:
+    """Set ``cover_image_*`` from first page of lexically first ``.cbz`` in series."""
+    rows = list(series.items.all())
+    if not rows:
+        series.cover_image_base64 = None
+        series.cover_image_mime_type = ""
+        series.save(update_fields=["cover_image_base64", "cover_image_mime_type"])
+        return
+    first_item = min(rows, key=lambda r: alphanum_key(r.filename))
+    abs_cbz = _path_under_manga_root(manga_root=manga_root, rel_path=first_item.rel_path)
+    if not os.path.isfile(abs_cbz):
+        series.cover_image_base64 = None
+        series.cover_image_mime_type = ""
+        series.save(update_fields=["cover_image_base64", "cover_image_mime_type"])
+        return
+    b64, mime = first_cbz_page_as_base64(abs_cbz)
+    series.cover_image_base64 = b64
+    series.cover_image_mime_type = mime or ""
+    series.save(update_fields=["cover_image_base64", "cover_image_mime_type"])
 
 
 def build_cbz_page_slice(
@@ -344,6 +396,8 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
                     },
                 )
 
+            _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
+
         series_count = Series.objects.filter(library_root=root_norm).count()
         chapter_total = SeriesItem.objects.filter(series__library_root=root_norm).count()
 
@@ -384,6 +438,8 @@ def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> Non
                     "in_dropbox": item.in_dropbox,
                 },
             )
+
+        _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
 
 
 def convert_cbz(

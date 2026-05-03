@@ -29,7 +29,15 @@ def list_series(request, payload: ListSeriesRequest):
         offset=payload.offset,
     )
     return ListSeriesResponse(
-        items=[SeriesSchema(id=r.id, name=r.name) for r in rows],
+        items=[
+            SeriesSchema(
+                id=r.id,
+                name=r.name,
+                cover_image_base64=r.cover_image_base64,
+                cover_image_mime_type=r.cover_image_mime_type or "",
+            )
+            for r in rows
+        ],
     )
 
 

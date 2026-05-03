@@ -61,6 +61,17 @@ class Series(models.Model):
         max_length=1024,
         help_text="Directory basename for this series (or library folder name when series_rel_path is empty).",
     )
+    cover_image_base64 = models.TextField(
+        null=True,
+        blank=True,
+        help_text="First page of first CBZ in series (natural sort), standard base64.",
+    )
+    cover_image_mime_type = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="MIME type for decoded cover bytes (e.g. image/jpeg).",
+    )
     scanned_at = models.DateTimeField(auto_now=True)
 
     class Meta:
