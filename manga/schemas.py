@@ -17,6 +17,13 @@ class SeriesSchema(Schema):
 class ListSeriesRequest(Schema):
     limit: int = Field(default=100, ge=1, le=500)
     offset: int = Field(default=0, ge=0)
+    category: str | None = Field(
+        default=None,
+        description=(
+            "If set (including empty string), return only series in that parent folder "
+            "under the library root. Omit for no category filter."
+        ),
+    )
 
 
 class ListSeriesResponse(Schema):

@@ -97,6 +97,7 @@ def list_series(request, payload: ListSeriesRequest):
         manga_root=settings.MANGA_ROOT,
         limit=payload.limit,
         offset=payload.offset,
+        category=payload.category,
     )
     return ListSeriesResponse(
         items=[

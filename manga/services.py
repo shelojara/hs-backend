@@ -77,10 +77,17 @@ def list_series(
     manga_root: str,
     limit: int = 100,
     offset: int = 0,
+    category: str | None = None,
 ) -> list[Series]:
-    """Query ``Series`` for ``manga_root`` (normalized), ordered by display ``name``."""
+    """Query ``Series`` for ``manga_root`` (normalized), ordered by display ``name``.
+
+    When *category* is not ``None``, restrict to rows whose stored category matches
+    (empty string = series at library root or one folder below root).
+    """
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
     qs = Series.objects.filter(library_root=root_norm).order_by("name", "series_rel_path")
+    if category is not None:
+        qs = qs.filter(category=category)
     return list(qs[offset : offset + limit])
 
 
