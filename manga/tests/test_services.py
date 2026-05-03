@@ -4,6 +4,7 @@ import zipfile
 from io import BytesIO
 
 import pytest
+from django.utils import timezone
 from PIL import Image
 
 import manga.services as manga_services
@@ -19,6 +20,10 @@ from manga.services import (
     resolve_cbz_download,
     sync_manga_library_cache,
     sync_series_items_for_cbz_path,
+)
+from manga.cbztools.utils import (
+    dropbox_download_name_for_series_cbz,
+    dropbox_remote_path_for_series_cbz,
 )
 
 
@@ -130,6 +135,97 @@ def test_sync_series_items_for_cbz_path_skips_hidden_series(tmp_path, monkeypatc
 
 
 @pytest.mark.django_db
+def test_dropbox_download_name_matches_convert_cbz_layout():
+    assert dropbox_download_name_for_series_cbz("MySeries/ch01.cbz") == "MySeries - ch01.cbz"
+    assert dropbox_download_name_for_series_cbz("MySeries/MySeries ch01.cbz") == "MySeries ch01.cbz"
+
+
+@pytest.mark.django_db
+def test_convert_cbz_evicts_oldest_dropbox_first_when_full(tmp_path, monkeypatch):
+    root = tmp_path / "m"
+    root.mkdir()
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="series", name="series")
+    old = SeriesItem.objects.create(
+        series=s,
+        rel_path="series/old.cbz",
+        filename="old.cbz",
+        size_bytes=1,
+        in_dropbox=True,
+        dropbox_uploaded_at=timezone.now(),
+    )
+    new = SeriesItem.objects.create(
+        series=s,
+        rel_path="series/new.cbz",
+        filename="new.cbz",
+        size_bytes=1,
+    )
+    cbz = root / "series" / "new.cbz"
+    cbz.parent.mkdir(parents=True)
+    cbz.write_bytes(b"PK\x03\x04")
+
+    monkeypatch.setattr(manga_services, "process_manga", lambda _paths, _wd: str(cbz))
+    monkeypatch.setattr(manga_services, "upload_to_dropbox", lambda *_a, **_k: None)
+
+    space_calls: list[tuple[int, int | None]] = []
+
+    def fake_space():
+        if len(space_calls) == 0:
+            space_calls.append((1000, 1000))
+            return (1000, 1000)
+        space_calls.append((500, 1000))
+        return (500, 1000)
+
+    deleted: list[str] = []
+
+    def fake_delete(path: str):
+        deleted.append(path)
+        return True
+
+    monkeypatch.setattr(manga_services, "get_dropbox_space_bytes", fake_space)
+    monkeypatch.setattr(manga_services, "delete_dropbox_path", fake_delete)
+
+    convert_cbz(manga_root=str(root), item_id=new.pk, kind="manga")
+
+    old.refresh_from_db()
+    new.refresh_from_db()
+    assert old.in_dropbox is False
+    assert old.dropbox_uploaded_at is None
+    assert new.in_dropbox is True
+    assert new.dropbox_uploaded_at is not None
+    assert deleted == [
+        dropbox_remote_path_for_series_cbz(
+            old.rel_path,
+            dropbox_download_name_for_series_cbz(old.rel_path, old.filename),
+        ),
+    ]
+
+
+@pytest.mark.django_db
+def test_convert_cbz_raises_when_dropbox_full_and_nothing_to_evict(tmp_path, monkeypatch):
+    root = tmp_path / "m"
+    root.mkdir()
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="series", name="series")
+    row = SeriesItem.objects.create(
+        series=s,
+        rel_path="series/only.cbz",
+        filename="only.cbz",
+        size_bytes=1,
+    )
+    cbz = root / "series" / "only.cbz"
+    cbz.parent.mkdir(parents=True)
+    cbz.write_bytes(b"PK\x03\x04")
+
+    monkeypatch.setattr(manga_services, "process_manga", lambda _paths, _wd: str(cbz))
+    monkeypatch.setattr(manga_services, "upload_to_dropbox", lambda *_a, **_k: None)
+    monkeypatch.setattr(manga_services, "get_dropbox_space_bytes", lambda: (1000, 1000))
+
+    with pytest.raises(RuntimeError, match="no eligible"):
+        convert_cbz(manga_root=str(root), item_id=row.pk, kind="manga")
+
+
+@pytest.mark.django_db
 def test_convert_cbz_sets_dropbox_fields_without_series_resync(tmp_path, monkeypatch):
     root = tmp_path / "m"
     root.mkdir()
@@ -147,6 +243,7 @@ def test_convert_cbz_sets_dropbox_fields_without_series_resync(tmp_path, monkeyp
 
     monkeypatch.setattr(manga_services, "process_manga", lambda _paths, _wd: str(cbz))
     monkeypatch.setattr(manga_services, "upload_to_dropbox", lambda *_a, **_k: None)
+    monkeypatch.setattr(manga_services, "get_dropbox_space_bytes", lambda: (0, 10**12))
 
     convert_cbz(manga_root=str(root), item_id=row.pk, kind="manga")
     row.refresh_from_db()
