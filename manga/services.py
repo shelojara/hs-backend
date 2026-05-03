@@ -581,24 +581,32 @@ def create_cbz_convert_job(
 def list_cbz_convert_jobs(
     *,
     manga_root: str,
-    series_id: int,
+    series_id: int | None,
     user_id: int,
     status: str | None = None,
 ) -> list[CbzConvertJob]:
-    """All convert jobs for *user_id* targeting any ``SeriesItem`` in *series_id* under *manga_root*.
+    """Convert jobs for *user_id* under *manga_root*.
+
+    *series_id* set: any ``SeriesItem`` in that series (must exist in library).
+    *series_id* null: any ``SeriesItem`` in library (all series).
 
     Newest first. Optional *status* limits to that job status value.
-    Raises ``ValueError("Series not found")`` when series missing or wrong library.
+    Raises ``ValueError("Series not found")`` when *series_id* set and series missing or wrong library.
     Raises ``ValueError("Invalid status filter.")`` when *status* is not a known status.
     """
     if status is not None and status not in CbzConvertJobStatus:
         raise ValueError("Invalid status filter.")
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
-    try:
-        series = Series.objects.get(pk=series_id, library_root=root_norm)
-    except Series.DoesNotExist as exc:
-        raise ValueError("Series not found") from exc
-    item_ids = SeriesItem.objects.filter(series=series).values_list("pk", flat=True)
+    if series_id is None:
+        item_ids = SeriesItem.objects.filter(series__library_root=root_norm).values_list(
+            "pk", flat=True
+        )
+    else:
+        try:
+            series = Series.objects.get(pk=series_id, library_root=root_norm)
+        except Series.DoesNotExist as exc:
+            raise ValueError("Series not found") from exc
+        item_ids = SeriesItem.objects.filter(series=series).values_list("pk", flat=True)
     qs = CbzConvertJob.objects.filter(
         user_id=user_id,
         series_item_id__in=item_ids,

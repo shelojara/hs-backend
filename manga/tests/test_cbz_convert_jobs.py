@@ -232,6 +232,46 @@ def test_list_cbz_convert_jobs_scoped_to_series_items(tmp_path):
 
 
 @pytest.mark.django_db
+def test_list_cbz_convert_jobs_null_series_id_all_series_in_library(tmp_path):
+    root = tmp_path / "lib"
+    root.mkdir()
+    abs_root = str(root.resolve())
+    s_a = Series.objects.create(library_root=abs_root, series_rel_path="a", name="a")
+    s_b = Series.objects.create(library_root=abs_root, series_rel_path="b", name="b")
+    item_a = SeriesItem.objects.create(
+        series=s_a,
+        rel_path="a/1.cbz",
+        filename="1.cbz",
+        size_bytes=1,
+    )
+    item_b = SeriesItem.objects.create(
+        series=s_b,
+        rel_path="b/1.cbz",
+        filename="1.cbz",
+        size_bytes=1,
+    )
+    u = User.objects.create_user(username="u_all_series", password="pw")
+    ja = CbzConvertJob.objects.create(
+        user=u,
+        manga_root=abs_root,
+        series_item_id=item_a.pk,
+        kind="manga",
+    )
+    jb = CbzConvertJob.objects.create(
+        user=u,
+        manga_root=abs_root,
+        series_item_id=item_b.pk,
+        kind="manga",
+    )
+    rows = list_cbz_convert_jobs(
+        manga_root=str(root),
+        series_id=None,
+        user_id=u.pk,
+    )
+    assert {r.pk for r in rows} == {ja.pk, jb.pk}
+
+
+@pytest.mark.django_db
 def test_list_cbz_convert_jobs_filters_by_status(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()

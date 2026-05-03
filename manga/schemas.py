@@ -60,7 +60,9 @@ class CreateCbzConvertJobResponse(Schema):
 
 
 class ListCbzConvertJobsRequest(Schema):
-    series_id: int = Field(ge=1)
+    """``series_id`` null/omitted: all jobs for user in library (any series)."""
+
+    series_id: int | None = Field(default=None, ge=1)
     status: Literal["pending", "completed", "failed"] | None = None
 
 
