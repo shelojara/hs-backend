@@ -3,8 +3,9 @@ from django.db import migrations, models
 
 def backfill_series_item_count(apps, schema_editor):
     Series = apps.get_model("manga", "Series")
+    SeriesItem = apps.get_model("manga", "SeriesItem")
     for s in Series.objects.all().iterator():
-        n = s.items.count()
+        n = SeriesItem.objects.filter(series_id=s.pk).count()
         if n != s.item_count:
             s.item_count = n
             s.save(update_fields=["item_count"])
