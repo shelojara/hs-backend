@@ -1,5 +1,5 @@
-from multiprocessing import Pool
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 from PIL import Image, ImageChops
 import shutil
@@ -94,11 +94,13 @@ def _process_manga_path(work_dir: str, output_dir: str, index: int, path: str):
 
     sort_nicely(all_filepaths)
 
-    p = Pool(processes=WORKERS)
-    for i, filepath in enumerate(all_filepaths):
-        p.apply_async(process_file, (output_dir, filepath, i + 1000 * index))
-
-    p.close()
-    p.join()
+    # ThreadPoolExecutor: multiprocessing.Pool fails under daemon parents (e.g. django-q workers).
+    with ThreadPoolExecutor(max_workers=WORKERS) as executor:
+        futures = [
+            executor.submit(process_file, output_dir, filepath, i + 1000 * index)
+            for i, filepath in enumerate(all_filepaths)
+        ]
+        for fut in as_completed(futures):
+            fut.result()
 
     shutil.rmtree(unzip_path)
