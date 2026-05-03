@@ -233,8 +233,8 @@ FLAGS: dict[str, list] = {
 Q_CLUSTER = {
     "name": "pagechecker",
     "workers": int(os.getenv("Q_WORKERS", "2")),
-    "timeout": 120,
-    "retry": 180,
+    "timeout": 240,
+    "retry": 300,
     "orm": "default",
     "catch_up": False,
     "ack_failures": True,
