@@ -59,6 +59,7 @@ class CreateCbzConvertJobResponse(Schema):
 
 class ListCbzConvertJobsRequest(Schema):
     series_id: int = Field(ge=1)
+    status: Literal["pending", "completed", "failed"] | None = None
 
 
 class CbzConvertJobSchema(Schema):

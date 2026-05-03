@@ -232,6 +232,71 @@ def test_list_cbz_convert_jobs_scoped_to_series_items(tmp_path):
 
 
 @pytest.mark.django_db
+def test_list_cbz_convert_jobs_filters_by_status(tmp_path):
+    root = tmp_path / "lib"
+    root.mkdir()
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    row = SeriesItem.objects.create(
+        series=s,
+        rel_path="s/ch.cbz",
+        filename="ch.cbz",
+        size_bytes=1,
+    )
+    u = User.objects.create_user(username="u13", password="pw")
+    j_pending = CbzConvertJob.objects.create(
+        user=u,
+        manga_root=abs_root,
+        series_item_id=row.pk,
+        kind="manga",
+        status=CbzConvertJobStatus.PENDING,
+    )
+    j_done = CbzConvertJob.objects.create(
+        user=u,
+        manga_root=abs_root,
+        series_item_id=row.pk,
+        kind="manga",
+        status=CbzConvertJobStatus.COMPLETED,
+    )
+    CbzConvertJob.objects.create(
+        user=u,
+        manga_root=abs_root,
+        series_item_id=row.pk,
+        kind="manga",
+        status=CbzConvertJobStatus.FAILED,
+    )
+    only_pending = list_cbz_convert_jobs(
+        manga_root=str(root),
+        series_id=s.pk,
+        user_id=u.pk,
+        status=CbzConvertJobStatus.PENDING,
+    )
+    assert [r.pk for r in only_pending] == [j_pending.pk]
+
+    only_completed = list_cbz_convert_jobs(
+        manga_root=str(root),
+        series_id=s.pk,
+        user_id=u.pk,
+        status=CbzConvertJobStatus.COMPLETED,
+    )
+    assert [r.pk for r in only_completed] == [j_done.pk]
+
+
+@pytest.mark.django_db
+def test_list_cbz_convert_jobs_invalid_status_raises(tmp_path):
+    root = tmp_path / "lib"
+    root.mkdir()
+    u = User.objects.create_user(username="u14", password="pw")
+    with pytest.raises(ValueError, match="Invalid status filter"):
+        list_cbz_convert_jobs(
+            manga_root=str(root),
+            series_id=1,
+            user_id=u.pk,
+            status="bogus",
+        )
+
+
+@pytest.mark.django_db
 def test_list_cbz_convert_jobs_unknown_series_raises(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()

@@ -65,11 +65,14 @@ def list_cbz_convert_jobs(request, payload: ListCbzConvertJobsRequest):
             manga_root=settings.MANGA_ROOT,
             series_id=payload.series_id,
             user_id=request.auth.pk,
+            status=payload.status,
         )
     except ValueError as exc:
         msg = str(exc)
         if msg == "Series not found":
             raise HttpError(404, msg) from exc
+        if msg == "Invalid status filter.":
+            raise HttpError(400, msg) from exc
         raise HttpError(400, msg) from exc
     return ListCbzConvertJobsResponse(
         jobs=[_cbz_convert_job_schema(j) for j in rows],
