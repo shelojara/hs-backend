@@ -12,8 +12,6 @@ from manga.schemas import (
     CreateCbzConvertJobRequest,
     CreateCbzConvertJobResponse,
     CbzConvertJobSchema,
-    DeleteCbzConvertJobRequest,
-    DeleteCbzConvertJobResponse,
     DownloadCbzPagesRequest,
     DownloadCbzRequest,
     GetCbzConvertJobRequest,
@@ -78,18 +76,6 @@ def get_cbz_convert_job(request, payload: GetCbzConvertJobRequest):
     except CbzConvertJob.DoesNotExist as exc:
         raise HttpError(404, "Convert job not found.") from exc
     return GetCbzConvertJobResponse(job=_cbz_convert_job_schema(j))
-
-
-@router.post("/v1.Manga.DeleteCbzConvertJob", response=DeleteCbzConvertJobResponse)
-def delete_cbz_convert_job(request, payload: DeleteCbzConvertJobRequest):
-    try:
-        services.delete_cbz_convert_job(
-            job_id=payload.convert_job_id,
-            user_id=request.auth.pk,
-        )
-    except CbzConvertJob.DoesNotExist as exc:
-        raise HttpError(404, "Convert job not found.") from exc
-    return DeleteCbzConvertJobResponse()
 
 
 @router.post("/v1.Manga.ListSeries", response=ListSeriesResponse)

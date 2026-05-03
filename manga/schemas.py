@@ -83,14 +83,6 @@ class GetCbzConvertJobResponse(Schema):
     job: CbzConvertJobSchema
 
 
-class DeleteCbzConvertJobRequest(Schema):
-    convert_job_id: int
-
-
-class DeleteCbzConvertJobResponse(Schema):
-    pass
-
-
 class DownloadCbzRequest(Schema):
     item_id: int
 

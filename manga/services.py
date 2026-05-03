@@ -570,13 +570,6 @@ def get_cbz_convert_job(job_id: int, *, user_id: int) -> CbzConvertJob:
     return CbzConvertJob.objects.get(pk=job_id, user_id=user_id)
 
 
-def delete_cbz_convert_job(*, job_id: int, user_id: int) -> None:
-    row = CbzConvertJob.objects.get(pk=job_id, user_id=user_id)
-    now = timezone.now()
-    row.deleted_at = now
-    row.save(update_fields=["deleted_at"])
-
-
 def run_cbz_convert_job(*, job_id: int) -> None:
     """Background worker: ``convert_cbz`` using stored ``manga_root`` / ``series_item_id``."""
     try:

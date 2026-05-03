@@ -4,11 +4,11 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from manga.models import CbzConvertJob, CbzConvertJobStatus, Series, SeriesItem
 from manga.services import (
     create_cbz_convert_job,
-    delete_cbz_convert_job,
     get_cbz_convert_job,
     list_cbz_convert_jobs,
     run_cbz_convert_job,
@@ -134,7 +134,8 @@ def test_run_cbz_convert_job_skips_soft_deleted(mock_convert, tmp_path):
         series_item_id=row.pk,
         kind="manga",
     )
-    delete_cbz_convert_job(job_id=job.pk, user_id=u.pk)
+    job.deleted_at = timezone.now()
+    job.save(update_fields=["deleted_at"])
 
     run_cbz_convert_job(job_id=job.pk)
 
@@ -186,31 +187,6 @@ def test_get_cbz_convert_job_wrong_user_raises(tmp_path):
     )
     with pytest.raises(CbzConvertJob.DoesNotExist):
         get_cbz_convert_job(job_id=job.pk, user_id=other.pk)
-
-
-@pytest.mark.django_db
-def test_delete_cbz_convert_job_soft_deletes_for_owner(tmp_path):
-    root = tmp_path / "lib"
-    root.mkdir()
-    abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
-    row = SeriesItem.objects.create(
-        series=s,
-        rel_path="s/ch.cbz",
-        filename="ch.cbz",
-        size_bytes=1,
-    )
-    u = User.objects.create_user(username="u8", password="pw")
-    job = CbzConvertJob.objects.create(
-        user=u,
-        manga_root=abs_root,
-        series_item_id=row.pk,
-        kind="manga",
-    )
-    delete_cbz_convert_job(job_id=job.pk, user_id=u.pk)
-    job.refresh_from_db()
-    assert job.deleted_at is not None
-    assert list_cbz_convert_jobs(user_id=u.pk) == []
 
 
 @pytest.mark.django_db
