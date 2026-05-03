@@ -571,6 +571,10 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
         stale_qs = Series.objects.filter(library_root=root_norm).exclude(
             series_rel_path__in=wanted_paths,
         )
+        stale_ids = list(stale_qs.values_list("pk", flat=True))
+        if stale_ids:
+            # CbzConvertJob.series is PROTECT; drop jobs for vanished series so stale delete succeeds.
+            CbzConvertJob.objects.filter(series_id__in=stale_ids).delete()
         stale_qs.delete()
 
     for rel_path in sorted(wanted_paths, key=alphanum_key):

@@ -1,14 +1,16 @@
 import base64
 import os
+import shutil
 import zipfile
 from io import BytesIO
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 from PIL import Image
 
 import manga.services as manga_services
-from manga.models import MangaHiddenDirectory, Series, SeriesItem
+from manga.models import CbzConvertJob, MangaHiddenDirectory, Series, SeriesItem
 from manga.services import (
     build_cbz_page_slice,
     convert_cbz,
@@ -787,6 +789,36 @@ def test_sync_manga_library_cache_skips_hidden_series_dirs(tmp_path, monkeypatch
 
     sync_manga_library_cache(manga_root=str(root))
     assert Series.objects.filter(series_rel_path="gone").count() == 0
+
+
+@pytest.mark.django_db
+def test_sync_manga_library_cache_deletes_cbz_jobs_before_stale_series(tmp_path, monkeypatch):
+    """CbzConvertJob.series is PROTECT; sync must not fail when removing vanished series rows."""
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "OldSeries").mkdir()
+    (root / "OldSeries" / "a.cbz").write_bytes(b"x")
+    (root / "KeptSeries").mkdir()
+    (root / "KeptSeries" / "b.cbz").write_bytes(b"y")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_manga_library_cache(manga_root=str(root))
+    abs_root = str(root.resolve())
+    old = Series.objects.get(library_root=abs_root, series_rel_path="OldSeries")
+    u = get_user_model().objects.create_user(username="sync_job_user", password="pw")
+    CbzConvertJob.objects.create(
+        user=u,
+        manga_root=abs_root,
+        series=old,
+        series_item_id=999,
+    )
+
+    shutil.rmtree(root / "OldSeries")
+    sync_manga_library_cache(manga_root=str(root))
+
+    assert not Series.objects.filter(pk=old.pk).exists()
+    assert Series.objects.filter(library_root=abs_root, series_rel_path="KeptSeries").exists()
+    assert CbzConvertJob.objects.count() == 0
 
 
 @pytest.mark.django_db
