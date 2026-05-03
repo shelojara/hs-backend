@@ -1,4 +1,5 @@
 import base64
+import logging
 import os
 import posixpath
 import shutil
@@ -10,9 +11,10 @@ from pathlib import Path
 from typing import BinaryIO, Literal
 
 from django.db import transaction
+from django.utils import timezone
+from django_q.tasks import async_task
 from PIL import Image
 
-from manga.models import Series, SeriesItem, normalize_manga_hidden_rel_path
 from manga.cbztools.manga_v2 import process_manga
 from manga.cbztools.manhwa_v3 import process_manhwa_v3
 from manga.cbztools.utils import (
@@ -21,6 +23,16 @@ from manga.cbztools.utils import (
     list_dropbox_files,
     upload_to_dropbox,
 )
+from manga.models import (
+    CbzConvertJob,
+    CbzConvertJobStatus,
+    CbzConvertKind,
+    Series,
+    SeriesItem,
+    normalize_manga_hidden_rel_path,
+)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -490,6 +502,7 @@ def convert_cbz(
     item_id: int,
     kind: Literal["manga", "manhwa"],
 ) -> None:
+    """Synchronous CBZ conversion + Dropbox upload (also used by background job)."""
     item = _series_item_for_manga_root(manga_root=manga_root, item_id=item_id)
     path = item.rel_path
     filename = os.path.basename(path)
@@ -520,3 +533,89 @@ def convert_cbz(
         sync_series_items_for_cbz_path(manga_root=manga_root, cbz_rel_path=path)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def create_cbz_convert_job(
+    *,
+    manga_root: str,
+    item_id: int,
+    kind: Literal["manga", "manhwa"],
+    user_id: int,
+) -> int:
+    """Create pending ``CbzConvertJob`` and enqueue worker; returns primary key."""
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    _series_item_for_manga_root(manga_root=manga_root, item_id=item_id)
+    row = CbzConvertJob.objects.create(
+        user_id=user_id,
+        manga_root=root_norm,
+        series_item_id=item_id,
+        kind=kind,
+    )
+    async_task(
+        "manga.scheduled_tasks.run_cbz_convert_job",
+        row.pk,
+        task_name=f"manga_cbz_convert:{row.pk}",
+    )
+    return row.pk
+
+
+def list_cbz_convert_jobs(
+    *,
+    manga_root: str,
+    series_id: int,
+    user_id: int,
+    status: str | None = None,
+) -> list[CbzConvertJob]:
+    """All convert jobs for *user_id* targeting any ``SeriesItem`` in *series_id* under *manga_root*.
+
+    Newest first. Optional *status* limits to that job status value.
+    Raises ``ValueError("Series not found")`` when series missing or wrong library.
+    Raises ``ValueError("Invalid status filter.")`` when *status* is not a known status.
+    """
+    if status is not None and status not in CbzConvertJobStatus:
+        raise ValueError("Invalid status filter.")
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    try:
+        series = Series.objects.get(pk=series_id, library_root=root_norm)
+    except Series.DoesNotExist as exc:
+        raise ValueError("Series not found") from exc
+    item_ids = SeriesItem.objects.filter(series=series).values_list("pk", flat=True)
+    qs = CbzConvertJob.objects.filter(
+        user_id=user_id,
+        series_item_id__in=item_ids,
+    )
+    if status is not None:
+        qs = qs.filter(status=status)
+    return list(qs.order_by("-created_at", "-pk"))
+
+
+def get_cbz_convert_job(job_id: int, *, user_id: int) -> CbzConvertJob:
+    return CbzConvertJob.objects.get(pk=job_id, user_id=user_id)
+
+
+def run_cbz_convert_job(*, job_id: int) -> None:
+    """Background worker: ``convert_cbz`` using stored ``manga_root`` / ``series_item_id``."""
+    try:
+        job = CbzConvertJob.objects.get(pk=job_id)
+    except CbzConvertJob.DoesNotExist:
+        logger.warning("run_cbz_convert_job: missing CbzConvertJob id=%s", job_id)
+        return
+    kind: Literal["manga", "manhwa"] = (
+        "manhwa" if job.kind == CbzConvertKind.MANHWA else "manga"
+    )
+    try:
+        convert_cbz(
+            manga_root=job.manga_root,
+            item_id=job.series_item_id,
+            kind=kind,
+        )
+        job.status = CbzConvertJobStatus.COMPLETED
+        job.completed_at = timezone.now()
+        job.failure_message = None
+        job.save(update_fields=["status", "completed_at", "failure_message"])
+    except Exception as exc:
+        logger.exception("run_cbz_convert_job failed (job id=%s)", job_id)
+        job.status = CbzConvertJobStatus.FAILED
+        job.completed_at = timezone.now()
+        job.failure_message = str(exc) or exc.__class__.__name__
+        job.save(update_fields=["status", "completed_at", "failure_message"])
