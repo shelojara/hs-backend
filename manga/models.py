@@ -70,6 +70,14 @@ class CbzConvertJob(models.Model):
         max_length=4096,
         help_text="Normalized absolute manga library root when job was created.",
     )
+    series = models.ForeignKey(
+        "Series",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="cbz_convert_jobs",
+        help_text="Series containing series_item_id; denormalized for efficient job listing.",
+    )
     series_item_id = models.PositiveIntegerField(
         help_text="Primary key of SeriesItem to convert.",
     )
@@ -90,6 +98,12 @@ class CbzConvertJob(models.Model):
 
     class Meta:
         ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(
+                fields=["user_id", "manga_root", "series_id"],
+                name="manga_cbzjob_user_root_series",
+            ),
+        ]
 
     def __str__(self) -> str:
         return (
