@@ -1,7 +1,9 @@
 import base64
 import zipfile
+from io import BytesIO
 
 import pytest
+from PIL import Image
 
 import manga.services as manga_services
 from manga.models import MangaHiddenDirectory, Series, SeriesItem
@@ -472,6 +474,25 @@ def test_first_cbz_page_as_base64_sorted_natural_order(tmp_path):
     b64, mime = first_cbz_page_as_base64(str(cbz))
     assert mime == "image/jpeg"
     assert b64 == base64.standard_b64encode(want).decode("ascii")
+
+
+def test_first_cbz_page_as_base64_cover_thumb_tall_top_aligned(tmp_path):
+    """Tall page: 11:17 crop keeps top (red), drops bottom (blue)."""
+    w, h = 11, 34
+    im = Image.new("RGB", (w, h))
+    im.paste((255, 0, 0), (0, 0, w, h // 2))
+    im.paste((0, 0, 255), (0, h // 2, w, h))
+    buf = BytesIO()
+    im.save(buf, format="PNG")
+    cbz = tmp_path / "x.cbz"
+    _write_cbz_member_bytes(cbz, {"001.png": buf.getvalue()})
+    b64, mime = first_cbz_page_as_base64(str(cbz))
+    assert mime == "image/jpeg"
+    out = Image.open(BytesIO(base64.standard_b64decode(b64))).convert("RGB")
+    assert out.width == manga_services.COVER_THUMB_WIDTH
+    assert out.height == max(1, int(round(manga_services.COVER_THUMB_WIDTH * 17 / 11)))
+    r, g, bpx = out.getpixel((out.width // 2, out.height - 1))
+    assert r > 200 and g < 80 and bpx < 80
 
 
 def test_first_cbz_page_as_base64_no_images_returns_none(tmp_path):
