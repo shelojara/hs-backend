@@ -1,8 +1,11 @@
+import zipfile
+
 import pytest
 
 import manga.services as manga_services
 from manga.models import MangaHiddenDirectory, Series, SeriesItem
 from manga.services import (
+    build_cbz_page_slice,
     convert_cbz,
     list_manga_cbz_files,
     list_series,
@@ -128,6 +131,91 @@ def test_resolve_cbz_download_missing_file(tmp_path):
     row = SeriesItem.objects.create(series=s, rel_path="s/missing.cbz", filename="missing.cbz", size_bytes=0)
     with pytest.raises(ValueError, match="CBZ not found"):
         resolve_cbz_download(manga_root=str(root), item_id=row.pk)
+
+
+def _write_minimal_cbz(path, member_names: list[str]) -> None:
+    with zipfile.ZipFile(path, "w") as zf:
+        for name in member_names:
+            zf.writestr(name, b"p")
+
+
+@pytest.mark.django_db
+def test_build_cbz_page_slice_returns_slice_sorted_natural(tmp_path):
+    root = tmp_path / "m"
+    cbz = root / "s" / "ch.cbz"
+    cbz.parent.mkdir(parents=True)
+    _write_minimal_cbz(
+        cbz,
+        ["010.jpg", "002.jpg", "001.jpg"],
+    )
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=1)
+
+    built = build_cbz_page_slice(manga_root=str(root), item_id=row.pk, offset=0, limit=2)
+    assert built.filename == "ch_m0-1.cbz"
+    with zipfile.ZipFile(built.content, "r") as zf:
+        assert zf.namelist() == ["001.jpg", "002.jpg"]
+    built.content.close()
+
+
+@pytest.mark.django_db
+def test_build_cbz_page_slice_second_page_window(tmp_path):
+    root = tmp_path / "m"
+    cbz = root / "s" / "ch.cbz"
+    cbz.parent.mkdir(parents=True)
+    _write_minimal_cbz(cbz, ["a.jpg", "b.jpg", "c.jpg"])
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=1)
+
+    built = build_cbz_page_slice(manga_root=str(root), item_id=row.pk, offset=1, limit=2)
+    assert built.filename == "ch_m1-2.cbz"
+    with zipfile.ZipFile(built.content, "r") as zf:
+        assert zf.namelist() == ["b.jpg", "c.jpg"]
+    built.content.close()
+
+
+@pytest.mark.django_db
+def test_build_cbz_page_slice_offset_out_of_range(tmp_path):
+    root = tmp_path / "m"
+    cbz = root / "s" / "ch.cbz"
+    cbz.parent.mkdir(parents=True)
+    _write_minimal_cbz(cbz, ["a.jpg"])
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=1)
+
+    with pytest.raises(ValueError, match="Offset out of range"):
+        build_cbz_page_slice(manga_root=str(root), item_id=row.pk, offset=1, limit=5)
+
+
+@pytest.mark.django_db
+def test_build_cbz_page_slice_no_images(tmp_path):
+    root = tmp_path / "m"
+    cbz = root / "s" / "ch.cbz"
+    cbz.parent.mkdir(parents=True)
+    _write_minimal_cbz(cbz, ["readme.txt"])
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=1)
+
+    with pytest.raises(ValueError, match="No image pages in CBZ"):
+        build_cbz_page_slice(manga_root=str(root), item_id=row.pk, offset=0, limit=10)
+
+
+@pytest.mark.django_db
+def test_build_cbz_page_slice_invalid_zip(tmp_path):
+    root = tmp_path / "m"
+    cbz = root / "s" / "ch.cbz"
+    cbz.parent.mkdir(parents=True)
+    cbz.write_bytes(b"not a zip")
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=1)
+
+    with pytest.raises(ValueError, match="Invalid CBZ file"):
+        build_cbz_page_slice(manga_root=str(root), item_id=row.pk, offset=0, limit=1)
 
 
 @pytest.mark.django_db

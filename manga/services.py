@@ -1,8 +1,10 @@
 import os
 import posixpath
+import tempfile
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import BinaryIO, Literal
 
 from django.db import transaction
 
@@ -11,6 +13,7 @@ from manga.cbztools.manga_v2 import process_manga
 from manga.cbztools.manhwa_v3 import process_manhwa_v3
 from manga.cbztools.utils import (
     alphanum_key,
+    is_image,
     list_dropbox_files,
     upload_to_dropbox,
 )
@@ -30,6 +33,14 @@ class CbzDownload:
     """Resolved on-disk CBZ for streaming to client."""
 
     absolute_path: str
+    filename: str
+
+
+@dataclass(frozen=True)
+class CbzPagesDownload:
+    """Subset CBZ built from a slice of sorted image members."""
+
+    content: BinaryIO
     filename: str
 
 
@@ -97,6 +108,60 @@ def resolve_cbz_download(*, manga_root: str, item_id: int) -> CbzDownload:
     if not os.path.isfile(abs_path):
         raise ValueError("CBZ not found")
     return CbzDownload(absolute_path=abs_path, filename=filename)
+
+
+def _sorted_image_names_in_cbz(abs_cbz_path: str) -> list[str]:
+    """Archive member paths that look like images, ordered like ``sort_nicely`` (alphanum)."""
+    try:
+        with zipfile.ZipFile(abs_cbz_path, "r") as zf:
+            names = [
+                n
+                for n in zf.namelist()
+                if not n.endswith("/") and is_image(os.path.basename(n.replace("\\", "/")))
+            ]
+    except zipfile.BadZipFile as exc:
+        raise ValueError("Invalid CBZ file") from exc
+    names.sort(key=lambda n: alphanum_key(n.replace("\\", "/")))
+    return names
+
+
+def build_cbz_page_slice(
+    *,
+    manga_root: str,
+    item_id: int,
+    offset: int,
+    limit: int,
+) -> CbzPagesDownload:
+    """Build a CBZ containing ``limit`` image members starting at ``offset`` (sorted order)."""
+    resolved = resolve_cbz_download(manga_root=manga_root, item_id=item_id)
+    members = _sorted_image_names_in_cbz(resolved.absolute_path)
+    if not members:
+        raise ValueError("No image pages in CBZ")
+    if offset >= len(members):
+        raise ValueError("Offset out of range")
+    slice_names = members[offset : offset + limit]
+    if not slice_names:
+        raise ValueError("Offset out of range")
+
+    stem, ext = os.path.splitext(resolved.filename)
+    if ext.lower() != ".cbz":
+        ext = ".cbz"
+    last_idx = offset + len(slice_names) - 1
+    out_filename = f"{stem}_m{offset}-{last_idx}{ext}"
+
+    out = tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024, mode="w+b")
+    try:
+        with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+            with zipfile.ZipFile(resolved.absolute_path, "r") as zin:
+                for name in slice_names:
+                    info = zin.getinfo(name)
+                    zout.writestr(info, zin.read(name))
+    except Exception:
+        out.close()
+        raise
+
+    out.seek(0)
+    return CbzPagesDownload(content=out, filename=out_filename)
 
 
 def _dropbox_list_segment_for_folder(*, parent_rel: str) -> str:
