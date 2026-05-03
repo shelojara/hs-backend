@@ -1,6 +1,7 @@
 import base64
 import os
 import posixpath
+import shutil
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -497,21 +498,25 @@ def convert_cbz(
         raise ValueError("Not a CBZ file")
 
     abs_src = _path_under_manga_root(manga_root=manga_root, rel_path=path)
-    if kind == "manga":
-        output_path = process_manga([abs_src])
-        if output_path is None:
-            raise ValueError("Failed to process manga")
-    else:
-        output_path = process_manhwa_v3([abs_src])
-        if output_path is None:
-            raise ValueError("Failed to process manhwa")
+    work_dir = tempfile.mkdtemp(prefix="manga_convert_")
+    try:
+        if kind == "manga":
+            output_path = process_manga([abs_src], work_dir)
+            if output_path is None:
+                raise ValueError("Failed to process manga")
+        else:
+            output_path = process_manhwa_v3([abs_src], work_dir)
+            if output_path is None:
+                raise ValueError("Failed to process manhwa")
 
-    parent_dir = os.path.basename(os.path.dirname(path))
-    basename, ext = os.path.splitext(filename)
-    download_name = basename
-    if parent_dir not in basename:
-        download_name = f"{parent_dir} - {basename}"
-    download_name += ext
+        parent_dir = os.path.basename(os.path.dirname(path))
+        basename, ext = os.path.splitext(filename)
+        download_name = basename
+        if parent_dir not in basename:
+            download_name = f"{parent_dir} - {basename}"
+        download_name += ext
 
-    upload_to_dropbox(output_path, path, download_name)
-    sync_series_items_for_cbz_path(manga_root=manga_root, cbz_rel_path=path)
+        upload_to_dropbox(output_path, path, download_name)
+        sync_series_items_for_cbz_path(manga_root=manga_root, cbz_rel_path=path)
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)

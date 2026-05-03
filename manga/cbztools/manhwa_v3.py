@@ -12,10 +12,10 @@ HEIGHT = 1448
 QUALITY = 70
 
 
-def process_manhwa_v3(paths: list[str]) -> str:
+def process_manhwa_v3(paths: list[str], work_dir: str) -> str:
     print("Starting format...")
 
-    output_dir = "output"
+    output_dir = os.path.join(work_dir, "output")
 
     # remove output directory if it exists.
     shutil.rmtree(output_dir, ignore_errors=True)
