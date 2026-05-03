@@ -11,7 +11,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO, Literal
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 from django_q.tasks import async_task
@@ -21,6 +21,10 @@ from manga.cbztools.manga_v2 import process_manga
 from manga.cbztools.manhwa_v3 import process_manhwa_v3
 from manga.cbztools.utils import (
     alphanum_key,
+    delete_dropbox_path,
+    dropbox_download_name_for_series_cbz,
+    dropbox_remote_path_for_series_cbz,
+    get_dropbox_space_bytes,
     is_image,
     list_dropbox_files,
     upload_to_dropbox,
@@ -35,6 +39,10 @@ from manga.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Serialize Dropbox eviction + upload across workers (PostgreSQL only).
+_DROPBOX_UPLOAD_ADVISORY_LOCK_1 = 0x6D616E67
+_DROPBOX_UPLOAD_ADVISORY_LOCK_2 = 0x64726F70
 
 
 def _filesystem_created_at_from_stat(st: os.stat_result) -> datetime | None:
@@ -165,6 +173,74 @@ def _series_item_for_manga_root(*, manga_root: str, item_id: int) -> SeriesItem:
     if item.series.library_root != root_norm:
         raise ValueError("Item not found") from None
     return item
+
+
+def _dropbox_upload_bytes_needed_for_file(abs_path: str) -> int:
+    try:
+        sz = os.path.getsize(abs_path)
+    except OSError:
+        return 0
+    return max(int(sz), 1)
+
+
+def _dropbox_advisory_lock_xact() -> None:
+    """Serialize Dropbox eviction + upload when DB is PostgreSQL (django-q workers)."""
+    if connection.vendor != "postgresql":
+        return
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_advisory_xact_lock(%s, %s)",
+            [_DROPBOX_UPLOAD_ADVISORY_LOCK_1, _DROPBOX_UPLOAD_ADVISORY_LOCK_2],
+        )
+
+
+def _evict_series_item_from_dropbox(*, item: SeriesItem) -> None:
+    remote = dropbox_remote_path_for_series_cbz(
+        item.rel_path,
+        dropbox_download_name_for_series_cbz(item.rel_path, item.filename),
+    )
+    delete_dropbox_path(remote)
+    SeriesItem.objects.filter(pk=item.pk).update(
+        in_dropbox=False,
+        dropbox_uploaded_at=None,
+    )
+
+
+def _ensure_dropbox_space_for_upload(
+    *,
+    manga_root: str,
+    reserve_item_id: int,
+    upload_bytes: int,
+) -> None:
+    """Delete oldest-in-Dropbox CBZs until quota allows upload + 250% headroom (free >= 3.5× upload size)."""
+    while True:
+        used, allocated = get_dropbox_space_bytes()
+        if allocated is None:
+            break
+        need_remove = max(0, used - allocated + int(3.5 * upload_bytes))
+        if need_remove <= 0:
+            break
+        victim = (
+            SeriesItem.objects.filter(
+                in_dropbox=True,
+                dropbox_uploaded_at__isnull=False,
+                series__library_root=os.path.abspath(os.path.expanduser(manga_root)),
+            )
+            .exclude(pk=reserve_item_id)
+            .order_by("dropbox_uploaded_at", "pk")
+            .first()
+        )
+        if victim is None:
+            raise RuntimeError(
+                "Dropbox storage full: no eligible cached rows left to evict "
+                f"(need ~{need_remove} bytes freed; upload ~{upload_bytes} bytes).",
+            )
+        logger.info(
+            "Evicting Dropbox copy for SeriesItem id=%s rel_path=%s to free space",
+            victim.pk,
+            victim.rel_path,
+        )
+        _evict_series_item_from_dropbox(item=victim)
 
 
 def resolve_cbz_download(*, manga_root: str, item_id: int) -> CbzDownload:
@@ -612,14 +688,16 @@ def convert_cbz(
             if output_path is None:
                 raise ValueError("Failed to process manhwa")
 
-        parent_dir = os.path.basename(os.path.dirname(path))
-        basename, ext = os.path.splitext(filename)
-        download_name = basename
-        if parent_dir not in basename:
-            download_name = f"{parent_dir} - {basename}"
-        download_name += ext
-
-        upload_to_dropbox(output_path, path, download_name)
+        download_name = dropbox_download_name_for_series_cbz(path, filename)
+        upload_bytes = _dropbox_upload_bytes_needed_for_file(output_path)
+        with transaction.atomic():
+            _dropbox_advisory_lock_xact()
+            _ensure_dropbox_space_for_upload(
+                manga_root=manga_root,
+                reserve_item_id=item.pk,
+                upload_bytes=upload_bytes,
+            )
+            upload_to_dropbox(output_path, path, download_name)
         now = timezone.now()
         SeriesItem.objects.filter(pk=item.pk).update(
             in_dropbox=True,
