@@ -54,6 +54,14 @@ def test_convert_cbz_calls_sync_series_items(tmp_path, monkeypatch):
     cbz = root / "series" / "ch.cbz"
     cbz.parent.mkdir(parents=True)
     cbz.write_bytes(b"PK\x03\x04")
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="series", name="series")
+    row = SeriesItem.objects.create(
+        series=s,
+        rel_path="series/ch.cbz",
+        filename="ch.cbz",
+        size_bytes=4,
+    )
 
     calls = []
 
@@ -64,40 +72,61 @@ def test_convert_cbz_calls_sync_series_items(tmp_path, monkeypatch):
     monkeypatch.setattr(manga_services, "upload_to_dropbox", lambda *_a, **_k: None)
     monkeypatch.setattr(manga_services, "sync_series_items_for_cbz_path", capture)
 
-    convert_cbz(manga_root=str(root), path="series/ch.cbz", kind="manga")
+    convert_cbz(manga_root=str(root), item_id=row.pk, kind="manga")
     assert calls == [{"manga_root": str(root), "cbz_rel_path": "series/ch.cbz"}]
 
 
+@pytest.mark.django_db
 def test_resolve_cbz_download_ok(tmp_path):
     root = tmp_path / "m"
     cbz = root / "s" / "ch.cbz"
     cbz.parent.mkdir(parents=True)
     cbz.write_bytes(b"x")
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=1)
 
-    got = resolve_cbz_download(manga_root=str(root), path="s/ch.cbz")
+    got = resolve_cbz_download(manga_root=str(root), item_id=row.pk)
     assert got.absolute_path == str(cbz)
     assert got.filename == "ch.cbz"
 
 
+@pytest.mark.django_db
 def test_resolve_cbz_download_rejects_non_cbz(tmp_path):
     root = tmp_path / "m"
     root.mkdir()
+    z = root / "x.zip"
+    z.write_bytes(b"z")
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="", name="lib")
+    row = SeriesItem.objects.create(series=s, rel_path="x.zip", filename="x.zip", size_bytes=1)
     with pytest.raises(ValueError, match="Not a CBZ"):
-        resolve_cbz_download(manga_root=str(root), path="x.zip")
+        resolve_cbz_download(manga_root=str(root), item_id=row.pk)
 
 
-def test_resolve_cbz_download_rejects_path_escape(tmp_path):
-    root = tmp_path / "m"
-    root.mkdir()
-    with pytest.raises(ValueError, match="outside manga root"):
-        resolve_cbz_download(manga_root=str(root), path="../outside.cbz")
+@pytest.mark.django_db
+def test_resolve_cbz_download_rejects_item_wrong_library(tmp_path):
+    root_a = tmp_path / "a"
+    root_b = tmp_path / "b"
+    root_a.mkdir()
+    root_b.mkdir()
+    abs_a = str(root_a.resolve())
+    abs_b = str(root_b.resolve())
+    s = Series.objects.create(library_root=abs_a, series_rel_path="s", name="s")
+    row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=0)
+    with pytest.raises(ValueError, match="Item not found"):
+        resolve_cbz_download(manga_root=abs_b, item_id=row.pk)
 
 
+@pytest.mark.django_db
 def test_resolve_cbz_download_missing_file(tmp_path):
     root = tmp_path / "m"
     root.mkdir()
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    row = SeriesItem.objects.create(series=s, rel_path="s/missing.cbz", filename="missing.cbz", size_bytes=0)
     with pytest.raises(ValueError, match="CBZ not found"):
-        resolve_cbz_download(manga_root=str(root), path="missing.cbz")
+        resolve_cbz_download(manga_root=str(root), item_id=row.pk)
 
 
 @pytest.mark.django_db
@@ -268,10 +297,15 @@ def test_sync_manga_library_cache_skips_hidden_series_dirs(tmp_path, monkeypatch
 
 
 @pytest.mark.django_db
-def test_convert_cbz_rejects_path_escape(tmp_path, monkeypatch):
-    root = tmp_path / "m"
-    root.mkdir()
+def test_convert_cbz_rejects_item_wrong_library(tmp_path, monkeypatch):
+    root_a = tmp_path / "a"
+    root_b = tmp_path / "b"
+    root_a.mkdir()
+    root_b.mkdir()
+    abs_a = str(root_a.resolve())
+    s = Series.objects.create(library_root=abs_a, series_rel_path="s", name="s")
+    row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=0)
     monkeypatch.setattr(manga_services, "process_manga", lambda _paths: (_ for _ in ()).throw(AssertionError))
 
-    with pytest.raises(ValueError, match="outside manga root"):
-        convert_cbz(manga_root=str(root), path="../evil.cbz", kind="manga")
+    with pytest.raises(ValueError, match="Item not found"):
+        convert_cbz(manga_root=str(root_b), item_id=row.pk, kind="manga")

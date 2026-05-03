@@ -19,7 +19,7 @@ class ListSeriesResponse(Schema):
 
 
 class ConvertCbzRequest(Schema):
-    path: str
+    item_id: int
     kind: Literal["manga", "manhwa"] = "manga"
 
 
@@ -28,4 +28,4 @@ class ConvertCbzResponse(Schema):
 
 
 class DownloadCbzRequest(Schema):
-    path: str
+    item_id: int
