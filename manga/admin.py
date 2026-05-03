@@ -29,6 +29,7 @@ class MangaHiddenDirectoryAdmin(admin.ModelAdmin):
 class SeriesItemInline(admin.TabularInline):
     model = SeriesItem
     extra = 0
+    fields = ("rel_path", "filename", "size_bytes", "in_dropbox", "item_cover_preview")
     readonly_fields = ("rel_path", "filename", "size_bytes", "in_dropbox", "item_cover_preview")
     can_delete = False
 
@@ -47,13 +48,13 @@ class SeriesItemInline(admin.TabularInline):
 
 @admin.register(Series)
 class SeriesAdmin(admin.ModelAdmin):
+    exclude = ("cover_image_base64",)
     list_display = ("cover_thumbnail", "name", "series_rel_path", "library_root", "scanned_at")
     list_filter = ("library_root",)
     search_fields = ("name", "series_rel_path", "library_root")
     readonly_fields = (
         "scanned_at",
         "cover_preview",
-        "cover_image_base64",
         "cover_image_mime_type",
     )
     inlines = (SeriesItemInline,)
