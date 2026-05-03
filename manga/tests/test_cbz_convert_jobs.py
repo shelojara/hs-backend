@@ -40,6 +40,7 @@ def test_create_cbz_convert_job_persists_pending_and_enqueues_worker(mock_async,
     job = CbzConvertJob.objects.get(pk=jid)
     assert job.user_id == u.pk
     assert job.manga_root == abs_root
+    assert job.series_id == s.pk
     assert job.series_item_id == row.pk
     assert job.kind == "manga"
     assert job.status == CbzConvertJobStatus.PENDING
@@ -67,6 +68,7 @@ def test_run_cbz_convert_job_marks_completed(mock_convert, tmp_path):
     job = CbzConvertJob.objects.create(
         user=u,
         manga_root=abs_root,
+        series=s,
         series_item_id=row.pk,
         kind="manga",
     )
@@ -101,6 +103,7 @@ def test_run_cbz_convert_job_marks_failed_with_message(_mock_convert, tmp_path):
     job = CbzConvertJob.objects.create(
         user=u,
         manga_root=abs_root,
+        series=s,
         series_item_id=row.pk,
         kind="manhwa",
     )
@@ -129,6 +132,7 @@ def test_get_cbz_convert_job_returns_row_for_owner(tmp_path):
     job = CbzConvertJob.objects.create(
         user=u,
         manga_root=abs_root,
+        series=s,
         series_item_id=row.pk,
         kind="manga",
     )
@@ -153,6 +157,7 @@ def test_get_cbz_convert_job_wrong_user_raises(tmp_path):
     job = CbzConvertJob.objects.create(
         user=u,
         manga_root=abs_root,
+        series=s,
         series_item_id=row.pk,
         kind="manga",
     )
@@ -178,6 +183,7 @@ def test_list_cbz_convert_jobs_returns_all_for_series_newest_first(tmp_path):
         j = CbzConvertJob.objects.create(
             user=u,
             manga_root=abs_root,
+            series=s,
             series_item_id=row.pk,
             kind="manga",
         )
@@ -214,12 +220,14 @@ def test_list_cbz_convert_jobs_scoped_to_series_items(tmp_path):
     ja = CbzConvertJob.objects.create(
         user=u,
         manga_root=abs_root,
+        series=s_a,
         series_item_id=item_a.pk,
         kind="manga",
     )
     CbzConvertJob.objects.create(
         user=u,
         manga_root=abs_root,
+        series=s_b,
         series_item_id=item_b.pk,
         kind="manga",
     )
@@ -229,6 +237,48 @@ def test_list_cbz_convert_jobs_scoped_to_series_items(tmp_path):
         user_id=u.pk,
     )
     assert [r.pk for r in rows] == [ja.pk]
+
+
+@pytest.mark.django_db
+def test_list_cbz_convert_jobs_null_series_id_all_series_in_library(tmp_path):
+    root = tmp_path / "lib"
+    root.mkdir()
+    abs_root = str(root.resolve())
+    s_a = Series.objects.create(library_root=abs_root, series_rel_path="a", name="a")
+    s_b = Series.objects.create(library_root=abs_root, series_rel_path="b", name="b")
+    item_a = SeriesItem.objects.create(
+        series=s_a,
+        rel_path="a/1.cbz",
+        filename="1.cbz",
+        size_bytes=1,
+    )
+    item_b = SeriesItem.objects.create(
+        series=s_b,
+        rel_path="b/1.cbz",
+        filename="1.cbz",
+        size_bytes=1,
+    )
+    u = User.objects.create_user(username="u_all_series", password="pw")
+    ja = CbzConvertJob.objects.create(
+        user=u,
+        manga_root=abs_root,
+        series=s_a,
+        series_item_id=item_a.pk,
+        kind="manga",
+    )
+    jb = CbzConvertJob.objects.create(
+        user=u,
+        manga_root=abs_root,
+        series=s_b,
+        series_item_id=item_b.pk,
+        kind="manga",
+    )
+    rows = list_cbz_convert_jobs(
+        manga_root=str(root),
+        series_id=None,
+        user_id=u.pk,
+    )
+    assert {r.pk for r in rows} == {ja.pk, jb.pk}
 
 
 @pytest.mark.django_db
@@ -247,6 +297,7 @@ def test_list_cbz_convert_jobs_filters_by_status(tmp_path):
     j_pending = CbzConvertJob.objects.create(
         user=u,
         manga_root=abs_root,
+        series=s,
         series_item_id=row.pk,
         kind="manga",
         status=CbzConvertJobStatus.PENDING,
@@ -254,6 +305,7 @@ def test_list_cbz_convert_jobs_filters_by_status(tmp_path):
     j_done = CbzConvertJob.objects.create(
         user=u,
         manga_root=abs_root,
+        series=s,
         series_item_id=row.pk,
         kind="manga",
         status=CbzConvertJobStatus.COMPLETED,
@@ -261,6 +313,7 @@ def test_list_cbz_convert_jobs_filters_by_status(tmp_path):
     CbzConvertJob.objects.create(
         user=u,
         manga_root=abs_root,
+        series=s,
         series_item_id=row.pk,
         kind="manga",
         status=CbzConvertJobStatus.FAILED,

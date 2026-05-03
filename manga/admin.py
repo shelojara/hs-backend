@@ -9,6 +9,7 @@ class CbzConvertJobAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "user",
+        "series",
         "series_item_id",
         "kind",
         "status",
