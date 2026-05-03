@@ -50,7 +50,14 @@ class SeriesItemInline(admin.TabularInline):
 @admin.register(Series)
 class SeriesAdmin(admin.ModelAdmin):
     exclude = ("cover_image_base64",)
-    list_display = ("cover_thumbnail", "name", "series_rel_path", "library_root", "scanned_at")
+    list_display = (
+        "cover_thumbnail",
+        "name",
+        "series_rel_path",
+        "item_count",
+        "library_root",
+        "scanned_at",
+    )
     list_filter = ("library_root",)
     search_fields = ("name", "series_rel_path", "library_root")
     readonly_fields = (

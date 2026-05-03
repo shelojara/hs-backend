@@ -103,6 +103,7 @@ def list_series(request, payload: ListSeriesRequest):
             SeriesSchema(
                 id=r.id,
                 name=r.name,
+                item_count=r.item_count,
                 cover_image_base64=r.cover_image_base64,
                 cover_image_mime_type=r.cover_image_mime_type or "",
             )
