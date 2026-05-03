@@ -373,6 +373,36 @@ def test_sync_manga_library_cache_series_is_dir_with_direct_cbz(tmp_path, monkey
 
 
 @pytest.mark.django_db
+def test_sync_manga_library_cache_commits_series_before_failing_one(tmp_path, monkeypatch):
+    """Per-series transactions: earlier series stay persisted when a later series raises."""
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "Alpha").mkdir()
+    (root / "Alpha" / "c1.cbz").write_bytes(b"x")
+    (root / "Beta").mkdir()
+    (root / "Beta" / "c2.cbz").write_bytes(b"y")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    orig_list = manga_services.list_manga_cbz_files
+
+    def list_cbz_fail_beta(*args, **kwargs):
+        if kwargs.get("path") == "Beta":
+            raise RuntimeError("simulated Beta failure")
+        return orig_list(*args, **kwargs)
+
+    monkeypatch.setattr(manga_services, "list_manga_cbz_files", list_cbz_fail_beta)
+
+    abs_root = str(root.resolve())
+    with pytest.raises(RuntimeError, match="simulated Beta"):
+        sync_manga_library_cache(manga_root=str(root))
+
+    assert Series.objects.filter(library_root=abs_root).count() == 1
+    kept = Series.objects.get(library_root=abs_root)
+    assert kept.series_rel_path == "Alpha"
+    assert SeriesItem.objects.filter(series=kept).count() == 1
+
+
+@pytest.mark.django_db
 def test_list_series_items_sorts_filenames_naturally(tmp_path, monkeypatch):
     root = tmp_path / "lib"
     root.mkdir()

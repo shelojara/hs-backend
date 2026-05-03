@@ -426,6 +426,9 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
 
     Series = directory with ≥1 ``.cbz`` directly inside (same rule as user-facing ``list_manga_cbz_files`` scope).
 
+    Stale series rows removed in one transaction; each series sync commits separately so failure mid-run
+    keeps DB updates for series already processed.
+
     Returns ``(series_count, chapter_count)`` after sync.
     """
     hidden = _manga_hidden_rel_paths()
@@ -438,7 +441,8 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
         )
         stale_qs.delete()
 
-        for rel_path in sorted(wanted_paths, key=alphanum_key):
+    for rel_path in sorted(wanted_paths, key=alphanum_key):
+        with transaction.atomic():
             display_name = Path(rel_path).name if rel_path else Path(root_norm).name
             series, _created = Series.objects.update_or_create(
                 library_root=root_norm,
@@ -466,8 +470,8 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
 
             _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
 
-        series_count = Series.objects.filter(library_root=root_norm).count()
-        chapter_total = SeriesItem.objects.filter(series__library_root=root_norm).count()
+    series_count = Series.objects.filter(library_root=root_norm).count()
+    chapter_total = SeriesItem.objects.filter(series__library_root=root_norm).count()
 
     return series_count, chapter_total
 
