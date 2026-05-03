@@ -20,7 +20,6 @@ class ListSeriesResponse(Schema):
 
 class SeriesItemSchema(Schema):
     id: int
-    rel_path: str
     filename: str
     size_bytes: int | None
     in_dropbox: bool

@@ -50,7 +50,6 @@ def list_series_item(request, payload: ListSeriesItemRequest):
         items=[
             SeriesItemSchema(
                 id=r.id,
-                rel_path=r.rel_path,
                 filename=r.filename,
                 size_bytes=r.size_bytes,
                 in_dropbox=r.in_dropbox,

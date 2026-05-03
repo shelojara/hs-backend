@@ -236,8 +236,22 @@ def test_sync_manga_library_cache_series_is_dir_with_direct_cbz(tmp_path, monkey
 
     items = list_series_items(manga_root=str(root), series_id=s_alpha.id)
     assert len(items) == 1
-    assert items[0].rel_path == "Alpha/c1.cbz"
     assert items[0].filename == "c1.cbz"
+
+
+@pytest.mark.django_db
+def test_list_series_items_sorts_filenames_naturally(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    for name in ("ch10.cbz", "ch2.cbz", "ch1.cbz"):
+        (root / "S" / name).write_bytes(b"x")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    sync_manga_library_cache(manga_root=str(root))
+    s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
+    names = [r.filename for r in list_series_items(manga_root=str(root), series_id=s.id)]
+    assert names == ["ch1.cbz", "ch2.cbz", "ch10.cbz"]
 
 
 @pytest.mark.django_db
