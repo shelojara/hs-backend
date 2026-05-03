@@ -1,10 +1,12 @@
 import os
 import posixpath
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 from django.db import transaction
+from django.db.models import Count
 
 from manga.models import Series, SeriesItem, normalize_manga_hidden_rel_path
 from manga.cbztools.manga_v2 import process_manga
@@ -31,6 +33,44 @@ class CbzDownload:
 
     absolute_path: str
     filename: str
+
+
+@dataclass(frozen=True)
+class SeriesListRow:
+    """One cached ``Series`` row for API listing."""
+
+    id: int
+    library_root: str
+    series_rel_path: str
+    name: str
+    scanned_at: datetime
+    item_count: int
+
+
+def list_series(
+    *,
+    manga_root: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[SeriesListRow]:
+    """Query ``Series`` for ``manga_root`` (normalized), ordered by ``series_rel_path``."""
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    qs = (
+        Series.objects.filter(library_root=root_norm)
+        .annotate(item_count=Count("items"))
+        .order_by("series_rel_path")
+    )
+    return [
+        SeriesListRow(
+            id=row.id,
+            library_root=row.library_root,
+            series_rel_path=row.series_rel_path,
+            name=row.name,
+            scanned_at=row.scanned_at,
+            item_count=row.item_count,
+        )
+        for row in qs[offset : offset + limit]
+    ]
 
 
 def _path_under_manga_root(*, manga_root: str, rel_path: str) -> str:

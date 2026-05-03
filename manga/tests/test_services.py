@@ -5,6 +5,7 @@ from manga.models import MangaHiddenDirectory, Series, SeriesItem
 from manga.services import (
     convert_cbz,
     list_manga_cbz_files,
+    list_series,
     resolve_cbz_download,
     sync_manga_library_cache,
     sync_series_items_for_cbz_path,
@@ -222,6 +223,15 @@ def test_sync_manga_library_cache_series_is_dir_with_direct_cbz(tmp_path, monkey
 
     s_nested = Series.objects.get(library_root=abs_root, series_rel_path="nested")
     assert s_nested.name == "nested"
+
+    listed = list_series(manga_root=str(root))
+    assert [r.series_rel_path for r in listed] == ["Alpha", "nested"]
+    assert listed[0].item_count == 1
+    assert listed[1].item_count == 1
+
+    paged = list_series(manga_root=str(root), limit=1, offset=1)
+    assert len(paged) == 1
+    assert paged[0].series_rel_path == "nested"
 
 
 @pytest.mark.django_db
