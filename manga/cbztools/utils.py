@@ -8,7 +8,7 @@ import dropbox
 def tryint(s):
     try:
         return int(s)
-    except:
+    except (TypeError, ValueError):
         return s
 
 
@@ -20,17 +20,17 @@ def alphanum_key(s):
     return [tryint(c) for c in re.split("([0-9]+)", s)]
 
 
-def sort_nicely(l):
+def sort_nicely(items: list) -> None:
     """
     Sort the given list in the way that humans expect.
 
     Example:
-    >>> l = ["1", "10", "2", "20.5", "20", "3", "30"]
-    >>> sort_nicely(l)
-    >>> l == ["1", "2", "3", "10", "20", "20.5", "30"]
+    >>> lst = ["1", "10", "2", "20.5", "20", "3", "30"]
+    >>> sort_nicely(lst)
+    >>> lst == ["1", "2", "3", "10", "20", "20.5", "30"]
     True
     """
-    l.sort(key=alphanum_key)
+    items.sort(key=alphanum_key)
 
 
 def is_image(file: str) -> bool:
@@ -78,7 +78,7 @@ def list_dropbox_files(path: str) -> list[dropbox.files.Metadata]:
         while result.has_more:
             result = dbx.files_list_folder_continue(result.cursor)
             entries.extend(result.entries)
-    except:
+    except Exception:
         return []
 
     return entries

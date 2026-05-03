@@ -523,6 +523,12 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
                         "file_created_at": item.file_created_at,
                     },
                 )
+                if item.in_dropbox and row.dropbox_uploaded_at is None:
+                    row.dropbox_uploaded_at = timezone.now()
+                    row.save(update_fields=["dropbox_uploaded_at"])
+                elif not item.in_dropbox and row.dropbox_uploaded_at is not None:
+                    row.dropbox_uploaded_at = None
+                    row.save(update_fields=["dropbox_uploaded_at"])
                 _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
 
             _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
@@ -536,10 +542,7 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
 
 
 def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> None:
-    """Upsert ``Series`` / ``SeriesItem`` for directory containing ``cbz_rel_path`` (Dropbox flags via listing).
-
-    Used after ``convert_cbz`` upload so DB tracks Dropbox state without full-library ``sync_manga_library_cache``.
-    """
+    """Upsert ``Series`` / ``SeriesItem`` for directory containing ``cbz_rel_path`` (Dropbox flags via listing)."""
     rel = normalize_manga_hidden_rel_path(cbz_rel_path)
     series_rel = posixpath.dirname(rel)
     hidden = _manga_hidden_rel_paths()
@@ -570,6 +573,12 @@ def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> Non
                     "file_created_at": item.file_created_at,
                 },
             )
+            if item.in_dropbox and row.dropbox_uploaded_at is None:
+                row.dropbox_uploaded_at = timezone.now()
+                row.save(update_fields=["dropbox_uploaded_at"])
+            elif not item.in_dropbox and row.dropbox_uploaded_at is not None:
+                row.dropbox_uploaded_at = None
+                row.save(update_fields=["dropbox_uploaded_at"])
             _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
 
         _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
@@ -611,7 +620,11 @@ def convert_cbz(
         download_name += ext
 
         upload_to_dropbox(output_path, path, download_name)
-        sync_series_items_for_cbz_path(manga_root=manga_root, cbz_rel_path=path)
+        now = timezone.now()
+        SeriesItem.objects.filter(pk=item.pk).update(
+            in_dropbox=True,
+            dropbox_uploaded_at=now,
+        )
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 

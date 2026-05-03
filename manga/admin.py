@@ -36,6 +36,7 @@ class SeriesItemInline(admin.TabularInline):
         "size_bytes",
         "file_created_at",
         "in_dropbox",
+        "dropbox_uploaded_at",
         "item_cover_preview",
     )
     readonly_fields = (
@@ -44,6 +45,7 @@ class SeriesItemInline(admin.TabularInline):
         "size_bytes",
         "file_created_at",
         "in_dropbox",
+        "dropbox_uploaded_at",
         "item_cover_preview",
     )
     can_delete = False

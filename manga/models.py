@@ -199,6 +199,11 @@ class SeriesItem(models.Model):
     filename = models.CharField(max_length=512)
     size_bytes = models.BigIntegerField(null=True, blank=True)
     in_dropbox = models.BooleanField(default=False)
+    dropbox_uploaded_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When this CBZ was uploaded to Dropbox (app-side; null if never uploaded).",
+    )
     cover_image_base64 = models.TextField(
         null=True,
         blank=True,

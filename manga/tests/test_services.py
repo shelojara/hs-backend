@@ -42,6 +42,57 @@ def test_sync_series_items_for_cbz_path_updates_dropbox_flags(tmp_path, monkeypa
     assert s.item_count == 1
     row = SeriesItem.objects.get(series=s, rel_path="MySeries/ch.cbz")
     assert row.in_dropbox is True
+    assert row.dropbox_uploaded_at is not None
+
+
+@pytest.mark.django_db
+def test_sync_series_items_sets_dropbox_uploaded_at_when_newly_seen_in_dropbox(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "MySeries").mkdir()
+    (root / "MySeries" / "ch.cbz").write_bytes(b"x")
+    abs_root = str(root.resolve())
+
+    class FakeDf:
+        name = "ch.cbz"
+
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _seg: [FakeDf()])
+    sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
+    row = SeriesItem.objects.get(
+        series__library_root=abs_root,
+        rel_path="MySeries/ch.cbz",
+    )
+    first = row.dropbox_uploaded_at
+    assert first is not None
+
+    SeriesItem.objects.filter(pk=row.pk).update(dropbox_uploaded_at=None)
+    sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
+    row.refresh_from_db()
+    assert row.dropbox_uploaded_at is not None
+    assert row.dropbox_uploaded_at >= first
+
+
+@pytest.mark.django_db
+def test_sync_series_items_clears_dropbox_uploaded_at_when_not_in_dropbox(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "MySeries").mkdir()
+    (root / "MySeries" / "ch.cbz").write_bytes(b"x")
+    abs_root = str(root.resolve())
+
+    class FakeDf:
+        name = "ch.cbz"
+
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _seg: [FakeDf()])
+    sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
+    row = SeriesItem.objects.get(series__library_root=abs_root, rel_path="MySeries/ch.cbz")
+    assert row.dropbox_uploaded_at is not None
+
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _seg: [])
+    sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
+    row.refresh_from_db()
+    assert row.in_dropbox is False
+    assert row.dropbox_uploaded_at is None
 
 
 @pytest.mark.django_db
@@ -79,7 +130,7 @@ def test_sync_series_items_for_cbz_path_skips_hidden_series(tmp_path, monkeypatc
 
 
 @pytest.mark.django_db
-def test_convert_cbz_calls_sync_series_items(tmp_path, monkeypatch):
+def test_convert_cbz_sets_dropbox_fields_without_series_resync(tmp_path, monkeypatch):
     root = tmp_path / "m"
     root.mkdir()
     cbz = root / "series" / "ch.cbz"
@@ -94,17 +145,13 @@ def test_convert_cbz_calls_sync_series_items(tmp_path, monkeypatch):
         size_bytes=4,
     )
 
-    calls = []
-
-    def capture(**kw):
-        calls.append(kw)
-
     monkeypatch.setattr(manga_services, "process_manga", lambda _paths, _wd: str(cbz))
     monkeypatch.setattr(manga_services, "upload_to_dropbox", lambda *_a, **_k: None)
-    monkeypatch.setattr(manga_services, "sync_series_items_for_cbz_path", capture)
 
     convert_cbz(manga_root=str(root), item_id=row.pk, kind="manga")
-    assert calls == [{"manga_root": str(root), "cbz_rel_path": "series/ch.cbz"}]
+    row.refresh_from_db()
+    assert row.in_dropbox is True
+    assert row.dropbox_uploaded_at is not None
 
 
 @pytest.mark.django_db
