@@ -28,16 +28,7 @@ def list_series(request, payload: ListSeriesRequest):
         offset=payload.offset,
     )
     return ListSeriesResponse(
-        items=[
-            SeriesSchema(
-                id=r.id,
-                series_rel_path=r.series_rel_path,
-                name=r.name,
-                scanned_at=r.scanned_at,
-                item_count=r.item_count,
-            )
-            for r in rows
-        ],
+        items=[SeriesSchema(id=r.id, name=r.name) for r in rows],
     )
 
 

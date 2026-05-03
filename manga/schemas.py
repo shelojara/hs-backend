@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Literal
 
 from ninja import Schema
@@ -24,10 +23,7 @@ class ListMangaFilesResponse(Schema):
 
 class SeriesSchema(Schema):
     id: int
-    series_rel_path: str
     name: str
-    scanned_at: datetime
-    item_count: int
 
 
 class ListSeriesRequest(Schema):
