@@ -120,7 +120,7 @@ def list_series(
             | Q(series_rel_path__icontains=q)
             | Q(category__icontains=q),
         )
-    return list(qs.select_related("series_info")[offset : offset + limit])
+    return list(qs[offset : offset + limit])
 
 
 def list_distinct_series_categories(*, manga_root: str) -> list[str]:
