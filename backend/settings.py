@@ -244,10 +244,11 @@ Q_CLUSTER = {
 
 MANGA_ROOT = os.getenv("MANGA_ROOT", "/manga")
 
-# Google Drive (service account JSON). Upload jobs write under folder named ``MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME``
-# inside ``MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID`` when set (shared folder or Shared drive folder — has quota).
-# When empty, parent is the service account "root" (usually fails: SA has no storage quota).
-# Share the parent folder with the service account (Editor) or add SA to the Shared drive.
+# Google Drive (service account JSON). Upload jobs write under ``MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME``
+# inside ``MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID`` when set.
+# For service accounts created after ~Apr 2025, Google does not allow uploads into a personal
+# My Drive folder (even if shared with the SA); use a Shared drive folder id and add the SA
+# to that drive. When empty, parent is the service account "root" (almost always fails).
 GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "").strip()
 GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "").strip()
 MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID = os.getenv("MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID", "").strip()

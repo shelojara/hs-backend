@@ -210,14 +210,36 @@ def upload_bytes_to_folder(
     return str(created["id"])
 
 
+_SA_NO_QUOTA_HINT = (
+    " Google changed policy (Apr 2025): new service accounts cannot use storage in a "
+    "personal My Drive folder, even if shared with the SA. Use a Shared drive folder as "
+    "MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID (add SA as Content manager), or an older SA, or "
+    "Workspace domain-wide delegation / OAuth as a user."
+)
+
+
 def drive_http_error_message(exc: BaseException) -> str:
     if isinstance(exc, HttpError):
         try:
             payload = json.loads(exc.content.decode()) if exc.content else {}
             err = payload.get("error", {})
             msg = err.get("message") if isinstance(err, dict) else None
+            reasons = err.get("errors") if isinstance(err, dict) else None
+            reason_codes: list[str] = []
+            if isinstance(reasons, list):
+                for item in reasons:
+                    if isinstance(item, dict) and item.get("reason"):
+                        reason_codes.append(str(item["reason"]))
+            base: str | None = None
             if msg:
-                return f"Google Drive API error: {msg}"
+                base = f"Google Drive API error: {msg}"
+            if base is None:
+                base = f"Google Drive API HTTP {exc.resp.status if exc.resp else 'error'}"
+            if "storageQuotaExceeded" in reason_codes or (
+                isinstance(msg, str) and "Service Accounts do not have storage quota" in msg
+            ):
+                return base + _SA_NO_QUOTA_HINT
+            return base
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
         return f"Google Drive API HTTP {exc.resp.status if exc.resp else 'error'}"
