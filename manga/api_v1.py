@@ -43,6 +43,7 @@ def _series_info_schema_or_none(series: Series) -> SeriesInfoSchema | None:
         mangabaka_series_id=inf.mangabaka_series_id,
         description=(inf.description or "").strip() or None,
         rating=inf.rating,
+        mangabaka_type=(inf.mangabaka_type or "").strip() or None,
         synced_at=inf.synced_at,
     )
 

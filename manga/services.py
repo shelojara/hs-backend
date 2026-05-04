@@ -954,14 +954,23 @@ def _sync_single_series_info_from_mangabaka(*, series: Series, search_limit: int
     desc = detail.get("description")
     description = desc.strip() if isinstance(desc, str) else ""
     rating = _normalize_mangabaka_rating(detail.get("rating"))
+    raw_type = detail.get("type")
+    if isinstance(raw_type, str):
+        mangabaka_type = raw_type.strip()[:64]
+    elif raw_type is None:
+        mangabaka_type = ""
+    else:
+        mangabaka_type = str(raw_type).strip()[:64]
     info.description = description
     info.rating = rating
+    info.mangabaka_type = mangabaka_type
     info.is_complete = True
     info.synced_at = timezone.now()
     info.save(
         update_fields=[
             "description",
             "rating",
+            "mangabaka_type",
             "is_complete",
             "synced_at",
         ],

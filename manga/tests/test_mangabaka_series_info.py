@@ -44,7 +44,7 @@ def test_sync_manga_series_info_creates_seriesinfo_from_search_and_detail(settin
         patch("manga.services.search_series", return_value=(search_hits, {})),
         patch(
             "manga.services.fetch_series_detail",
-            return_value={"description": "  Hello  ", "rating": 8},
+            return_value={"description": "  Hello  ", "rating": 8, "type": "manhwa"},
         ),
     ):
         n = sync_manga_series_info_from_mangabaka()
@@ -53,8 +53,36 @@ def test_sync_manga_series_info_creates_seriesinfo_from_search_and_detail(settin
     assert info.mangabaka_series_id == 42
     assert info.description == "Hello"
     assert info.rating == 8
+    assert info.mangabaka_type == "manhwa"
     assert info.is_complete is True
     assert info.synced_at is not None
+
+
+@pytest.mark.django_db
+def test_sync_seriesinfo_type_empty_when_detail_omits_type(settings):
+    settings.MANGABAKA_INFO_SYNC_BATCH_SIZE = 5
+    settings.MANGABAKA_HTTP_DELAY_SECONDS = 0
+    settings.MANGABAKA_TITLE_MATCH_THRESHOLD = 80
+    s = Series.objects.create(
+        library_root="/tmp/lib",
+        series_rel_path="Y",
+        name="No Type Field",
+        item_count=0,
+    )
+    with (
+        patch(
+            "manga.services.search_series",
+            return_value=([{"id": 77, "title": "No Type Field"}], {}),
+        ),
+        patch(
+            "manga.services.fetch_series_detail",
+            return_value={"description": "x", "rating": 1},
+        ),
+    ):
+        sync_manga_series_info_from_mangabaka()
+    info = SeriesInfo.objects.get(series=s)
+    assert info.mangabaka_type == ""
+    assert info.is_complete is True
 
 
 @pytest.mark.django_db
