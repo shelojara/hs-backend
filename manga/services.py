@@ -37,6 +37,8 @@ from manga.google_drive_service import (
     drive_http_error_message,
     ensure_series_drive_folder,
     find_existing_file_id_with_same_size,
+    get_series_drive_folder_id_optional,
+    list_drive_file_names_in_folder,
     upload_file_to_folder,
 )
 from manga.models import (
@@ -445,6 +447,44 @@ def _dropbox_list_segment_for_folder(*, parent_rel: str) -> str:
     return os.path.split(parent_rel.replace("/", os.sep))[-1]
 
 
+def _refresh_series_items_google_drive_backed_up(*, series: Series) -> None:
+    """Reconcile ``SeriesItem.is_backed_up`` with Drive folder listing (no folder creation)."""
+    try:
+        folder_id = get_series_drive_folder_id_optional(series_name=series.name)
+    except Exception:
+        logger.warning(
+            "Google Drive backup flag refresh skipped (series id=%s)",
+            series.pk,
+            exc_info=True,
+        )
+        return
+    if not folder_id:
+        if series.items.filter(is_backed_up=True).exists():
+            series.items.filter(is_backed_up=True).update(is_backed_up=False)
+        return
+    try:
+        names = list_drive_file_names_in_folder(parent_folder_id=folder_id)
+    except Exception:
+        logger.warning(
+            "Google Drive backup flag refresh failed listing folder (series id=%s)",
+            series.pk,
+            exc_info=True,
+        )
+        return
+    want_true: list[int] = []
+    want_false: list[int] = []
+    for item in series.items.all().only("pk", "filename", "is_backed_up"):
+        want = item.filename in names
+        if want and not item.is_backed_up:
+            want_true.append(item.pk)
+        elif not want and item.is_backed_up:
+            want_false.append(item.pk)
+    if want_true:
+        SeriesItem.objects.filter(pk__in=want_true).update(is_backed_up=True)
+    if want_false:
+        SeriesItem.objects.filter(pk__in=want_false).update(is_backed_up=False)
+
+
 def list_manga_cbz_files(*, manga_root: str, path: str) -> list[MangaListItem]:
     """``.cbz`` files directly in ``path`` (directory under ``manga_root``). Non-recursive."""
     root_abs = os.path.abspath(os.path.expanduser(manga_root))
@@ -639,6 +679,7 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
             _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
             series.item_count = series.items.count()
             series.save(update_fields=["item_count"])
+            _refresh_series_items_google_drive_backed_up(series=series)
 
     series_count = Series.objects.filter(library_root=root_norm).count()
     chapter_total = SeriesItem.objects.filter(series__library_root=root_norm).count()
@@ -689,6 +730,7 @@ def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> Non
         _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
         series.item_count = series.items.count()
         series.save(update_fields=["item_count"])
+        _refresh_series_items_google_drive_backed_up(series=series)
 
 
 def convert_cbz(
