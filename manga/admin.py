@@ -29,6 +29,7 @@ class SeriesInfoAdmin(admin.ModelAdmin):
         "mangabaka_series_id",
         "rating",
         "is_complete",
+        "search_snoozed_until",
         "synced_at",
     )
     list_filter = ("is_complete",)

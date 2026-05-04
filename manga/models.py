@@ -206,12 +206,21 @@ class SeriesInfo(models.Model):
     is_complete = models.BooleanField(
         default=False,
         db_index=True,
-        help_text="When true, scheduled sync skips this series (match succeeded or search exhausted).",
+        help_text=(
+            "When true and ``mangabaka_series_id`` set, MangaBaka detail sync finished; "
+            "scheduled job skips. False while retrying detail errors or snoozed after no title match."
+        ),
+    )
+    search_snoozed_until = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="After no MangaBaka title match, next search allowed at this time (UTC).",
     )
     synced_at = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="When description/rating was last written or a definitive no-match was recorded.",
+        help_text="When description/rating was last written or last no-match snooze was set.",
     )
 
     class Meta:

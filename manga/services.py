@@ -3,7 +3,7 @@ import logging
 import os
 import posixpath
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import shutil
 import tempfile
 import zipfile
@@ -794,6 +794,10 @@ def _mangabaka_search_limit() -> int:
     return max(3, min(25, int(getattr(settings, "MANGABAKA_SEARCH_LIMIT", 12))))
 
 
+def _mangabaka_no_match_snooze_hours() -> int:
+    return max(1, int(getattr(settings, "MANGABAKA_NO_MATCH_SNOOZE_HOURS", 24)))
+
+
 def _pick_mangabaka_series_id_from_search_hits(
     *,
     local_name: str,
@@ -839,15 +843,25 @@ def _normalize_mangabaka_rating(raw: object) -> int | None:
 def sync_manga_series_info_from_mangabaka() -> int:
     """Fill ``SeriesInfo`` from MangaBaka API for a small batch of series missing complete metadata.
 
-    Skips rows that already have ``SeriesInfo.is_complete`` (description synced or search exhausted).
+    Skips series whose ``SeriesInfo`` row is a finished MangaBaka match, or is in a no-match
+    snooze window (``search_snoozed_until`` in the future). Detail-fetch errors retry each run.
     Returns number of series rows processed this run.
     """
     batch = _mangabaka_info_batch_size()
     delay = _mangabaka_http_delay_seconds()
     search_limit = _mangabaka_search_limit()
-    has_complete = SeriesInfo.objects.filter(series_id=OuterRef("pk"), is_complete=True)
+    now = timezone.now()
+    skip_synced = SeriesInfo.objects.filter(
+        series_id=OuterRef("pk"),
+    ).filter(
+        Q(is_complete=True, mangabaka_series_id__isnull=False)
+        | Q(
+            mangabaka_series_id__isnull=True,
+            search_snoozed_until__gt=now,
+        )
+    )
     candidates = (
-        Series.objects.filter(~Exists(has_complete))
+        Series.objects.filter(~Exists(skip_synced))
         .order_by("library_root", "name", "series_rel_path", "pk")[:batch]
     )
     processed = 0
@@ -880,7 +894,14 @@ def _sync_single_series_info_from_mangabaka(*, series: Series, search_limit: int
             "is_complete": False,
         },
     )
-    if info.is_complete:
+    now = timezone.now()
+    if info.is_complete and info.mangabaka_series_id is not None:
+        return
+    if (
+        info.mangabaka_series_id is None
+        and info.search_snoozed_until is not None
+        and info.search_snoozed_until > now
+    ):
         return
 
     mb_id = info.mangabaka_series_id
@@ -888,17 +909,20 @@ def _sync_single_series_info_from_mangabaka(*, series: Series, search_limit: int
         hits, _pag = search_series(query=series.name.strip(), limit=search_limit, page=1)
         mb_id = _pick_mangabaka_series_id_from_search_hits(local_name=series.name, hits=hits)
         if mb_id is None:
+            snooze_until = now + timedelta(hours=_mangabaka_no_match_snooze_hours())
             info.mangabaka_series_id = None
             info.description = ""
             info.rating = None
-            info.is_complete = True
-            info.synced_at = timezone.now()
+            info.is_complete = False
+            info.search_snoozed_until = snooze_until
+            info.synced_at = now
             info.save(
                 update_fields=[
                     "mangabaka_series_id",
                     "description",
                     "rating",
                     "is_complete",
+                    "search_snoozed_until",
                     "synced_at",
                 ],
             )
@@ -914,7 +938,8 @@ def _sync_single_series_info_from_mangabaka(*, series: Series, search_limit: int
             exc,
         )
         info.mangabaka_series_id = mb_id
-        info.save(update_fields=["mangabaka_series_id"])
+        info.search_snoozed_until = None
+        info.save(update_fields=["mangabaka_series_id", "search_snoozed_until"])
         return
 
     desc = detail.get("description")
@@ -924,6 +949,7 @@ def _sync_single_series_info_from_mangabaka(*, series: Series, search_limit: int
     info.description = description
     info.rating = rating
     info.is_complete = True
+    info.search_snoozed_until = None
     info.synced_at = timezone.now()
     info.save(
         update_fields=[
@@ -931,6 +957,7 @@ def _sync_single_series_info_from_mangabaka(*, series: Series, search_limit: int
             "description",
             "rating",
             "is_complete",
+            "search_snoozed_until",
             "synced_at",
         ],
     )
