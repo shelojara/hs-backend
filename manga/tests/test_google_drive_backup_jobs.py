@@ -117,6 +117,8 @@ def test_run_google_drive_backup_job_success(
     assert job.completed_at is not None
     assert job.failure_message is None
     assert job.google_drive_file_id == "file_xyz"
+    row.refresh_from_db()
+    assert row.is_backed_up is True
 
 
 @pytest.mark.django_db
@@ -162,6 +164,8 @@ def test_run_google_drive_backup_job_skips_upload_when_same_name_and_size(
     assert job.status == GoogleDriveBackupJobStatus.COMPLETED
     mock_upload.assert_not_called()
     assert job.google_drive_file_id == "already_there"
+    row.refresh_from_db()
+    assert row.is_backed_up is True
 
 
 @pytest.mark.django_db
@@ -191,6 +195,8 @@ def test_run_google_drive_backup_job_marks_failed(_mock_resolve, tmp_path):
     assert job.status == GoogleDriveBackupJobStatus.FAILED
     assert job.completed_at is not None
     assert job.failure_message == "boom"
+    row.refresh_from_db()
+    assert row.is_backed_up is False
 
 
 @pytest.mark.django_db

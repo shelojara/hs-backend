@@ -301,6 +301,7 @@ def list_series_items(request, payload: ListSeriesItemsRequest):
                 filename=r.filename,
                 size_bytes=r.size_bytes,
                 is_converted=r.is_converted,
+                is_backed_up=r.is_backed_up,
                 file_created_at=r.file_created_at,
                 cover_image_base64=r.cover_image_base64,
                 cover_image_mime_type=r.cover_image_mime_type or "",

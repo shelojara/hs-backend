@@ -133,6 +133,7 @@ class SeriesItemSchema(Schema):
     filename: str
     size_bytes: int | None
     is_converted: bool
+    is_backed_up: bool
     file_created_at: datetime | None = None
     cover_image_base64: str | None = None
     cover_image_mime_type: str = ""
