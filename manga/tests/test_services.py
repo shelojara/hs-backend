@@ -28,6 +28,7 @@ from manga.services import (
     resolve_cbz_download,
     sync_manga_library_cache,
     sync_series_items_for_cbz_path,
+    sync_series_items_for_series,
 )
 from manga.cbztools.utils import (
     dropbox_download_name_for_series_cbz,
@@ -140,6 +141,56 @@ def test_sync_series_items_for_cbz_path_skips_hidden_series(tmp_path, monkeypatc
     sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="secret/x.cbz")
 
     assert Series.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_sync_series_items_for_series_upserts_from_disk(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "MySeries").mkdir()
+    (root / "MySeries" / "a.cbz").write_bytes(b"x")
+    (root / "MySeries" / "b.cbz").write_bytes(b"y")
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="MySeries", name="MySeries")
+    SeriesItem.objects.create(
+        series=s,
+        rel_path="MySeries/a.cbz",
+        filename="a.cbz",
+        size_bytes=1,
+    )
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _seg: [])
+
+    out = sync_series_items_for_series(manga_root=str(root), series_id=s.pk)
+
+    assert out.pk == s.pk
+    assert out.item_count == 2
+    rels = set(SeriesItem.objects.filter(series_id=s.pk).values_list("rel_path", flat=True))
+    assert rels == {"MySeries/a.cbz", "MySeries/b.cbz"}
+
+
+@pytest.mark.django_db
+def test_sync_series_items_for_series_raises_when_hidden(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "secret").mkdir()
+    (root / "secret" / "x.cbz").write_bytes(b"x")
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="secret", name="secret")
+    MangaHiddenDirectory.objects.create(rel_path="secret")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _seg: [])
+
+    with pytest.raises(ValueError, match="hidden"):
+        sync_series_items_for_series(manga_root=str(root), series_id=s.pk)
+
+
+@pytest.mark.django_db
+def test_sync_series_items_for_series_raises_when_series_missing(tmp_path):
+    root = tmp_path / "lib"
+    root.mkdir()
+    abs_root = str(root.resolve())
+
+    with pytest.raises(ValueError, match="Series not found"):
+        sync_series_items_for_series(manga_root=str(abs_root), series_id=99999)
 
 
 @pytest.mark.django_db

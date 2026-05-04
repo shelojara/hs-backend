@@ -101,6 +101,14 @@ class RefreshSeriesInfoResponse(Schema):
     series_id: int
 
 
+class SyncSeriesItemsRequest(Schema):
+    series_id: int = Field(ge=1)
+
+
+class SyncSeriesItemsResponse(Schema):
+    series: SeriesSchema
+
+
 class SearchMangabakaSeriesRequest(Schema):
     """Query MangaBaka series search (ids + titles for ``SetSeriesMangabaka``)."""
 

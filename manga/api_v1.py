@@ -40,6 +40,8 @@ from manga.schemas import (
     SearchMangabakaSeriesResponse,
     SetSeriesMangabakaRequest,
     SetSeriesMangabakaResponse,
+    SyncSeriesItemsRequest,
+    SyncSeriesItemsResponse,
     SeriesInfoSchema,
     SeriesItemSchema,
     SeriesSchema,
@@ -260,6 +262,21 @@ def refresh_series_info(request, payload: RefreshSeriesInfoRequest):
     except MangaBakaAPIError as exc:
         raise HttpError(502, str(exc)) from exc
     return RefreshSeriesInfoResponse(series_id=row.pk)
+
+
+@router.post("/v1.Manga.SyncSeriesItems", response=SyncSeriesItemsResponse)
+def sync_series_items_rpc(request, payload: SyncSeriesItemsRequest):
+    try:
+        row = services.sync_series_items_for_series(
+            manga_root=settings.MANGA_ROOT,
+            series_id=payload.series_id,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "Series not found":
+            raise HttpError(404, msg) from exc
+        raise HttpError(400, msg) from exc
+    return SyncSeriesItemsResponse(series=_series_schema(row))
 
 
 @router.post("/v1.Manga.SearchMangabakaSeries", response=SearchMangabakaSeriesResponse)
