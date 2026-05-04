@@ -63,9 +63,66 @@ class CbzConvertJobStatus(models.TextChoices):
     FAILED = "failed", "Failed"
 
 
+class GoogleDriveBackupJobStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    COMPLETED = "completed", "Completed"
+    FAILED = "failed", "Failed"
+
+
 class CbzConvertKind(models.TextChoices):
     MANGA = "manga", "Manga"
     MANHWA = "manhwa", "Manhwa"
+
+
+class GoogleDriveBackupJob(models.Model):
+    """Async upload of a local CBZ to Google Drive under configured root folder (default ``Manga``)."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="manga_google_drive_backup_jobs",
+    )
+    manga_root = models.CharField(
+        max_length=4096,
+        help_text="Normalized absolute manga library root when job was created.",
+    )
+    series = models.ForeignKey(
+        "Series",
+        on_delete=models.PROTECT,
+        related_name="google_drive_backup_jobs",
+    )
+    series_item_id = models.PositiveIntegerField(
+        help_text="Primary key of SeriesItem to upload.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=16,
+        choices=GoogleDriveBackupJobStatus.choices,
+        default=GoogleDriveBackupJobStatus.PENDING,
+        db_index=True,
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    failure_message = models.TextField(null=True, blank=True)
+    google_drive_file_id = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        help_text="Drive file id after successful upload.",
+    )
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(
+                fields=["user_id", "manga_root", "series_id"],
+                name="manga_gdrive_user_root_series",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"GoogleDriveBackupJob(item={self.series_item_id}, status={self.status}, user={self.user_id})"
+        )
 
 
 class CbzConvertJob(models.Model):

@@ -7,21 +7,28 @@ from ninja.errors import HttpError
 from auth.security import protected_api_auth
 from manga.mangabaka_client import MangaBakaAPIError
 from manga import services
-from manga.models import CbzConvertJob, Series
+from manga.models import CbzConvertJob, GoogleDriveBackupJob, Series
 from manga.schemas import (
     ConvertCbzRequest,
     ConvertCbzResponse,
     CreateCbzConvertJobRequest,
     CreateCbzConvertJobResponse,
+    CreateGoogleDriveBackupJobRequest,
+    CreateGoogleDriveBackupJobResponse,
     CbzConvertJobSchema,
     DownloadCbzPagesRequest,
     DownloadCbzRequest,
     GetCbzConvertJobRequest,
     GetCbzConvertJobResponse,
+    GetGoogleDriveBackupJobRequest,
+    GetGoogleDriveBackupJobResponse,
     GetSeriesRequest,
     GetSeriesResponse,
+    GoogleDriveBackupJobSchema,
     ListCbzConvertJobsRequest,
     ListCbzConvertJobsResponse,
+    ListGoogleDriveBackupJobsRequest,
+    ListGoogleDriveBackupJobsResponse,
     ListSeriesItemsRequest,
     ListSeriesItemsResponse,
     ListSeriesCategoriesResponse,
@@ -79,6 +86,18 @@ def _cbz_convert_job_schema(j: CbzConvertJob) -> CbzConvertJobSchema:
     )
 
 
+def _google_drive_backup_job_schema(j: GoogleDriveBackupJob) -> GoogleDriveBackupJobSchema:
+    return GoogleDriveBackupJobSchema(
+        backup_job_id=j.pk,
+        created_at=j.created_at,
+        series_item_id=j.series_item_id,
+        status=j.status,
+        completed_at=j.completed_at,
+        failure_message=((j.failure_message or "").strip() or None),
+        google_drive_file_id=((j.google_drive_file_id or "").strip() or None),
+    )
+
+
 @router.post("/v1.Manga.CreateCbzConvertJob", response=CreateCbzConvertJobResponse)
 def create_cbz_convert_job(request, payload: CreateCbzConvertJobRequest):
     try:
@@ -127,6 +146,55 @@ def get_cbz_convert_job(request, payload: GetCbzConvertJobRequest):
     except CbzConvertJob.DoesNotExist as exc:
         raise HttpError(404, "Convert job not found.") from exc
     return GetCbzConvertJobResponse(job=_cbz_convert_job_schema(j))
+
+
+@router.post("/v1.Manga.CreateGoogleDriveBackupJob", response=CreateGoogleDriveBackupJobResponse)
+def create_google_drive_backup_job_rpc(request, payload: CreateGoogleDriveBackupJobRequest):
+    try:
+        job_id = services.create_google_drive_backup_job(
+            manga_root=settings.MANGA_ROOT,
+            item_id=payload.item_id,
+            user_id=request.auth.pk,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "Item not found":
+            raise HttpError(404, msg) from exc
+        raise HttpError(400, msg) from exc
+    return CreateGoogleDriveBackupJobResponse(backup_job_id=job_id)
+
+
+@router.post("/v1.Manga.ListGoogleDriveBackupJobs", response=ListGoogleDriveBackupJobsResponse)
+def list_google_drive_backup_jobs_rpc(request, payload: ListGoogleDriveBackupJobsRequest):
+    try:
+        rows = services.list_google_drive_backup_jobs(
+            manga_root=settings.MANGA_ROOT,
+            series_id=payload.series_id,
+            user_id=request.auth.pk,
+            status=payload.status,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "Series not found":
+            raise HttpError(404, msg) from exc
+        if msg == "Invalid status filter.":
+            raise HttpError(400, msg) from exc
+        raise HttpError(400, msg) from exc
+    return ListGoogleDriveBackupJobsResponse(
+        jobs=[_google_drive_backup_job_schema(j) for j in rows],
+    )
+
+
+@router.post("/v1.Manga.GetGoogleDriveBackupJob", response=GetGoogleDriveBackupJobResponse)
+def get_google_drive_backup_job_rpc(request, payload: GetGoogleDriveBackupJobRequest):
+    try:
+        j = services.get_google_drive_backup_job(
+            job_id=payload.backup_job_id,
+            user_id=request.auth.pk,
+        )
+    except GoogleDriveBackupJob.DoesNotExist as exc:
+        raise HttpError(404, "Backup job not found.") from exc
+    return GetGoogleDriveBackupJobResponse(job=_google_drive_backup_job_schema(j))
 
 
 @router.post("/v1.Manga.ListSeries", response=ListSeriesResponse)

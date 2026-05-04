@@ -196,6 +196,43 @@ class GetCbzConvertJobResponse(Schema):
     job: CbzConvertJobSchema
 
 
+class CreateGoogleDriveBackupJobRequest(Schema):
+    item_id: int = Field(ge=1)
+
+
+class CreateGoogleDriveBackupJobResponse(Schema):
+    backup_job_id: int
+
+
+class ListGoogleDriveBackupJobsRequest(Schema):
+    """``series_id`` null/omitted: all backup jobs for user in library (any series)."""
+
+    series_id: int | None = Field(default=None, ge=1)
+    status: Literal["pending", "completed", "failed"] | None = None
+
+
+class GoogleDriveBackupJobSchema(Schema):
+    backup_job_id: int
+    created_at: datetime
+    series_item_id: int
+    status: str
+    completed_at: datetime | None
+    failure_message: str | None = None
+    google_drive_file_id: str | None = None
+
+
+class ListGoogleDriveBackupJobsResponse(Schema):
+    jobs: list[GoogleDriveBackupJobSchema]
+
+
+class GetGoogleDriveBackupJobRequest(Schema):
+    backup_job_id: int
+
+
+class GetGoogleDriveBackupJobResponse(Schema):
+    job: GoogleDriveBackupJobSchema
+
+
 class DownloadCbzRequest(Schema):
     item_id: int
 
