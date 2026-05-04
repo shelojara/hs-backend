@@ -374,7 +374,7 @@ class SeriesItem(models.Model):
         blank=True,
         help_text="When this CBZ was uploaded to Dropbox (app-side; null if never uploaded).",
     )
-    is_google_drive_backed_up = models.BooleanField(
+    is_backed_up = models.BooleanField(
         default=False,
         db_index=True,
         help_text="True after a Google Drive backup job completed for this file (upload or same-name+size skip).",

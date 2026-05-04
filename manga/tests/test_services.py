@@ -769,13 +769,13 @@ def test_list_series_items_google_drive_backed_up_flag(tmp_path, monkeypatch):
     s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
     a = SeriesItem.objects.get(series=s, filename="a.cbz")
     b = SeriesItem.objects.get(series=s, filename="b.cbz")
-    assert a.is_google_drive_backed_up is False
-    SeriesItem.objects.filter(pk=a.pk).update(is_google_drive_backed_up=True)
+    assert a.is_backed_up is False
+    SeriesItem.objects.filter(pk=a.pk).update(is_backed_up=True)
 
     rows = list_series_items(manga_root=str(root), series_id=s.id)
     by_id = {r.id: r for r in rows}
-    assert by_id[a.id].is_google_drive_backed_up is True
-    assert by_id[b.id].is_google_drive_backed_up is False
+    assert by_id[a.id].is_backed_up is True
+    assert by_id[b.id].is_backed_up is False
 
 
 @pytest.mark.django_db

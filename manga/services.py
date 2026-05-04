@@ -1237,7 +1237,7 @@ def run_google_drive_backup_job(*, job_id: int) -> None:
                 "google_drive_file_id",
             ],
         )
-        SeriesItem.objects.filter(pk=item.pk).update(is_google_drive_backed_up=True)
+        SeriesItem.objects.filter(pk=item.pk).update(is_backed_up=True)
     except Exception as exc:
         logger.exception("run_google_drive_backup_job failed (job id=%s)", job_id)
         job.status = GoogleDriveBackupJobStatus.FAILED

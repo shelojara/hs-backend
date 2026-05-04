@@ -133,7 +133,7 @@ class SeriesItemSchema(Schema):
     filename: str
     size_bytes: int | None
     is_converted: bool
-    is_google_drive_backed_up: bool = False
+    is_backed_up: bool = False
     file_created_at: datetime | None = None
     cover_image_base64: str | None = None
     cover_image_mime_type: str = ""
