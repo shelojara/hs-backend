@@ -106,10 +106,20 @@ def _root_folder_name() -> str:
     return n or "Manga"
 
 
+def _drive_parent_for_root_folder() -> str:
+    """Folder id where ``MANGA`` root folder is created; must belong to storage with quota (not SA My Drive)."""
+    pid = (getattr(settings, "MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID", None) or "").strip()
+    return pid or "root"
+
+
 def ensure_series_drive_folder(*, series_name: str) -> str:
     """Return Drive folder id for ``<root>/<series_name>/`` (creates ``Manga`` + series folder only)."""
     service = _drive_service()
-    manga_id = _ensure_folder(service=service, parent_id="root", name=_root_folder_name())
+    manga_id = _ensure_folder(
+        service=service,
+        parent_id=_drive_parent_for_root_folder(),
+        name=_root_folder_name(),
+    )
     return _ensure_folder(service=service, parent_id=manga_id, name=series_name)
 
 
