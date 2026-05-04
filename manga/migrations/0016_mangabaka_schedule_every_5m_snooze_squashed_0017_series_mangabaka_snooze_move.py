@@ -1,5 +1,4 @@
-# Squashes 0015_mangabaka_series_info_schedule + 0016_mangabaka_schedule_every_5m_snooze
-# + 0017_series_mangabaka_snooze_move into one migration (same final DB state).
+# Merges former 0016_mangabaka_schedule_every_5m_snooze + 0017_series_mangabaka_snooze_move.
 
 from datetime import UTC, timedelta
 from zoneinfo import ZoneInfo
@@ -27,25 +26,6 @@ def _next_run_in_five_minutes_from_now() -> timezone.datetime:
     if run <= now:
         run += timedelta(minutes=5)
     return run.astimezone(UTC)
-
-
-def create_schedule(apps, schema_editor):
-    Schedule = apps.get_model("django_q", "Schedule")
-    if Schedule.objects.filter(name=SCHEDULE_NAME).exists():
-        return
-    Schedule.objects.create(
-        name=SCHEDULE_NAME,
-        func="manga.scheduled_tasks.run_manga_mangabaka_series_info_sync",
-        schedule_type="C",
-        cron="0 * * * *",
-        repeats=-1,
-        next_run=_next_run_top_of_hour_santiago(),
-    )
-
-
-def remove_schedule(apps, schema_editor):
-    Schedule = apps.get_model("django_q", "Schedule")
-    Schedule.objects.filter(name=SCHEDULE_NAME).delete()
 
 
 def update_mangabaka_schedule(apps, schema_editor):
@@ -93,18 +73,15 @@ def delete_seriesinfo_without_mangabaka_id(apps, schema_editor):
 
 class Migration(migrations.Migration):
     replaces = [
-        ("manga", "0015_mangabaka_series_info_schedule"),
         ("manga", "0016_mangabaka_schedule_every_5m_snooze"),
         ("manga", "0017_series_mangabaka_snooze_move"),
     ]
 
     dependencies = [
-        ("django_q", "0018_task_success_index"),
-        ("manga", "0014_seriesinfo"),
+        ("manga", "0015_mangabaka_series_info_schedule"),
     ]
 
     operations = [
-        migrations.RunPython(create_schedule, remove_schedule),
         migrations.AddField(
             model_name="seriesinfo",
             name="search_snoozed_until",
