@@ -244,10 +244,13 @@ Q_CLUSTER = {
 
 MANGA_ROOT = os.getenv("MANGA_ROOT", "/manga")
 
-# Google Drive (service account JSON). Upload jobs write under folder named ``MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME``.
-# Share that folder (Editor) with the service account client_email from the JSON key.
+# Google Drive (service account JSON). Upload jobs write under folder named ``MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME``
+# inside ``MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID`` when set (shared folder or Shared drive folder — has quota).
+# When empty, parent is the service account "root" (usually fails: SA has no storage quota).
+# Share the parent folder with the service account (Editor) or add SA to the Shared drive.
 GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "").strip()
 GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "").strip()
+MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID = os.getenv("MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID", "").strip()
 MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME = os.getenv("MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME", "Manga").strip() or "Manga"
 
 # MangaBaka API (optional overrides for tests or self-hosted mirror)
