@@ -1,16 +1,14 @@
-"""Google Drive uploads: OAuth user (preferred) or service account."""
+"""Google Drive uploads (OAuth user credentials from Django admin)."""
 
 from __future__ import annotations
 
 import io
 import json
 import logging
-import os
 from typing import Any
 
 from django.conf import settings
 from google.auth.transport.requests import Request
-from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -68,32 +66,15 @@ def _oauth_credentials() -> OAuthCredentials | None:
     return creds
 
 
-def _service_account_credentials() -> service_account.Credentials:
-    path = getattr(settings, "GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "") or ""
-    raw_json = getattr(settings, "GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "") or ""
-    if path:
-        p = os.path.expanduser(path)
-        if not os.path.isfile(p):
-            msg = f"GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE not found: {p}"
-            raise RuntimeError(msg)
-        return service_account.Credentials.from_service_account_file(p, scopes=_DRIVE_SCOPES)
-    if raw_json.strip():
-        try:
-            info = json.loads(raw_json)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON is not valid JSON") from exc
-        return service_account.Credentials.from_service_account_info(info, scopes=_DRIVE_SCOPES)
-    raise RuntimeError(
-        "Google Drive not configured: complete OAuth in admin (Google Drive OAuth credentials) "
-        "or set GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE / GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON",
-    )
-
-
-def _drive_credentials() -> OAuthCredentials | service_account.Credentials:
+def _drive_credentials() -> OAuthCredentials:
     oauth = _oauth_credentials()
-    if oauth is not None:
-        return oauth
-    return _service_account_credentials()
+    if oauth is None:
+        raise RuntimeError(
+            "Google Drive not configured: in Django admin open "
+            "Manga → Google Drive OAuth credentials, set Web client id and secret, save, "
+            "then use Start Google OAuth (superuser).",
+        )
+    return oauth
 
 
 def _drive_service() -> Any:
@@ -264,11 +245,9 @@ def upload_bytes_to_folder(
     return str(created["id"])
 
 
-_SA_NO_QUOTA_HINT = (
-    " Google changed policy (Apr 2025): new service accounts cannot use storage in a "
-    "personal My Drive folder, even if shared with the SA. Use a Shared drive folder as "
-    "MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID (add SA as Content manager), or an older SA, or "
-    "complete Google Drive OAuth in Django admin (uses your Google account quota)."
+_DRIVE_QUOTA_HINT = (
+    " Check the signed-in Google account’s Drive storage, or reconnect OAuth in admin "
+    "(Manga → Google Drive OAuth credentials)."
 )
 
 
@@ -290,9 +269,9 @@ def drive_http_error_message(exc: BaseException) -> str:
             if base is None:
                 base = f"Google Drive API HTTP {exc.resp.status if exc.resp else 'error'}"
             if "storageQuotaExceeded" in reason_codes or (
-                isinstance(msg, str) and "Service Accounts do not have storage quota" in msg
+                isinstance(msg, str) and "storage quota" in msg.lower()
             ):
-                return base + _SA_NO_QUOTA_HINT
+                return base + _DRIVE_QUOTA_HINT
             return base
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass

@@ -1,4 +1,4 @@
-"""Google Drive OAuth vs service account selection."""
+"""Google Drive OAuth credentials used for API client."""
 
 from unittest.mock import MagicMock, patch
 
@@ -6,7 +6,7 @@ import pytest
 
 
 @pytest.mark.django_db
-def test_drive_service_prefers_oauth_when_refresh_token_configured():
+def test_drive_service_uses_oauth_when_refresh_token_configured():
     from manga.google_drive_service import _drive_service
     from manga.models import GoogleDriveApplicationCredentials
 
@@ -34,17 +34,10 @@ def test_drive_service_prefers_oauth_when_refresh_token_configured():
 
 
 @pytest.mark.django_db
-def test_drive_service_falls_back_to_service_account_when_no_oauth():
+def test_drive_service_raises_when_oauth_not_configured():
     from manga.google_drive_service import _drive_service
+    from manga.models import GoogleDriveApplicationCredentials
 
-    mock_sa = MagicMock()
-    with (
-        patch("manga.google_drive_service._oauth_credentials", return_value=None),
-        patch("manga.google_drive_service._service_account_credentials", return_value=mock_sa) as sa_fn,
-        patch("manga.google_drive_service.build") as mock_build,
-    ):
-        mock_build.return_value = MagicMock()
+    GoogleDriveApplicationCredentials.objects.filter(pk=1).delete()
+    with pytest.raises(RuntimeError, match="Google Drive not configured"):
         _drive_service()
-    sa_fn.assert_called_once()
-    mock_build.assert_called_once()
-    assert mock_build.call_args.kwargs["credentials"] is mock_sa

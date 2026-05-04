@@ -244,12 +244,8 @@ Q_CLUSTER = {
 
 MANGA_ROOT = os.getenv("MANGA_ROOT", "/manga")
 
-# Google Drive backups:
-# - Preferred: Django admin → "Google Drive OAuth credentials" (Web client id/secret + superuser OAuth).
-#   Uploads use that Google user's quota. Optional MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID for nested root.
-# - Fallback: GOOGLE_DRIVE_SERVICE_ACCOUNT_* (see Google policy for new SAs vs Shared drives).
-GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "").strip()
-GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "").strip()
+# Google Drive backups: Django admin → "Google Drive OAuth credentials" (Web client + superuser OAuth).
+# Optional MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID: folder id under which ``MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME`` is created.
 MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID = os.getenv("MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID", "").strip()
 MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME = os.getenv("MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME", "Manga").strip() or "Manga"
 
