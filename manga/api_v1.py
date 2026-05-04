@@ -191,7 +191,7 @@ def refresh_series_info(request, payload: RefreshSeriesInfoRequest):
         raise HttpError(400, msg) from exc
     except MangaBakaAPIError as exc:
         raise HttpError(502, str(exc)) from exc
-    return RefreshSeriesInfoResponse(series=_series_schema(row))
+    return RefreshSeriesInfoResponse(series_id=row.pk)
 
 
 @router.post("/v1.Manga.SearchMangabakaSeries", response=SearchMangabakaSeriesResponse)

@@ -98,7 +98,7 @@ class RefreshSeriesInfoRequest(Schema):
 
 
 class RefreshSeriesInfoResponse(Schema):
-    series: SeriesSchema
+    series_id: int
 
 
 class SearchMangabakaSeriesRequest(Schema):

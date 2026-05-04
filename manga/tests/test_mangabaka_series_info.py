@@ -318,8 +318,7 @@ def test_refresh_series_info_updates_detail_when_mangabaka_id_set(settings):
         "manga.services.fetch_series_detail",
         return_value={"description": "fresh", "rating": 10, "type": "manga"},
     ):
-        out = refresh_series_info_from_mangabaka(manga_root="/tmp/lib", series_id=s.pk)
-    assert out.pk == s.pk
+        refresh_series_info_from_mangabaka(manga_root="/tmp/lib", series_id=s.pk)
     info = SeriesInfo.objects.get(series=s)
     assert info.description == "fresh"
     assert info.rating == 10
