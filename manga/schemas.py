@@ -197,11 +197,11 @@ class GetCbzConvertJobResponse(Schema):
 
 
 class CreateGoogleDriveBackupJobRequest(Schema):
-    item_id: int = Field(ge=1)
+    series_id: int = Field(ge=1)
 
 
 class CreateGoogleDriveBackupJobResponse(Schema):
-    backup_job_id: int
+    backup_job_ids: list[int]
 
 
 class ListGoogleDriveBackupJobsRequest(Schema):
@@ -214,7 +214,7 @@ class ListGoogleDriveBackupJobsRequest(Schema):
 class GoogleDriveBackupJobSchema(Schema):
     backup_job_id: int
     created_at: datetime
-    series_item_id: int
+    series_item_id: int | None
     status: str
     completed_at: datetime | None
     failure_message: str | None = None

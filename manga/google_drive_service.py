@@ -47,8 +47,13 @@ def _drive_service() -> Any:
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 
+def _escape_drive_query_literal(value: str) -> str:
+    """Escape a string for use inside single-quoted literals in Drive API ``q``."""
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
 def _find_folder_id(*, service: Any, parent_id: str, name: str) -> str | None:
-    safe_name = name.replace("'", "\\'")
+    safe_name = _escape_drive_query_literal(name)
     q = (
         f"name = '{safe_name}' and mimeType = '{_DRIVE_MIME_FOLDER}' "
         f"and '{parent_id}' in parents and trashed = false"
@@ -106,6 +111,38 @@ def ensure_series_drive_folder(*, series_name: str) -> str:
     service = _drive_service()
     manga_id = _ensure_folder(service=service, parent_id="root", name=_root_folder_name())
     return _ensure_folder(service=service, parent_id=manga_id, name=series_name)
+
+
+def find_existing_file_id_with_same_size(
+    *,
+    parent_folder_id: str,
+    drive_filename: str,
+    expected_size: int,
+) -> str | None:
+    """Return Drive file id if a non-trashed file with *drive_filename* exists under *parent_folder_id* with that size."""
+    service = _drive_service()
+    safe_name = _escape_drive_query_literal(drive_filename)
+    q = (
+        f"name = '{safe_name}' and mimeType != '{_DRIVE_MIME_FOLDER}' "
+        f"and '{parent_folder_id}' in parents and trashed = false"
+    )
+    resp = (
+        service.files()
+        .list(
+            q=q,
+            spaces="drive",
+            fields="files(id, size)",
+            pageSize=25,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        )
+        .execute()
+    )
+    want = str(int(expected_size))
+    for f in resp.get("files") or []:
+        if str(f.get("size") or "") == want:
+            return str(f["id"])
+    return None
 
 
 def upload_file_to_folder(

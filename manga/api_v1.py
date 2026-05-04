@@ -151,17 +151,17 @@ def get_cbz_convert_job(request, payload: GetCbzConvertJobRequest):
 @router.post("/v1.Manga.CreateGoogleDriveBackupJob", response=CreateGoogleDriveBackupJobResponse)
 def create_google_drive_backup_job_rpc(request, payload: CreateGoogleDriveBackupJobRequest):
     try:
-        job_id = services.create_google_drive_backup_job(
+        job_ids = services.create_google_drive_backup_job(
             manga_root=settings.MANGA_ROOT,
-            item_id=payload.item_id,
+            series_id=payload.series_id,
             user_id=request.auth.pk,
         )
     except ValueError as exc:
         msg = str(exc)
-        if msg == "Item not found":
+        if msg == "Series not found":
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
-    return CreateGoogleDriveBackupJobResponse(backup_job_id=job_id)
+    return CreateGoogleDriveBackupJobResponse(backup_job_ids=job_ids)
 
 
 @router.post("/v1.Manga.ListGoogleDriveBackupJobs", response=ListGoogleDriveBackupJobsResponse)

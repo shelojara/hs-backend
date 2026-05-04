@@ -24,40 +24,67 @@ def test_create_google_drive_backup_job_persists_pending_and_enqueues(mock_async
     root.mkdir()
     abs_root = str(root.resolve())
     s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
-    row = SeriesItem.objects.create(
+    row_a = SeriesItem.objects.create(
         series=s,
-        rel_path="s/ch.cbz",
-        filename="ch.cbz",
+        rel_path="s/a.cbz",
+        filename="a.cbz",
+        size_bytes=1,
+    )
+    row_b = SeriesItem.objects.create(
+        series=s,
+        rel_path="s/b.cbz",
+        filename="b.cbz",
         size_bytes=1,
     )
     u = User.objects.create_user(username="gd_u1", password="pw")
 
-    jid = create_google_drive_backup_job(
+    jids = create_google_drive_backup_job(
         manga_root=str(root),
-        item_id=row.pk,
+        series_id=s.pk,
         user_id=u.pk,
     )
-    job = GoogleDriveBackupJob.objects.get(pk=jid)
-    assert job.user_id == u.pk
-    assert job.manga_root == abs_root
-    assert job.series_id == s.pk
-    assert job.series_item_id == row.pk
-    assert job.status == GoogleDriveBackupJobStatus.PENDING
-    mock_async.assert_called_once_with(
-        "manga.scheduled_tasks.run_google_drive_backup_job",
-        jid,
-        task_name=f"manga_gdrive_backup:{jid}",
-    )
+    assert len(jids) == 2
+    jobs = {GoogleDriveBackupJob.objects.get(pk=j) for j in jids}
+    assert {j.series_item_id for j in jobs} == {row_a.pk, row_b.pk}
+    for job in jobs:
+        assert job.user_id == u.pk
+        assert job.manga_root == abs_root
+        assert job.series_id == s.pk
+        assert job.status == GoogleDriveBackupJobStatus.PENDING
+    assert mock_async.call_count == 2
+    for jid in jids:
+        mock_async.assert_any_call(
+            "manga.scheduled_tasks.run_google_drive_backup_job",
+            jid,
+            task_name=f"manga_gdrive_backup:{jid}",
+        )
+
+
+@pytest.mark.django_db
+def test_create_google_drive_backup_job_empty_series_raises(tmp_path):
+    root = tmp_path / "lib"
+    root.mkdir()
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    u = User.objects.create_user(username="gd_u_empty", password="pw")
+    with pytest.raises(ValueError, match="Series has no items"):
+        create_google_drive_backup_job(
+            manga_root=str(root),
+            series_id=s.pk,
+            user_id=u.pk,
+        )
 
 
 @pytest.mark.django_db
 @patch("manga.services.upload_file_to_folder", return_value="file_xyz")
+@patch("manga.services.find_existing_file_id_with_same_size", return_value=None)
 @patch("manga.services.ensure_series_drive_folder", return_value="folder_abc")
 @patch("manga.services.resolve_cbz_download")
 def test_run_google_drive_backup_job_success(
     mock_resolve,
     _mock_folder,
-    _mock_upload,
+    _mock_find_existing,
+    mock_upload,
     tmp_path,
 ):
     root = tmp_path / "lib"
@@ -90,6 +117,51 @@ def test_run_google_drive_backup_job_success(
     assert job.completed_at is not None
     assert job.failure_message is None
     assert job.google_drive_file_id == "file_xyz"
+
+
+@pytest.mark.django_db
+@patch("manga.services.upload_file_to_folder")
+@patch(
+    "manga.services.find_existing_file_id_with_same_size",
+    return_value="already_there",
+)
+@patch("manga.services.ensure_series_drive_folder", return_value="folder_abc")
+@patch("manga.services.resolve_cbz_download")
+def test_run_google_drive_backup_job_skips_upload_when_same_name_and_size(
+    mock_resolve,
+    _mock_folder,
+    _mock_find_existing,
+    mock_upload,
+    tmp_path,
+):
+    root = tmp_path / "lib"
+    root.mkdir()
+    abs_root = str(root.resolve())
+    cbz = root / "s" / "ch.cbz"
+    cbz.parent.mkdir()
+    cbz.write_bytes(b"PK\x03\x04fake")
+    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    row = SeriesItem.objects.create(
+        series=s,
+        rel_path="s/ch.cbz",
+        filename="ch.cbz",
+        size_bytes=1,
+    )
+    u = User.objects.create_user(username="gd_u_skip", password="pw")
+    job = GoogleDriveBackupJob.objects.create(
+        user=u,
+        manga_root=abs_root,
+        series=s,
+        series_item_id=row.pk,
+    )
+    mock_resolve.return_value = SimpleNamespace(absolute_path=str(cbz), filename="ch.cbz")
+
+    run_google_drive_backup_job(job_id=job.pk)
+
+    job.refresh_from_db()
+    assert job.status == GoogleDriveBackupJobStatus.COMPLETED
+    mock_upload.assert_not_called()
+    assert job.google_drive_file_id == "already_there"
 
 
 @pytest.mark.django_db
