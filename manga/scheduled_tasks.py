@@ -15,6 +15,11 @@ def run_cbz_convert_job(job_id: int) -> None:
     services.run_cbz_convert_job(job_id=job_id)
 
 
+def run_google_drive_backup_job(job_id: int) -> None:
+    """django-q2 entrypoint for async CBZ upload to Google Drive."""
+    services.run_google_drive_backup_job(job_id=job_id)
+
+
 def run_manga_mangabaka_series_info_sync() -> None:
     """Periodic job: small batch MangaBaka metadata → ``SeriesInfo``."""
     services.sync_manga_series_info_from_mangabaka()

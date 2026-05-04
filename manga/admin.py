@@ -1,7 +1,31 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from manga.models import CbzConvertJob, MangaHiddenDirectory, Series, SeriesInfo, SeriesItem
+from manga.models import (
+    CbzConvertJob,
+    GoogleDriveBackupJob,
+    MangaHiddenDirectory,
+    Series,
+    SeriesInfo,
+    SeriesItem,
+)
+
+
+@admin.register(GoogleDriveBackupJob)
+class GoogleDriveBackupJobAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "series",
+        "series_item_id",
+        "status",
+        "google_drive_file_id",
+        "created_at",
+        "completed_at",
+    )
+    list_filter = ("status",)
+    search_fields = ("manga_root", "failure_message", "google_drive_file_id")
+    readonly_fields = ("created_at", "completed_at")
 
 
 @admin.register(CbzConvertJob)

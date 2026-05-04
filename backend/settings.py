@@ -244,6 +244,12 @@ Q_CLUSTER = {
 
 MANGA_ROOT = os.getenv("MANGA_ROOT", "/manga")
 
+# Google Drive (service account JSON). Upload jobs write under folder named ``MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME``.
+# Share that folder (Editor) with the service account client_email from the JSON key.
+GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "").strip()
+GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "").strip()
+MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME = os.getenv("MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME", "Manga").strip() or "Manga"
+
 # MangaBaka API (optional overrides for tests or self-hosted mirror)
 MANGABAKA_API_BASE_URL = os.getenv("MANGABAKA_API_BASE_URL", "https://api.mangabaka.dev/v1/")
 MANGABAKA_HTTP_USER_AGENT = os.getenv("MANGABAKA_HTTP_USER_AGENT", "hs-backend-manga/1.0")

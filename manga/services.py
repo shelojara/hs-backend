@@ -33,10 +33,17 @@ from manga.cbztools.utils import (
     upload_to_dropbox,
 )
 from manga.mangabaka_client import MangaBakaAPIError, fetch_series_detail, search_series
+from manga.google_drive_service import (
+    drive_http_error_message,
+    ensure_manga_drive_hierarchy,
+    upload_file_to_folder,
+)
 from manga.models import (
     CbzConvertJob,
     CbzConvertJobStatus,
     CbzConvertKind,
+    GoogleDriveBackupJob,
+    GoogleDriveBackupJobStatus,
     Series,
     SeriesInfo,
     SeriesItem,
@@ -753,6 +760,57 @@ def create_cbz_convert_job(
     return row.pk
 
 
+def create_google_drive_backup_job(
+    *,
+    manga_root: str,
+    item_id: int,
+    user_id: int,
+) -> int:
+    """Create pending ``GoogleDriveBackupJob`` and enqueue worker; returns primary key."""
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    item = _series_item_for_manga_root(manga_root=manga_root, item_id=item_id)
+    row = GoogleDriveBackupJob.objects.create(
+        user_id=user_id,
+        manga_root=root_norm,
+        series_id=item.series_id,
+        series_item_id=item_id,
+    )
+    async_task(
+        "manga.scheduled_tasks.run_google_drive_backup_job",
+        row.pk,
+        task_name=f"manga_gdrive_backup:{row.pk}",
+    )
+    return row.pk
+
+
+def list_google_drive_backup_jobs(
+    *,
+    manga_root: str,
+    series_id: int | None,
+    user_id: int,
+    status: str | None = None,
+) -> list[GoogleDriveBackupJob]:
+    if status is not None and status not in GoogleDriveBackupJobStatus:
+        raise ValueError("Invalid status filter.")
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    qs = GoogleDriveBackupJob.objects.filter(user_id=user_id, manga_root=root_norm)
+    if series_id is None:
+        qs = qs.filter(series__library_root=root_norm)
+    else:
+        try:
+            series = Series.objects.get(pk=series_id, library_root=root_norm)
+        except Series.DoesNotExist as exc:
+            raise ValueError("Series not found") from exc
+        qs = qs.filter(series_id=series.pk)
+    if status is not None:
+        qs = qs.filter(status=status)
+    return list(qs.order_by("-created_at", "-pk"))
+
+
+def get_google_drive_backup_job(job_id: int, *, user_id: int) -> GoogleDriveBackupJob:
+    return GoogleDriveBackupJob.objects.get(pk=job_id, user_id=user_id)
+
+
 def list_cbz_convert_jobs(
     *,
     manga_root: str,
@@ -1109,4 +1167,50 @@ def run_cbz_convert_job(*, job_id: int) -> None:
         job.status = CbzConvertJobStatus.FAILED
         job.completed_at = timezone.now()
         job.failure_message = str(exc) or exc.__class__.__name__
+        job.save(update_fields=["status", "completed_at", "failure_message"])
+
+
+def run_google_drive_backup_job(*, job_id: int) -> None:
+    """Background worker: upload CBZ to Google Drive under ``Manga`` (or ``MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME``)."""
+    try:
+        job = GoogleDriveBackupJob.objects.select_related("series").get(pk=job_id)
+    except GoogleDriveBackupJob.DoesNotExist:
+        logger.warning("run_google_drive_backup_job: missing GoogleDriveBackupJob id=%s", job_id)
+        return
+    try:
+        item = SeriesItem.objects.get(pk=job.series_item_id, series_id=job.series_id)
+    except SeriesItem.DoesNotExist:
+        job.status = GoogleDriveBackupJobStatus.FAILED
+        job.completed_at = timezone.now()
+        job.failure_message = "SeriesItem not found"
+        job.save(update_fields=["status", "completed_at", "failure_message"])
+        return
+    try:
+        resolved = resolve_cbz_download(manga_root=job.manga_root, item_id=item.pk)
+        folder_id = ensure_manga_drive_hierarchy(
+            series_rel_path=job.series.series_rel_path,
+            series_name=job.series.name,
+        )
+        file_id = upload_file_to_folder(
+            local_path=resolved.absolute_path,
+            drive_filename=resolved.filename,
+            parent_folder_id=folder_id,
+        )
+        job.status = GoogleDriveBackupJobStatus.COMPLETED
+        job.completed_at = timezone.now()
+        job.failure_message = None
+        job.google_drive_file_id = file_id
+        job.save(
+            update_fields=[
+                "status",
+                "completed_at",
+                "failure_message",
+                "google_drive_file_id",
+            ],
+        )
+    except Exception as exc:
+        logger.exception("run_google_drive_backup_job failed (job id=%s)", job_id)
+        job.status = GoogleDriveBackupJobStatus.FAILED
+        job.completed_at = timezone.now()
+        job.failure_message = drive_http_error_message(exc)
         job.save(update_fields=["status", "completed_at", "failure_message"])
