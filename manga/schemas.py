@@ -214,7 +214,7 @@ class ListGoogleDriveBackupJobsRequest(Schema):
 class GoogleDriveBackupJobSchema(Schema):
     backup_job_id: int
     created_at: datetime
-    series_item_id: int | None
+    series_item_id: int
     status: str
     completed_at: datetime | None
     failure_message: str | None = None

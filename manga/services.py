@@ -1191,12 +1191,6 @@ def run_google_drive_backup_job(*, job_id: int) -> None:
     except GoogleDriveBackupJob.DoesNotExist:
         logger.warning("run_google_drive_backup_job: missing GoogleDriveBackupJob id=%s", job_id)
         return
-    if job.series_item_id is None:
-        job.status = GoogleDriveBackupJobStatus.FAILED
-        job.completed_at = timezone.now()
-        job.failure_message = "Legacy backup job missing series_item_id"
-        job.save(update_fields=["status", "completed_at", "failure_message"])
-        return
     try:
         item = SeriesItem.objects.get(pk=job.series_item_id, series_id=job.series_id)
     except SeriesItem.DoesNotExist:

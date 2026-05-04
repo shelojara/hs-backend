@@ -95,9 +95,7 @@ class GoogleDriveBackupJob(models.Model):
         related_name="google_drive_backup_jobs",
     )
     series_item_id = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="Primary key of SeriesItem to upload (null only for legacy rows).",
+        help_text="Primary key of SeriesItem to upload.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(
