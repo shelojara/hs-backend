@@ -29,7 +29,6 @@ class SeriesInfoAdmin(admin.ModelAdmin):
         "mangabaka_series_id",
         "rating",
         "is_complete",
-        "search_snoozed_until",
         "synced_at",
     )
     list_filter = ("is_complete",)
@@ -95,6 +94,7 @@ class SeriesAdmin(admin.ModelAdmin):
     search_fields = ("name", "series_rel_path", "library_root")
     readonly_fields = (
         "scanned_at",
+        "mangabaka_search_snoozed_until",
         "cover_preview",
         "cover_image_mime_type",
     )

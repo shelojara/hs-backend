@@ -157,6 +157,14 @@ class Series(models.Model):
         default=0,
         help_text="Number of cached SeriesItem rows (CBZ files) for this series; set by library sync.",
     )
+    mangabaka_search_snoozed_until = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=(
+            "After MangaBaka title search found no confident match, next search allowed at this time (UTC)."
+        ),
+    )
     scanned_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -185,7 +193,7 @@ class Series(models.Model):
 
 
 class SeriesInfo(models.Model):
-    """MangaBaka metadata for a cached ``Series`` (description, rating); one row per series when synced."""
+    """MangaBaka metadata for a cached ``Series`` (description, rating); created only after a title match."""
 
     series = models.OneToOneField(
         Series,
@@ -206,21 +214,12 @@ class SeriesInfo(models.Model):
     is_complete = models.BooleanField(
         default=False,
         db_index=True,
-        help_text=(
-            "When true and ``mangabaka_series_id`` set, MangaBaka detail sync finished; "
-            "scheduled job skips. False while retrying detail errors or snoozed after no title match."
-        ),
-    )
-    search_snoozed_until = models.DateTimeField(
-        null=True,
-        blank=True,
-        db_index=True,
-        help_text="After no MangaBaka title match, next search allowed at this time (UTC).",
+        help_text="When true, MangaBaka detail fetch succeeded and description/rating are current.",
     )
     synced_at = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="When description/rating was last written or last no-match snooze was set.",
+        help_text="When description/rating was last written from MangaBaka detail API.",
     )
 
     class Meta:

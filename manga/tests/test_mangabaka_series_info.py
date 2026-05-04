@@ -104,13 +104,9 @@ def test_sync_snoozes_search_when_no_title_match(settings):
         patch("manga.services.timezone.now", return_value=t0),
     ):
         sync_manga_series_info_from_mangabaka()
-    info = SeriesInfo.objects.get(series=s)
-    assert info.mangabaka_series_id is None
-    assert info.is_complete is False
-    assert info.search_snoozed_until == t0 + timedelta(hours=24)
-    assert info.description == ""
-    assert info.rating is None
-    assert info.synced_at == t0
+    s.refresh_from_db()
+    assert not SeriesInfo.objects.filter(series=s).exists()
+    assert s.mangabaka_search_snoozed_until == t0 + timedelta(hours=24)
 
 
 @pytest.mark.django_db
@@ -118,20 +114,12 @@ def test_sync_skips_series_while_search_snoozed(settings):
     settings.MANGABAKA_INFO_SYNC_BATCH_SIZE = 5
     settings.MANGABAKA_HTTP_DELAY_SECONDS = 0
     t0 = django_timezone.now()
-    s = Series.objects.create(
+    Series.objects.create(
         library_root="/tmp/lib",
         series_rel_path="Z",
         name="Snoozed",
         item_count=0,
-    )
-    SeriesInfo.objects.create(
-        series=s,
-        mangabaka_series_id=None,
-        description="",
-        rating=None,
-        is_complete=False,
-        search_snoozed_until=t0 + timedelta(hours=1),
-        synced_at=t0,
+        mangabaka_search_snoozed_until=t0 + timedelta(hours=1),
     )
     with patch("manga.services.search_series") as mock_search:
         n = sync_manga_series_info_from_mangabaka()
@@ -150,15 +138,7 @@ def test_sync_retries_search_after_snooze_expires(settings):
         series_rel_path="R",
         name="Later Match",
         item_count=0,
-    )
-    SeriesInfo.objects.create(
-        series=s,
-        mangabaka_series_id=None,
-        description="",
-        rating=None,
-        is_complete=False,
-        search_snoozed_until=t0 - timedelta(minutes=1),
-        synced_at=t0 - timedelta(hours=25),
+        mangabaka_search_snoozed_until=t0 - timedelta(minutes=1),
     )
     t1 = t0 + timedelta(hours=25)
     with (
@@ -173,8 +153,9 @@ def test_sync_retries_search_after_snooze_expires(settings):
     info = SeriesInfo.objects.get(series=s)
     assert info.mangabaka_series_id == 55
     assert info.is_complete is True
-    assert info.search_snoozed_until is None
     assert info.description == "ok"
+    s.refresh_from_db()
+    assert s.mangabaka_search_snoozed_until is None
 
 
 @pytest.mark.django_db
