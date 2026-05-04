@@ -5,6 +5,7 @@ from ninja import Router
 from ninja.errors import HttpError
 
 from auth.security import protected_api_auth
+from manga.mangabaka_client import MangaBakaAPIError
 from manga import services
 from manga.models import CbzConvertJob, Series
 from manga.schemas import (
@@ -26,6 +27,8 @@ from manga.schemas import (
     ListSeriesCategoriesResponse,
     ListSeriesRequest,
     ListSeriesResponse,
+    SetSeriesMangabakaRequest,
+    SetSeriesMangabakaResponse,
     SeriesInfoSchema,
     SeriesItemSchema,
     SeriesSchema,
@@ -150,6 +153,24 @@ def get_series(request, payload: GetSeriesRequest):
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     return GetSeriesResponse(series=_series_schema(row))
+
+
+@router.post("/v1.Manga.SetSeriesMangabaka", response=SetSeriesMangabakaResponse)
+def set_series_mangabaka(request, payload: SetSeriesMangabakaRequest):
+    try:
+        row = services.set_series_mangabaka_series_id(
+            manga_root=settings.MANGA_ROOT,
+            series_id=payload.series_id,
+            mangabaka_series_id=payload.mangabaka_series_id,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "Series not found":
+            raise HttpError(404, msg) from exc
+        raise HttpError(400, msg) from exc
+    except MangaBakaAPIError as exc:
+        raise HttpError(502, str(exc)) from exc
+    return SetSeriesMangabakaResponse(series=_series_schema(row))
 
 
 @router.post("/v1.Manga.ListSeriesCategories", response=ListSeriesCategoriesResponse)

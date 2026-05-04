@@ -9,6 +9,7 @@ from django.utils import timezone as django_timezone
 from manga.models import Series, SeriesInfo
 from manga.services import (
     _pick_mangabaka_series_id_from_search_hits,
+    set_series_mangabaka_series_id,
     sync_manga_series_info_from_mangabaka,
 )
 
@@ -214,3 +215,82 @@ def test_sync_detail_api_error_leaves_incomplete_for_retry(settings):
     assert info.mangabaka_series_id == 100
     assert info.is_complete is False
     assert info.synced_at is None
+
+
+@pytest.mark.django_db
+def test_set_series_mangabaka_creates_info_and_clears_snooze(settings):
+    settings.MANGA_ROOT = "/tmp/lib"
+    t0 = django_timezone.now()
+    s = Series.objects.create(
+        library_root="/tmp/lib",
+        series_rel_path="M",
+        name="Manual",
+        item_count=0,
+        mangabaka_search_snoozed_until=t0 + timedelta(hours=2),
+    )
+    with patch(
+        "manga.services.fetch_series_detail",
+        return_value={"description": "d", "rating": 9, "type": "manga"},
+    ):
+        out = set_series_mangabaka_series_id(
+            manga_root="/tmp/lib",
+            series_id=s.pk,
+            mangabaka_series_id=333,
+        )
+    assert out.pk == s.pk
+    info = SeriesInfo.objects.get(series=s)
+    assert info.mangabaka_series_id == 333
+    assert info.description == "d"
+    assert info.rating == 9
+    assert info.series_type == "manga"
+    assert info.is_complete is True
+    s.refresh_from_db()
+    assert s.mangabaka_search_snoozed_until is None
+
+
+@pytest.mark.django_db
+def test_set_series_mangabaka_updates_existing_info(settings):
+    settings.MANGA_ROOT = "/tmp/lib"
+    s = Series.objects.create(
+        library_root="/tmp/lib",
+        series_rel_path="N",
+        name="Has Info",
+        item_count=0,
+    )
+    SeriesInfo.objects.create(
+        series=s,
+        mangabaka_series_id=1,
+        description="old",
+        rating=1,
+        is_complete=True,
+        synced_at=django_timezone.now(),
+    )
+    with patch(
+        "manga.services.fetch_series_detail",
+        return_value={"description": "new", "rating": 2},
+    ):
+        set_series_mangabaka_series_id(
+            manga_root="/tmp/lib",
+            series_id=s.pk,
+            mangabaka_series_id=999,
+        )
+    info = SeriesInfo.objects.get(series=s)
+    assert info.mangabaka_series_id == 999
+    assert info.description == "new"
+    assert info.rating == 2
+
+
+@pytest.mark.django_db
+def test_set_series_mangabaka_wrong_root_raises():
+    s = Series.objects.create(
+        library_root="/tmp/lib",
+        series_rel_path="Q",
+        name="X",
+        item_count=0,
+    )
+    with pytest.raises(ValueError, match="Series not found"):
+        set_series_mangabaka_series_id(
+            manga_root="/other/root",
+            series_id=s.pk,
+            mangabaka_series_id=1,
+        )

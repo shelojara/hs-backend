@@ -84,6 +84,15 @@ class GetSeriesResponse(Schema):
     series: SeriesSchema
 
 
+class SetSeriesMangabakaRequest(Schema):
+    series_id: int = Field(ge=1)
+    mangabaka_series_id: int = Field(ge=1)
+
+
+class SetSeriesMangabakaResponse(Schema):
+    series: SeriesSchema
+
+
 class ListSeriesCategoriesResponse(Schema):
     categories: list[str]
 
