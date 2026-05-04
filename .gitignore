@@ -11,4 +11,5 @@ wheels/
 
 # Django
 db.sqlite3
+manga_google_drive_folder_resolve.lock
 staticfiles/

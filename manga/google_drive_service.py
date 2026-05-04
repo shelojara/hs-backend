@@ -5,9 +5,13 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 from django.conf import settings
+from django.db import connection, transaction
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from googleapiclient.discovery import build
@@ -15,6 +19,11 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
 
 logger = logging.getLogger(__name__)
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover — non-Unix
+    fcntl = None  # type: ignore[misc, assignment]
 
 _DRIVE_SCOPES = ("https://www.googleapis.com/auth/drive.file",)
 _DRIVE_MIME_FOLDER = "application/vnd.google-apps.folder"
@@ -80,6 +89,44 @@ def _drive_credentials() -> OAuthCredentials:
 def _drive_service() -> Any:
     creds = _drive_credentials()
     return build("drive", "v3", credentials=creds, cache_discovery=False)
+
+
+def _folder_resolve_uses_db_row_lock() -> bool:
+    return connection.vendor in ("postgresql", "mysql", "oracle")
+
+
+def _folder_resolve_lock_path() -> Path:
+    raw = getattr(settings, "MANGA_GOOGLE_DRIVE_FOLDER_LOCK_PATH", None)
+    if raw:
+        return Path(str(raw).strip())
+    return Path(settings.BASE_DIR) / "manga_google_drive_folder_resolve.lock"
+
+
+@contextmanager
+def _google_drive_folder_resolve_lock() -> Any:
+    """Serialize find-or-create for Drive folders (parallel backup workers share parent)."""
+    if _folder_resolve_uses_db_row_lock():
+        from manga.models import GoogleDriveApplicationCredentials
+
+        with transaction.atomic():
+            GoogleDriveApplicationCredentials.objects.select_for_update().filter(pk=1).first()
+            yield
+        return
+    if fcntl is None:
+        logger.warning(
+            "fcntl unavailable; Google Drive folder resolution may race if multiple workers run.",
+        )
+        yield
+        return
+    path = _folder_resolve_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 
 def _escape_drive_query_literal(value: str) -> str:
@@ -150,12 +197,13 @@ def _drive_parent_for_root_folder() -> str:
 def ensure_series_drive_folder(*, series_name: str) -> str:
     """Return Drive folder id for ``<root>/<series_name>/`` (creates ``Manga`` + series folder only)."""
     service = _drive_service()
-    manga_id = _ensure_folder(
-        service=service,
-        parent_id=_drive_parent_for_root_folder(),
-        name=_root_folder_name(),
-    )
-    return _ensure_folder(service=service, parent_id=manga_id, name=series_name)
+    with _google_drive_folder_resolve_lock():
+        manga_id = _ensure_folder(
+            service=service,
+            parent_id=_drive_parent_for_root_folder(),
+            name=_root_folder_name(),
+        )
+        return _ensure_folder(service=service, parent_id=manga_id, name=series_name)
 
 
 def find_existing_file_id_with_same_size(
