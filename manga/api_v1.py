@@ -113,6 +113,26 @@ def list_series(request, payload: ListSeriesRequest):
                 category=r.category,
                 cover_image_base64=r.cover_image_base64,
                 cover_image_mime_type=r.cover_image_mime_type or "",
+                mangabaka_series_id=(
+                    r.series_info.mangabaka_series_id
+                    if getattr(r, "series_info", None) is not None
+                    else None
+                ),
+                description=(
+                    (r.series_info.description or "").strip() or None
+                    if getattr(r, "series_info", None) is not None
+                    else None
+                ),
+                rating=(
+                    r.series_info.rating
+                    if getattr(r, "series_info", None) is not None
+                    else None
+                ),
+                mangabaka_synced_at=(
+                    r.series_info.synced_at
+                    if getattr(r, "series_info", None) is not None
+                    else None
+                ),
             )
             for r in rows
         ],

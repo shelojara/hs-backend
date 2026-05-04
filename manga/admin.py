@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from manga.models import CbzConvertJob, MangaHiddenDirectory, Series, SeriesItem
+from manga.models import CbzConvertJob, MangaHiddenDirectory, Series, SeriesInfo, SeriesItem
 
 
 @admin.register(CbzConvertJob)
@@ -19,6 +19,21 @@ class CbzConvertJobAdmin(admin.ModelAdmin):
     list_filter = ("status", "kind")
     search_fields = ("manga_root", "failure_message")
     readonly_fields = ("created_at", "completed_at")
+
+
+@admin.register(SeriesInfo)
+class SeriesInfoAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "series",
+        "mangabaka_series_id",
+        "rating",
+        "is_complete",
+        "synced_at",
+    )
+    list_filter = ("is_complete",)
+    search_fields = ("description", "series__name")
+    readonly_fields = ("synced_at",)
 
 
 @admin.register(MangaHiddenDirectory)

@@ -184,6 +184,44 @@ class Series(models.Model):
         return f"{self.name} ({self.series_rel_path or '.'})"
 
 
+class SeriesInfo(models.Model):
+    """MangaBaka metadata for a cached ``Series`` (description, rating); one row per series when synced."""
+
+    series = models.OneToOneField(
+        Series,
+        on_delete=models.CASCADE,
+        related_name="series_info",
+    )
+    mangabaka_series_id = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="MangaBaka API series id when a confident title match was found.",
+    )
+    description = models.TextField(blank=True, default="")
+    rating = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Raw MangaBaka ``rating`` field (see API docs).",
+    )
+    is_complete = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="When true, scheduled sync skips this series (match succeeded or search exhausted).",
+    )
+    synced_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When description/rating was last written or a definitive no-match was recorded.",
+    )
+
+    class Meta:
+        verbose_name = "manga series info (MangaBaka)"
+        verbose_name_plural = "manga series info (MangaBaka)"
+
+    def __str__(self) -> str:
+        return f"SeriesInfo(series_id={self.series_id}, mb_id={self.mangabaka_series_id})"
+
+
 class SeriesItem(models.Model):
     """Cached CBZ: one file directly inside a series directory."""
 

@@ -244,6 +244,14 @@ Q_CLUSTER = {
 
 MANGA_ROOT = os.getenv("MANGA_ROOT", "/manga")
 
+# MangaBaka API (optional overrides for tests or self-hosted mirror)
+MANGABAKA_API_BASE_URL = os.getenv("MANGABAKA_API_BASE_URL", "https://api.mangabaka.dev/v1/")
+MANGABAKA_HTTP_USER_AGENT = os.getenv("MANGABAKA_HTTP_USER_AGENT", "hs-backend-manga/1.0")
+MANGABAKA_INFO_SYNC_BATCH_SIZE = int(os.getenv("MANGABAKA_INFO_SYNC_BATCH_SIZE", "5"))
+MANGABAKA_HTTP_DELAY_SECONDS = float(os.getenv("MANGABAKA_HTTP_DELAY_SECONDS", "0.5"))
+MANGABAKA_TITLE_MATCH_THRESHOLD = int(os.getenv("MANGABAKA_TITLE_MATCH_THRESHOLD", "90"))
+MANGABAKA_SEARCH_LIMIT = int(os.getenv("MANGABAKA_SEARCH_LIMIT", "12"))
+
 # LocMem cache (default backend).
 CACHES = {
     "default": {

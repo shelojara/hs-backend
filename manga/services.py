@@ -2,6 +2,7 @@ import base64
 import logging
 import os
 import posixpath
+import time
 from datetime import UTC, datetime
 import shutil
 import tempfile
@@ -11,11 +12,13 @@ from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO, Literal
 
+from django.conf import settings
 from django.db import connection, transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 from django_q.tasks import async_task
 from PIL import Image
+from rapidfuzz import fuzz
 
 from manga.cbztools.manga_v2 import process_manga
 from manga.cbztools.manhwa_v3 import process_manhwa_v3
@@ -29,11 +32,13 @@ from manga.cbztools.utils import (
     list_dropbox_files,
     upload_to_dropbox,
 )
+from manga.mangabaka_client import MangaBakaAPIError, fetch_series_detail, search_series
 from manga.models import (
     CbzConvertJob,
     CbzConvertJobStatus,
     CbzConvertKind,
     Series,
+    SeriesInfo,
     SeriesItem,
     normalize_manga_hidden_rel_path,
 )
@@ -115,7 +120,7 @@ def list_series(
             | Q(series_rel_path__icontains=q)
             | Q(category__icontains=q),
         )
-    return list(qs[offset : offset + limit])
+    return list(qs.select_related("series_info")[offset : offset + limit])
 
 
 def list_distinct_series_categories(*, manga_root: str) -> list[str]:
@@ -771,6 +776,164 @@ def list_cbz_convert_jobs(
 
 def get_cbz_convert_job(job_id: int, *, user_id: int) -> CbzConvertJob:
     return CbzConvertJob.objects.get(pk=job_id, user_id=user_id)
+
+
+def _mangabaka_title_match_threshold() -> int:
+    return int(getattr(settings, "MANGABAKA_TITLE_MATCH_THRESHOLD", 90))
+
+
+def _mangabaka_info_batch_size() -> int:
+    return max(1, int(getattr(settings, "MANGABAKA_INFO_SYNC_BATCH_SIZE", 5)))
+
+
+def _mangabaka_http_delay_seconds() -> float:
+    return float(getattr(settings, "MANGABAKA_HTTP_DELAY_SECONDS", 0.5))
+
+
+def _mangabaka_search_limit() -> int:
+    return max(3, min(25, int(getattr(settings, "MANGABAKA_SEARCH_LIMIT", 12))))
+
+
+def _pick_mangabaka_series_id_from_search_hits(
+    *,
+    local_name: str,
+    hits: list[dict],
+) -> int | None:
+    """Return best matching MangaBaka id, or None when no hit clears fuzzy threshold."""
+    if not local_name.strip():
+        return None
+    threshold = _mangabaka_title_match_threshold()
+    best_id: int | None = None
+    best_score = -1
+    needle = local_name.strip().lower()
+    for row in hits:
+        title = row.get("title")
+        if not isinstance(title, str) or not title.strip():
+            continue
+        sid = row.get("id")
+        if isinstance(sid, str) and sid.isdigit():
+            sid = int(sid)
+        if not isinstance(sid, int) or sid < 1:
+            continue
+        score = fuzz.ratio(needle, title.strip().lower())
+        if score > best_score:
+            best_score = score
+            best_id = sid
+    if best_id is None or best_score < threshold:
+        return None
+    return best_id
+
+
+def _normalize_mangabaka_rating(raw: object) -> int | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, float):
+        return int(round(raw))
+    return None
+
+
+def sync_manga_series_info_from_mangabaka() -> int:
+    """Fill ``SeriesInfo`` from MangaBaka API for a small batch of series missing complete metadata.
+
+    Skips rows that already have ``SeriesInfo.is_complete`` (description synced or search exhausted).
+    Returns number of series rows processed this run.
+    """
+    batch = _mangabaka_info_batch_size()
+    delay = _mangabaka_http_delay_seconds()
+    search_limit = _mangabaka_search_limit()
+    has_complete = SeriesInfo.objects.filter(series_id=OuterRef("pk"), is_complete=True)
+    candidates = (
+        Series.objects.filter(~Exists(has_complete))
+        .order_by("library_root", "name", "series_rel_path", "pk")[:batch]
+    )
+    processed = 0
+    for series in candidates:
+        processed += 1
+        try:
+            _sync_single_series_info_from_mangabaka(
+                series=series,
+                search_limit=search_limit,
+            )
+        except Exception:
+            logger.exception(
+                "MangaBaka series info sync failed for series id=%s name=%r",
+                series.pk,
+                series.name,
+            )
+        if delay > 0:
+            time.sleep(delay)
+    return processed
+
+
+@transaction.atomic
+def _sync_single_series_info_from_mangabaka(*, series: Series, search_limit: int) -> None:
+    info, _created = SeriesInfo.objects.select_for_update(of=("self",)).get_or_create(
+        series=series,
+        defaults={
+            "description": "",
+            "rating": None,
+            "mangabaka_series_id": None,
+            "is_complete": False,
+        },
+    )
+    if info.is_complete:
+        return
+
+    mb_id = info.mangabaka_series_id
+    if mb_id is None:
+        hits, _pag = search_series(query=series.name.strip(), limit=search_limit, page=1)
+        mb_id = _pick_mangabaka_series_id_from_search_hits(local_name=series.name, hits=hits)
+        if mb_id is None:
+            info.mangabaka_series_id = None
+            info.description = ""
+            info.rating = None
+            info.is_complete = True
+            info.synced_at = timezone.now()
+            info.save(
+                update_fields=[
+                    "mangabaka_series_id",
+                    "description",
+                    "rating",
+                    "is_complete",
+                    "synced_at",
+                ],
+            )
+            return
+
+    try:
+        detail = fetch_series_detail(series_id=mb_id)
+    except MangaBakaAPIError as exc:
+        logger.warning(
+            "MangaBaka detail fetch failed series pk=%s mb_id=%s: %s",
+            series.pk,
+            mb_id,
+            exc,
+        )
+        info.mangabaka_series_id = mb_id
+        info.save(update_fields=["mangabaka_series_id"])
+        return
+
+    desc = detail.get("description")
+    description = desc.strip() if isinstance(desc, str) else ""
+    rating = _normalize_mangabaka_rating(detail.get("rating"))
+    info.mangabaka_series_id = mb_id
+    info.description = description
+    info.rating = rating
+    info.is_complete = True
+    info.synced_at = timezone.now()
+    info.save(
+        update_fields=[
+            "mangabaka_series_id",
+            "description",
+            "rating",
+            "is_complete",
+            "synced_at",
+        ],
+    )
 
 
 def run_cbz_convert_job(*, job_id: int) -> None:

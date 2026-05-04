@@ -12,6 +12,10 @@ class SeriesSchema(Schema):
     category: str = ""
     cover_image_base64: str | None = None
     cover_image_mime_type: str = ""
+    mangabaka_series_id: int | None = None
+    description: str | None = None
+    rating: int | None = None
+    mangabaka_synced_at: datetime | None = None
 
 
 class ListSeriesRequest(Schema):
