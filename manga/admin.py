@@ -141,7 +141,7 @@ class SeriesItemInline(admin.TabularInline):
         "filename",
         "size_bytes",
         "file_created_at",
-        "in_dropbox",
+        "is_converted",
         "dropbox_uploaded_at",
         "item_cover_preview",
     )
@@ -150,7 +150,7 @@ class SeriesItemInline(admin.TabularInline):
         "filename",
         "size_bytes",
         "file_created_at",
-        "in_dropbox",
+        "is_converted",
         "dropbox_uploaded_at",
         "item_cover_preview",
     )
