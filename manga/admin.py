@@ -1,14 +1,80 @@
 from django.contrib import admin
+from django.http import HttpResponseRedirect
+from django.urls import reverse
 from django.utils.html import format_html
 
 from manga.models import (
     CbzConvertJob,
+    GoogleDriveApplicationCredentials,
     GoogleDriveBackupJob,
     MangaHiddenDirectory,
     Series,
     SeriesInfo,
     SeriesItem,
 )
+
+
+@admin.register(GoogleDriveApplicationCredentials)
+class GoogleDriveApplicationCredentialsAdmin(admin.ModelAdmin):
+    """OAuth web client + stored refresh token (singleton)."""
+
+    list_display = ("__str__", "has_refresh_token", "updated_at")
+    readonly_fields = ("oauth_actions", "updated_at")
+
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "oauth_actions",
+                    "client_id",
+                    "client_secret",
+                    "refresh_token",
+                    "access_token",
+                    "access_token_expires_at",
+                    "token_uri",
+                    "updated_at",
+                ),
+            },
+        ),
+    )
+
+    def has_add_permission(self, request):
+        return not GoogleDriveApplicationCredentials.objects.filter(pk=1).exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        if GoogleDriveApplicationCredentials.objects.filter(pk=1).exists():
+            return HttpResponseRedirect(
+                reverse("admin:manga_googledriveapplicationcredentials_change", args=(1,)),
+            )
+        return super().changelist_view(request, extra_context=extra_context)
+
+    @admin.display(description="OAuth", boolean=False)
+    def oauth_actions(self, obj: GoogleDriveApplicationCredentials) -> str:
+        if not obj or not obj.pk:
+            return "Save once, then use buttons below."
+        start = reverse("admin_manga_gdrive_oauth_start")
+        return format_html(
+            '<p><a class="button" href="{}">Start Google OAuth (sign in; offline consent)</a></p>'
+            "<p>Add authorized redirect URI in Google Cloud Console: "
+            "<code>…/admin/manga/googledriveoauth/callback/</code> (full URL of this site).</p>",
+            start,
+        )
+
+    @admin.display(description="Connected", boolean=True)
+    def has_refresh_token(self, obj: GoogleDriveApplicationCredentials) -> bool:
+        return bool((obj.refresh_token or "").strip())
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        if "refresh_token" in form.base_fields:
+            form.base_fields["refresh_token"].widget.attrs["readonly"] = True
+        if "access_token" in form.base_fields:
+            form.base_fields["access_token"].widget.attrs["readonly"] = True
+        return form
 
 
 @admin.register(GoogleDriveBackupJob)

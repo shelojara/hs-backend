@@ -19,6 +19,8 @@ from django.contrib import admin
 from django.urls import path
 from ninja import NinjaAPI
 
+from manga.drive_oauth_admin_views import google_drive_oauth_callback, google_drive_oauth_start
+
 api = NinjaAPI()
 
 api.add_router("", "auth.api_v1.router")
@@ -29,6 +31,16 @@ api.add_router("", "manga.api_v1.router")
 
 
 urlpatterns = [
+    path(
+        "admin/manga/googledriveoauth/start/",
+        google_drive_oauth_start,
+        name="admin_manga_gdrive_oauth_start",
+    ),
+    path(
+        "admin/manga/googledriveoauth/callback/",
+        google_drive_oauth_callback,
+        name="admin_manga_gdrive_oauth_callback",
+    ),
     path("admin/", admin.site.urls),
     path("api/", api.urls),
 ]

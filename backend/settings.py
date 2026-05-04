@@ -244,10 +244,10 @@ Q_CLUSTER = {
 
 MANGA_ROOT = os.getenv("MANGA_ROOT", "/manga")
 
-# Google Drive (service account JSON). Upload jobs write under folder named ``MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME``
-# inside ``MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID`` when set (shared folder or Shared drive folder — has quota).
-# When empty, parent is the service account "root" (usually fails: SA has no storage quota).
-# Share the parent folder with the service account (Editor) or add SA to the Shared drive.
+# Google Drive backups:
+# - Preferred: Django admin → "Google Drive OAuth credentials" (Web client id/secret + superuser OAuth).
+#   Uploads use that Google user's quota. Optional MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID for nested root.
+# - Fallback: GOOGLE_DRIVE_SERVICE_ACCOUNT_* (see Google policy for new SAs vs Shared drives).
 GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "").strip()
 GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "").strip()
 MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID = os.getenv("MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID", "").strip()

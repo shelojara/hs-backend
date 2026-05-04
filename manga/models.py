@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import posixpath
 
 from django.conf import settings
@@ -126,6 +128,62 @@ class GoogleDriveBackupJob(models.Model):
         return (
             f"GoogleDriveBackupJob(item={self.series_item_id}, status={self.status}, user={self.user_id})"
         )
+
+
+class GoogleDriveApplicationCredentials(models.Model):
+    """Singleton (pk=1): OAuth web client + refresh token for manga Drive backups.
+
+    Prefer this over a service account when uploading to a personal Google account
+    (Drive quota applies to the signed-in user). Connect via **Start Google OAuth**
+    on the change page after saving client id and secret.
+    """
+
+    client_id = models.CharField(
+        max_length=256,
+        blank=True,
+        default="",
+        help_text="OAuth 2.0 Web client ID from Google Cloud Console.",
+    )
+    client_secret = models.TextField(
+        blank=True,
+        default="",
+        help_text="OAuth 2.0 client secret.",
+    )
+    refresh_token = models.TextField(
+        blank=True,
+        default="",
+        help_text="Obtained automatically after staff authorizes in the browser.",
+    )
+    access_token = models.TextField(
+        blank=True,
+        default="",
+        help_text="Cached access token; refreshed when near expiry.",
+    )
+    access_token_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="UTC expiry for access_token.",
+    )
+    token_uri = models.CharField(
+        max_length=256,
+        default="https://oauth2.googleapis.com/token",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Google Drive OAuth credentials"
+        verbose_name_plural = "Google Drive OAuth credentials"
+
+    def save(self, *args, **kwargs) -> None:
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls) -> GoogleDriveApplicationCredentials | None:
+        return cls.objects.filter(pk=1).first()
+
+    def __str__(self) -> str:
+        return "Google Drive OAuth (singleton)"
 
 
 class CbzConvertJob(models.Model):
