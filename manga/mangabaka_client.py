@@ -24,7 +24,7 @@ def _search_url() -> str:
 
 
 def fetch_series_detail(*, series_id: int, timeout: float = 30.0) -> dict[str, Any]:
-    """GET /v1/series/{id}; returns ``data`` object (title, description, rating, …)."""
+    """GET /v1/series/{id}; returns ``data`` object (title, description, rating, type, …)."""
     url = _series_url(series_id)
     headers = {"User-Agent": getattr(settings, "MANGABAKA_HTTP_USER_AGENT", "hs-backend-manga/1.0")}
     try:

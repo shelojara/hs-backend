@@ -11,6 +11,7 @@ class SeriesInfoSchema(Schema):
     mangabaka_series_id: int | None = None
     description: str | None = None
     rating: int | None = None
+    series_type: str | None = None
     synced_at: datetime | None = None
 
     @computed_field  # type: ignore[prop-decorator]

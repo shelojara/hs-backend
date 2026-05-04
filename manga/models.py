@@ -193,7 +193,7 @@ class Series(models.Model):
 
 
 class SeriesInfo(models.Model):
-    """MangaBaka metadata for a cached ``Series`` (description, rating); created only after a title match."""
+    """MangaBaka metadata for a cached ``Series`` (description, rating, type); created only after a title match."""
 
     series = models.OneToOneField(
         Series,
@@ -211,15 +211,21 @@ class SeriesInfo(models.Model):
         blank=True,
         help_text="Raw MangaBaka ``rating`` field (see API docs).",
     )
+    series_type = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="MangaBaka API ``type`` field from series detail (e.g. manga, manhwa).",
+    )
     is_complete = models.BooleanField(
         default=False,
         db_index=True,
-        help_text="When true, MangaBaka detail fetch succeeded and description/rating are current.",
+        help_text="When true, MangaBaka detail fetch succeeded and description/rating/type are current.",
     )
     synced_at = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="When description/rating was last written from MangaBaka detail API.",
+        help_text="When description/rating/type was last written from MangaBaka detail API.",
     )
 
     class Meta:

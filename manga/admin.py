@@ -27,6 +27,7 @@ class SeriesInfoAdmin(admin.ModelAdmin):
         "id",
         "series",
         "mangabaka_series_id",
+        "series_type",
         "rating",
         "is_complete",
         "synced_at",
