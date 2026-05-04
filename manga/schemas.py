@@ -93,6 +93,29 @@ class SetSeriesMangabakaResponse(Schema):
     series: SeriesSchema
 
 
+class SearchMangabakaSeriesRequest(Schema):
+    """Query MangaBaka series search (ids + titles for ``SetSeriesMangabaka``)."""
+
+    query: str = Field(min_length=1, description="Search string (non-empty after trim). Up to 20 hits.")
+
+    @field_validator("query")
+    @classmethod
+    def query_strip_non_empty(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("query must be a non-empty string")
+        return s
+
+
+class MangabakaSearchHitSchema(Schema):
+    mangabaka_series_id: int = Field(ge=1)
+    title: str
+
+
+class SearchMangabakaSeriesResponse(Schema):
+    results: list[MangabakaSearchHitSchema]
+
+
 class ListSeriesCategoriesResponse(Schema):
     categories: list[str]
 
