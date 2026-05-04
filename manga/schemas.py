@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from ninja import Schema
 from pydantic import Field, computed_field, field_validator
@@ -96,9 +96,7 @@ class SetSeriesMangabakaResponse(Schema):
 class SearchMangabakaSeriesRequest(Schema):
     """Query MangaBaka series search (ids + titles for ``SetSeriesMangabaka``)."""
 
-    query: str = Field(min_length=1, description="Search string (non-empty after trim).")
-    limit: int = Field(default=12, ge=1, le=25)
-    page: int = Field(default=1, ge=1)
+    query: str = Field(min_length=1, description="Search string (non-empty after trim). Up to 20 hits.")
 
     @field_validator("query")
     @classmethod
@@ -116,7 +114,6 @@ class MangabakaSearchHitSchema(Schema):
 
 class SearchMangabakaSeriesResponse(Schema):
     results: list[MangabakaSearchHitSchema]
-    pagination: dict[str, Any] | None = None
 
 
 class ListSeriesCategoriesResponse(Schema):

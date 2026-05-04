@@ -178,16 +178,12 @@ def set_series_mangabaka(request, payload: SetSeriesMangabakaRequest):
 @router.post("/v1.Manga.SearchMangabakaSeries", response=SearchMangabakaSeriesResponse)
 def search_mangabaka_series_rpc(request, payload: SearchMangabakaSeriesRequest):
     try:
-        results, pagination = services.search_mangabaka_series(
-            query=payload.query,
-            limit=payload.limit,
-            page=payload.page,
-        )
+        results = services.search_mangabaka_series(query=payload.query)
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     except MangaBakaAPIError as exc:
         raise HttpError(502, str(exc)) from exc
-    return SearchMangabakaSeriesResponse(results=results, pagination=pagination)
+    return SearchMangabakaSeriesResponse(results=results)
 
 
 @router.post("/v1.Manga.ListSeriesCategories", response=ListSeriesCategoriesResponse)

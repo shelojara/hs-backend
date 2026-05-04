@@ -831,18 +831,15 @@ def _parse_mangabaka_search_hits(hits: list[dict]) -> list[dict[str, Any]]:
     return out
 
 
-def search_mangabaka_series(
-    *,
-    query: str,
-    limit: int,
-    page: int,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """Call MangaBaka ``/v1/series/search``; returns normalized hits and optional pagination dict."""
+_MANGABAKA_PUBLIC_SEARCH_MAX = 20
+
+
+def search_mangabaka_series(*, query: str) -> list[dict[str, Any]]:
+    """Call MangaBaka ``/v1/series/search``; at most 20 hits (no pagination)."""
     q = _normalize_mangabaka_search_query(query)
-    cap = max(1, min(25, limit))
-    p = max(1, page)
-    raw_hits, pagination = search_series(query=q, limit=cap, page=p)
-    return _parse_mangabaka_search_hits(raw_hits), pagination
+    raw_hits, _pag = search_series(query=q, limit=_MANGABAKA_PUBLIC_SEARCH_MAX, page=1)
+    parsed = _parse_mangabaka_search_hits(raw_hits)
+    return parsed[:_MANGABAKA_PUBLIC_SEARCH_MAX]
 
 
 def _mangabaka_no_match_snooze_hours() -> int:
