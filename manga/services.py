@@ -35,7 +35,7 @@ from manga.cbztools.utils import (
 from manga.mangabaka_client import MangaBakaAPIError, fetch_series_detail, search_series
 from manga.google_drive_service import (
     drive_http_error_message,
-    ensure_manga_drive_hierarchy,
+    ensure_series_drive_folder,
     upload_file_to_folder,
 )
 from manga.models import (
@@ -1171,7 +1171,7 @@ def run_cbz_convert_job(*, job_id: int) -> None:
 
 
 def run_google_drive_backup_job(*, job_id: int) -> None:
-    """Background worker: upload CBZ to Google Drive under ``Manga`` (or ``MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME``)."""
+    """Background worker: upload CBZ into ``Manga/<series name>/`` (root name from settings)."""
     try:
         job = GoogleDriveBackupJob.objects.select_related("series").get(pk=job_id)
     except GoogleDriveBackupJob.DoesNotExist:
@@ -1187,10 +1187,7 @@ def run_google_drive_backup_job(*, job_id: int) -> None:
         return
     try:
         resolved = resolve_cbz_download(manga_root=job.manga_root, item_id=item.pk)
-        folder_id = ensure_manga_drive_hierarchy(
-            series_rel_path=job.series.series_rel_path,
-            series_name=job.series.name,
-        )
+        folder_id = ensure_series_drive_folder(series_name=job.series.name)
         file_id = upload_file_to_folder(
             local_path=resolved.absolute_path,
             drive_filename=resolved.filename,

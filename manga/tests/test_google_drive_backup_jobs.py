@@ -52,7 +52,7 @@ def test_create_google_drive_backup_job_persists_pending_and_enqueues(mock_async
 
 @pytest.mark.django_db
 @patch("manga.services.upload_file_to_folder", return_value="file_xyz")
-@patch("manga.services.ensure_manga_drive_hierarchy", return_value="folder_abc")
+@patch("manga.services.ensure_series_drive_folder", return_value="folder_abc")
 @patch("manga.services.resolve_cbz_download")
 def test_run_google_drive_backup_job_success(
     mock_resolve,

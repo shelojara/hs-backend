@@ -101,22 +101,11 @@ def _root_folder_name() -> str:
     return n or "Manga"
 
 
-def ensure_manga_drive_hierarchy(
-    *,
-    series_rel_path: str,
-    series_name: str,
-) -> str:
-    """Return Drive folder id where series CBZ should live (creates ``Manga`` + path as needed)."""
+def ensure_series_drive_folder(*, series_name: str) -> str:
+    """Return Drive folder id for ``<root>/<series_name>/`` (creates ``Manga`` + series folder only)."""
     service = _drive_service()
-    root = "root"
-    manga_id = _ensure_folder(service=service, parent_id=root, name=_root_folder_name())
-    parts = [p for p in (series_rel_path or "").split("/") if p]
-    parent = manga_id
-    for part in parts:
-        parent = _ensure_folder(service=service, parent_id=parent, name=part)
-    if not parts:
-        parent = _ensure_folder(service=service, parent_id=manga_id, name=series_name)
-    return parent
+    manga_id = _ensure_folder(service=service, parent_id="root", name=_root_folder_name())
+    return _ensure_folder(service=service, parent_id=manga_id, name=series_name)
 
 
 def upload_file_to_folder(
