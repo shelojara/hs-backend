@@ -852,6 +852,69 @@ def _normalize_mangabaka_rating(raw: object) -> int | None:
     return None
 
 
+def _apply_mangabaka_detail_to_series_info(*, info: SeriesInfo, detail: dict) -> None:
+    desc = detail.get("description")
+    description = desc.strip() if isinstance(desc, str) else ""
+    rating = _normalize_mangabaka_rating(detail.get("rating"))
+    raw_type = detail.get("type")
+    if isinstance(raw_type, str):
+        series_type = raw_type.strip()[:64]
+    elif raw_type is None:
+        series_type = ""
+    else:
+        series_type = str(raw_type).strip()[:64]
+    info.description = description
+    info.rating = rating
+    info.series_type = series_type
+    info.is_complete = True
+    info.synced_at = timezone.now()
+    info.save(
+        update_fields=[
+            "description",
+            "rating",
+            "series_type",
+            "is_complete",
+            "synced_at",
+        ],
+    )
+
+
+def set_series_mangabaka_series_id(
+    *,
+    manga_root: str,
+    series_id: int,
+    mangabaka_series_id: int,
+) -> Series:
+    """Set ``SeriesInfo.mangabaka_series_id`` from user input and fill metadata from MangaBaka detail API."""
+    get_series(manga_root=manga_root, series_id=series_id)
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    detail = fetch_series_detail(series_id=mangabaka_series_id)
+
+    with transaction.atomic():
+        locked = Series.objects.select_for_update().get(pk=series_id, library_root=root_norm)
+        try:
+            info = SeriesInfo.objects.select_for_update(of=("self",)).get(series_id=locked.pk)
+        except SeriesInfo.DoesNotExist:
+            info = SeriesInfo.objects.create(
+                series=locked,
+                mangabaka_series_id=mangabaka_series_id,
+                description="",
+                rating=None,
+                is_complete=False,
+            )
+        else:
+            info.mangabaka_series_id = mangabaka_series_id
+            info.save(update_fields=["mangabaka_series_id"])
+
+        _apply_mangabaka_detail_to_series_info(info=info, detail=detail)
+
+        if locked.mangabaka_search_snoozed_until is not None:
+            locked.mangabaka_search_snoozed_until = None
+            locked.save(update_fields=["mangabaka_search_snoozed_until"])
+
+    return Series.objects.select_related("series_info").get(pk=series_id, library_root=root_norm)
+
+
 def sync_manga_series_info_from_mangabaka() -> int:
     """Fill ``SeriesInfo`` from MangaBaka API for a small batch of series missing complete metadata.
 
@@ -951,30 +1014,7 @@ def _sync_single_series_info_from_mangabaka(*, series: Series, search_limit: int
         )
         return
 
-    desc = detail.get("description")
-    description = desc.strip() if isinstance(desc, str) else ""
-    rating = _normalize_mangabaka_rating(detail.get("rating"))
-    raw_type = detail.get("type")
-    if isinstance(raw_type, str):
-        series_type = raw_type.strip()[:64]
-    elif raw_type is None:
-        series_type = ""
-    else:
-        series_type = str(raw_type).strip()[:64]
-    info.description = description
-    info.rating = rating
-    info.series_type = series_type
-    info.is_complete = True
-    info.synced_at = timezone.now()
-    info.save(
-        update_fields=[
-            "description",
-            "rating",
-            "series_type",
-            "is_complete",
-            "synced_at",
-        ],
-    )
+    _apply_mangabaka_detail_to_series_info(info=info, detail=detail)
 
 
 def run_cbz_convert_job(*, job_id: int) -> None:
