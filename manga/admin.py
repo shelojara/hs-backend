@@ -87,6 +87,7 @@ class SeriesAdmin(admin.ModelAdmin):
         "category",
         "series_rel_path",
         "item_count",
+        "converted_item_count",
         "library_root",
         "scanned_at",
     )

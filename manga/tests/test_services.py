@@ -47,6 +47,7 @@ def test_sync_series_items_for_cbz_path_updates_dropbox_flags(tmp_path, monkeypa
 
     s = Series.objects.get(library_root=abs_root, series_rel_path="MySeries")
     assert s.item_count == 1
+    assert s.converted_item_count == 1
     row = SeriesItem.objects.get(series=s, rel_path="MySeries/ch.cbz")
     assert row.in_dropbox is True
     assert row.dropbox_uploaded_at is not None
@@ -100,6 +101,8 @@ def test_sync_series_items_clears_dropbox_uploaded_at_when_not_in_dropbox(tmp_pa
     row.refresh_from_db()
     assert row.in_dropbox is False
     assert row.dropbox_uploaded_at is None
+    s = Series.objects.get(library_root=abs_root, series_rel_path="MySeries")
+    assert s.converted_item_count == 0
 
 
 @pytest.mark.django_db
@@ -201,6 +204,8 @@ def test_convert_cbz_evicts_oldest_dropbox_first_when_full(tmp_path, monkeypatch
             dropbox_download_name_for_series_cbz(old.rel_path, old.filename),
         ),
     ]
+    s.refresh_from_db()
+    assert s.converted_item_count == 1
 
 
 @pytest.mark.django_db
@@ -251,6 +256,8 @@ def test_convert_cbz_sets_dropbox_fields_without_series_resync(tmp_path, monkeyp
     row.refresh_from_db()
     assert row.in_dropbox is True
     assert row.dropbox_uploaded_at is not None
+    s.refresh_from_db()
+    assert s.converted_item_count == 1
 
 
 @pytest.mark.django_db

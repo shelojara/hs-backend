@@ -157,6 +157,10 @@ class Series(models.Model):
         default=0,
         help_text="Number of cached SeriesItem rows (CBZ files) for this series; set by library sync.",
     )
+    converted_item_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of SeriesItem rows with in_dropbox=true (converted / present in Dropbox cache).",
+    )
     mangabaka_search_snoozed_until = models.DateTimeField(
         null=True,
         blank=True,

@@ -205,10 +205,13 @@ def _evict_series_item_from_dropbox(*, item: SeriesItem) -> None:
         dropbox_download_name_for_series_cbz(item.rel_path, item.filename),
     )
     delete_dropbox_path(remote)
+    series_id = item.series_id
     SeriesItem.objects.filter(pk=item.pk).update(
         in_dropbox=False,
         dropbox_uploaded_at=None,
     )
+    n = SeriesItem.objects.filter(series_id=series_id, in_dropbox=True).count()
+    Series.objects.filter(pk=series_id).update(converted_item_count=n)
 
 
 def _ensure_dropbox_space_for_upload(
@@ -618,7 +621,8 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
 
             _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
             series.item_count = series.items.count()
-            series.save(update_fields=["item_count"])
+            series.converted_item_count = series.items.filter(in_dropbox=True).count()
+            series.save(update_fields=["item_count", "converted_item_count"])
 
     series_count = Series.objects.filter(library_root=root_norm).count()
     chapter_total = SeriesItem.objects.filter(series__library_root=root_norm).count()
@@ -668,7 +672,8 @@ def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> Non
 
         _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
         series.item_count = series.items.count()
-        series.save(update_fields=["item_count"])
+        series.converted_item_count = series.items.filter(in_dropbox=True).count()
+        series.save(update_fields=["item_count", "converted_item_count"])
 
 
 def convert_cbz(
@@ -712,6 +717,9 @@ def convert_cbz(
             in_dropbox=True,
             dropbox_uploaded_at=now,
         )
+        sid = item.series_id
+        n = SeriesItem.objects.filter(series_id=sid, in_dropbox=True).count()
+        Series.objects.filter(pk=sid).update(converted_item_count=n)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 

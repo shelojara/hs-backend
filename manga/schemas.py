@@ -18,6 +18,7 @@ class SeriesSchema(Schema):
     id: int
     name: str
     item_count: int
+    converted_item_count: int
     category: str = ""
     cover_image_base64: str | None = None
     cover_image_mime_type: str = ""
