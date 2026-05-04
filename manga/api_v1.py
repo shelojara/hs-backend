@@ -287,7 +287,7 @@ def list_series_items(request, payload: ListSeriesItemsRequest):
             series_id=payload.series_id,
             limit=payload.limit,
             offset=payload.offset,
-            in_dropbox=payload.in_dropbox,
+            is_converted=payload.is_converted,
         )
     except ValueError as exc:
         msg = str(exc)
@@ -300,7 +300,7 @@ def list_series_items(request, payload: ListSeriesItemsRequest):
                 id=r.id,
                 filename=r.filename,
                 size_bytes=r.size_bytes,
-                in_dropbox=r.in_dropbox,
+                is_converted=r.is_converted,
                 file_created_at=r.file_created_at,
                 cover_image_base64=r.cover_image_base64,
                 cover_image_mime_type=r.cover_image_mime_type or "",

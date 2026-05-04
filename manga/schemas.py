@@ -132,7 +132,7 @@ class SeriesItemSchema(Schema):
     id: int
     filename: str
     size_bytes: int | None
-    in_dropbox: bool
+    is_converted: bool
     file_created_at: datetime | None = None
     cover_image_base64: str | None = None
     cover_image_mime_type: str = ""
@@ -142,7 +142,7 @@ class ListSeriesItemsRequest(Schema):
     series_id: int = Field(ge=1)
     limit: int = Field(default=100, ge=1, le=500)
     offset: int = Field(default=0, ge=0)
-    in_dropbox: bool | None = None
+    is_converted: bool | None = None
 
 
 class ListSeriesItemsResponse(Schema):

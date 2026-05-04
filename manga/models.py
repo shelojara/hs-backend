@@ -368,7 +368,7 @@ class SeriesItem(models.Model):
     )
     filename = models.CharField(max_length=512)
     size_bytes = models.BigIntegerField(null=True, blank=True)
-    in_dropbox = models.BooleanField(default=False)
+    is_converted = models.BooleanField(default=False)
     dropbox_uploaded_at = models.DateTimeField(
         null=True,
         blank=True,

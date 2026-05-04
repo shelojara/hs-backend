@@ -74,7 +74,7 @@ class MangaListItem:
     path: str
     is_dir: bool
     size: int | None
-    in_dropbox: bool
+    is_converted: bool
     file_created_at: datetime | None = None
 
 
@@ -149,7 +149,7 @@ def list_series_items(
     series_id: int,
     limit: int = 100,
     offset: int = 0,
-    in_dropbox: bool | None = None,
+    is_converted: bool | None = None,
 ) -> list[SeriesItem]:
     """Query ``SeriesItem`` for ``series_id`` under ``manga_root`` (natural order by ``filename``)."""
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
@@ -158,8 +158,8 @@ def list_series_items(
     except Series.DoesNotExist as exc:
         raise ValueError("Series not found") from exc
     qs = series.items.all()
-    if in_dropbox is not None:
-        qs = qs.filter(in_dropbox=in_dropbox)
+    if is_converted is not None:
+        qs = qs.filter(is_converted=is_converted)
     rows = list(qs)
     rows.sort(key=lambda r: alphanum_key(r.filename))
     return rows[offset : offset + limit]
@@ -226,7 +226,7 @@ def _evict_series_item_from_dropbox(*, item: SeriesItem) -> None:
     )
     delete_dropbox_path(remote)
     SeriesItem.objects.filter(pk=item.pk).update(
-        in_dropbox=False,
+        is_converted=False,
         dropbox_uploaded_at=None,
     )
 
@@ -247,7 +247,7 @@ def _ensure_dropbox_space_for_upload(
             break
         victim = (
             SeriesItem.objects.filter(
-                in_dropbox=True,
+                is_converted=True,
                 dropbox_uploaded_at__isnull=False,
                 series__library_root=os.path.abspath(os.path.expanduser(manga_root)),
             )
@@ -505,14 +505,14 @@ def list_manga_cbz_files(*, manga_root: str, path: str) -> list[MangaListItem]:
     for name, rel_path_os, size, parent_posix, file_created_at in pending:
         seg = _dropbox_list_segment_for_folder(parent_rel=parent_posix)
         dfs = dropbox_by_segment[seg]
-        in_dropbox = any(name in df.name for df in dfs)
+        is_converted = any(name in df.name for df in dfs)
         out.append(
             MangaListItem(
                 name=name,
                 path=rel_path_os,
                 is_dir=False,
                 size=size,
-                in_dropbox=in_dropbox,
+                is_converted=is_converted,
                 file_created_at=file_created_at,
             ),
         )
@@ -624,14 +624,14 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
                     defaults={
                         "filename": item.name,
                         "size_bytes": item.size,
-                        "in_dropbox": item.in_dropbox,
+                        "is_converted": item.is_converted,
                         "file_created_at": item.file_created_at,
                     },
                 )
-                if item.in_dropbox and row.dropbox_uploaded_at is None:
+                if item.is_converted and row.dropbox_uploaded_at is None:
                     row.dropbox_uploaded_at = timezone.now()
                     row.save(update_fields=["dropbox_uploaded_at"])
-                elif not item.in_dropbox and row.dropbox_uploaded_at is not None:
+                elif not item.is_converted and row.dropbox_uploaded_at is not None:
                     row.dropbox_uploaded_at = None
                     row.save(update_fields=["dropbox_uploaded_at"])
                 _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
@@ -674,14 +674,14 @@ def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> Non
                 defaults={
                     "filename": item.name,
                     "size_bytes": item.size,
-                    "in_dropbox": item.in_dropbox,
+                    "is_converted": item.is_converted,
                     "file_created_at": item.file_created_at,
                 },
             )
-            if item.in_dropbox and row.dropbox_uploaded_at is None:
+            if item.is_converted and row.dropbox_uploaded_at is None:
                 row.dropbox_uploaded_at = timezone.now()
                 row.save(update_fields=["dropbox_uploaded_at"])
-            elif not item.in_dropbox and row.dropbox_uploaded_at is not None:
+            elif not item.is_converted and row.dropbox_uploaded_at is not None:
                 row.dropbox_uploaded_at = None
                 row.save(update_fields=["dropbox_uploaded_at"])
             _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
@@ -729,7 +729,7 @@ def convert_cbz(
             upload_to_dropbox(output_path, path, download_name)
         now = timezone.now()
         SeriesItem.objects.filter(pk=item.pk).update(
-            in_dropbox=True,
+            is_converted=True,
             dropbox_uploaded_at=now,
         )
     finally:

@@ -49,7 +49,7 @@ def test_sync_series_items_for_cbz_path_updates_dropbox_flags(tmp_path, monkeypa
     s = Series.objects.get(library_root=abs_root, series_rel_path="MySeries")
     assert s.item_count == 1
     row = SeriesItem.objects.get(series=s, rel_path="MySeries/ch.cbz")
-    assert row.in_dropbox is True
+    assert row.is_converted is True
     assert row.dropbox_uploaded_at is not None
 
 
@@ -99,7 +99,7 @@ def test_sync_series_items_clears_dropbox_uploaded_at_when_not_in_dropbox(tmp_pa
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _seg: [])
     sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
     row.refresh_from_db()
-    assert row.in_dropbox is False
+    assert row.is_converted is False
     assert row.dropbox_uploaded_at is None
 
 
@@ -154,7 +154,7 @@ def test_convert_cbz_evicts_oldest_dropbox_first_when_full(tmp_path, monkeypatch
         rel_path="series/old.cbz",
         filename="old.cbz",
         size_bytes=1,
-        in_dropbox=True,
+        is_converted=True,
         dropbox_uploaded_at=timezone.now(),
     )
     new = SeriesItem.objects.create(
@@ -192,9 +192,9 @@ def test_convert_cbz_evicts_oldest_dropbox_first_when_full(tmp_path, monkeypatch
 
     old.refresh_from_db()
     new.refresh_from_db()
-    assert old.in_dropbox is False
+    assert old.is_converted is False
     assert old.dropbox_uploaded_at is None
-    assert new.in_dropbox is True
+    assert new.is_converted is True
     assert new.dropbox_uploaded_at is not None
     assert deleted == [
         dropbox_remote_path_for_series_cbz(
@@ -250,7 +250,7 @@ def test_convert_cbz_sets_dropbox_fields_without_series_resync(tmp_path, monkeyp
 
     convert_cbz(manga_root=str(root), item_id=row.pk, kind="manga")
     row.refresh_from_db()
-    assert row.in_dropbox is True
+    assert row.is_converted is True
     assert row.dropbox_uploaded_at is not None
 
 
@@ -722,7 +722,7 @@ def test_list_series_items_sorts_filenames_naturally(tmp_path, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_list_series_items_filters_by_in_dropbox(tmp_path, monkeypatch):
+def test_list_series_items_filters_by_is_converted(tmp_path, monkeypatch):
     root = tmp_path / "lib"
     root.mkdir()
     (root / "S").mkdir()
@@ -734,16 +734,16 @@ def test_list_series_items_filters_by_in_dropbox(tmp_path, monkeypatch):
     s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
     a = SeriesItem.objects.get(series=s, filename="a.cbz")
     b = SeriesItem.objects.get(series=s, filename="b.cbz")
-    a.in_dropbox = True
-    a.save(update_fields=["in_dropbox"])
+    a.is_converted = True
+    a.save(update_fields=["is_converted"])
 
     only_dropbox = list_series_items(
-        manga_root=str(root), series_id=s.id, in_dropbox=True
+        manga_root=str(root), series_id=s.id, is_converted=True
     )
     assert [r.id for r in only_dropbox] == [a.id]
 
     not_dropbox = list_series_items(
-        manga_root=str(root), series_id=s.id, in_dropbox=False
+        manga_root=str(root), series_id=s.id, is_converted=False
     )
     assert [r.id for r in not_dropbox] == [b.id]
 
