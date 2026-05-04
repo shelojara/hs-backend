@@ -232,7 +232,7 @@ FLAGS: dict[str, list] = {
 # django-q2 task queue — ORM broker (uses the default SQLite database)
 Q_CLUSTER = {
     "name": "pagechecker",
-    "workers": int(os.getenv("Q_WORKERS", "2")),
+    "workers": int(os.getenv("Q_WORKERS", "4")),
     "timeout": 240,
     "retry": 300,
     "orm": "default",
