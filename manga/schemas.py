@@ -106,7 +106,7 @@ class SyncSeriesItemsRequest(Schema):
 
 
 class SyncSeriesItemsResponse(Schema):
-    series: SeriesSchema
+    series_id: int
 
 
 class SearchMangabakaSeriesRequest(Schema):

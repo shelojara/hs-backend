@@ -276,7 +276,7 @@ def sync_series_items_rpc(request, payload: SyncSeriesItemsRequest):
         if msg == "Series not found":
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
-    return SyncSeriesItemsResponse(series=_series_schema(row))
+    return SyncSeriesItemsResponse(series_id=row.pk)
 
 
 @router.post("/v1.Manga.SearchMangabakaSeries", response=SearchMangabakaSeriesResponse)
