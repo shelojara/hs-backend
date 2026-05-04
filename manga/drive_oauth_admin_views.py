@@ -16,6 +16,9 @@ from manga.models import GoogleDriveApplicationCredentials
 
 logger = logging.getLogger(__name__)
 
+# PKCE: authorization_url() generates code_verifier on the Flow; callback must use same verifier.
+SESSION_CODE_VERIFIER_KEY = "manga_gdrive_oauth_code_verifier"
+
 
 def _admin_change_url() -> str:
     return reverse("admin:manga_googledriveapplicationcredentials_change", args=(1,))
@@ -71,6 +74,8 @@ def google_drive_oauth_start(request: HttpRequest) -> HttpResponse:
         include_granted_scopes="true",
         prompt="consent",
     )
+    request.session[SESSION_CODE_VERIFIER_KEY] = flow.code_verifier
+    request.session.modified = True
     return HttpResponseRedirect(auth_url)
 
 
@@ -94,6 +99,14 @@ def google_drive_oauth_callback(request: HttpRequest) -> HttpResponse:
     if not cid or not csec:
         return HttpResponseBadRequest("Client id/secret not configured.")
 
+    code_verifier = request.session.pop(SESSION_CODE_VERIFIER_KEY, None)
+    if not code_verifier:
+        messages.error(
+            request,
+            "OAuth session expired or missing PKCE data. Use Start Google OAuth again from this admin page.",
+        )
+        return redirect(_admin_change_url())
+
     client_config = {
         "web": {
             "client_id": cid,
@@ -106,6 +119,7 @@ def google_drive_oauth_callback(request: HttpRequest) -> HttpResponse:
         client_config,
         scopes=["https://www.googleapis.com/auth/drive.file"],
         redirect_uri=_redirect_uri(request),
+        code_verifier=code_verifier,
     )
     try:
         flow.fetch_token(authorization_response=_public_https_url(request))
