@@ -13,3 +13,8 @@ def run_manga_library_cache_refresh() -> None:
 def run_cbz_convert_job(job_id: int) -> None:
     """django-q2 entrypoint for async CBZ convert + Dropbox upload."""
     services.run_cbz_convert_job(job_id=job_id)
+
+
+def run_manga_mangabaka_series_info_sync() -> None:
+    """Periodic job: small batch MangaBaka metadata → ``SeriesInfo``."""
+    services.sync_manga_series_info_from_mangabaka()
