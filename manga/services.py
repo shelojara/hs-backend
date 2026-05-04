@@ -951,6 +951,37 @@ def set_series_mangabaka_series_id(
     return Series.objects.select_related("series_info").get(pk=series_id, library_root=root_norm)
 
 
+def refresh_series_info_from_mangabaka(*, manga_root: str, series_id: int) -> Series:
+    """Re-fetch MangaBaka detail for *series_id* when ``SeriesInfo.mangabaka_series_id`` already set.
+
+    Does not run title search (unlike scheduled sync). Raises ``ValueError`` when no linked id.
+    """
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    get_series(manga_root=manga_root, series_id=series_id)
+    while True:
+        try:
+            probe = SeriesInfo.objects.get(series_id=series_id)
+        except SeriesInfo.DoesNotExist as exc:
+            raise ValueError("Series has no MangaBaka link yet") from exc
+        if probe.mangabaka_series_id is None:
+            raise ValueError("Series has no MangaBaka link yet")
+        mb_id = probe.mangabaka_series_id
+        detail = fetch_series_detail(series_id=mb_id)
+        with transaction.atomic():
+            locked = Series.objects.select_for_update().get(pk=series_id, library_root=root_norm)
+            try:
+                info = SeriesInfo.objects.select_for_update(of=("self",)).get(series_id=locked.pk)
+            except SeriesInfo.DoesNotExist as exc:
+                raise ValueError("Series has no MangaBaka link yet") from exc
+            if info.mangabaka_series_id is None:
+                raise ValueError("Series has no MangaBaka link yet")
+            if info.mangabaka_series_id != mb_id:
+                continue
+            _apply_mangabaka_detail_to_series_info(info=info, detail=detail)
+            break
+    return Series.objects.select_related("series_info").get(pk=series_id, library_root=root_norm)
+
+
 def sync_manga_series_info_from_mangabaka() -> int:
     """Fill ``SeriesInfo`` from MangaBaka API for a small batch of series missing complete metadata.
 
