@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 
 from ninja import Schema
-from pydantic import Field, field_validator
+from pydantic import Field, computed_field, field_validator
 
 
 class SeriesInfoSchema(Schema):
@@ -12,6 +12,13 @@ class SeriesInfoSchema(Schema):
     description: str | None = None
     rating: int | None = None
     synced_at: datetime | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def mangabaka_url(self) -> str | None:
+        if self.mangabaka_series_id is None:
+            return None
+        return f"https://mangabaka.org/{self.mangabaka_series_id}"
 
 
 class SeriesSchema(Schema):
