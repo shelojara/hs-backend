@@ -3,7 +3,7 @@ import logging
 import os
 import posixpath
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import shutil
 import tempfile
 import zipfile
@@ -794,6 +794,10 @@ def _mangabaka_search_limit() -> int:
     return max(3, min(25, int(getattr(settings, "MANGABAKA_SEARCH_LIMIT", 12))))
 
 
+def _mangabaka_no_match_snooze_hours() -> int:
+    return max(1, int(getattr(settings, "MANGABAKA_NO_MATCH_SNOOZE_HOURS", 24)))
+
+
 def _pick_mangabaka_series_id_from_search_hits(
     *,
     local_name: str,
@@ -839,15 +843,26 @@ def _normalize_mangabaka_rating(raw: object) -> int | None:
 def sync_manga_series_info_from_mangabaka() -> int:
     """Fill ``SeriesInfo`` from MangaBaka API for a small batch of series missing complete metadata.
 
-    Skips rows that already have ``SeriesInfo.is_complete`` (description synced or search exhausted).
+    ``SeriesInfo`` rows exist only after a confident title match; no-match uses
+    ``Series.mangabaka_search_snoozed_until`` on the parent series. Skips series with complete
+    info or active snooze. Detail-fetch errors retry each run.
     Returns number of series rows processed this run.
     """
     batch = _mangabaka_info_batch_size()
     delay = _mangabaka_http_delay_seconds()
     search_limit = _mangabaka_search_limit()
-    has_complete = SeriesInfo.objects.filter(series_id=OuterRef("pk"), is_complete=True)
+    now = timezone.now()
+    skip_done = SeriesInfo.objects.filter(
+        series_id=OuterRef("pk"),
+        is_complete=True,
+        mangabaka_series_id__isnull=False,
+    )
     candidates = (
-        Series.objects.filter(~Exists(has_complete))
+        Series.objects.filter(~Exists(skip_done))
+        .filter(
+            Q(mangabaka_search_snoozed_until__isnull=True)
+            | Q(mangabaka_search_snoozed_until__lte=now),
+        )
         .order_by("library_root", "name", "series_rel_path", "pk")[:batch]
     )
     processed = 0
@@ -871,63 +886,68 @@ def sync_manga_series_info_from_mangabaka() -> int:
 
 @transaction.atomic
 def _sync_single_series_info_from_mangabaka(*, series: Series, search_limit: int) -> None:
-    info, _created = SeriesInfo.objects.select_for_update(of=("self",)).get_or_create(
-        series=series,
-        defaults={
-            "description": "",
-            "rating": None,
-            "mangabaka_series_id": None,
-            "is_complete": False,
-        },
-    )
-    if info.is_complete:
+    locked = Series.objects.select_for_update().get(pk=series.pk)
+    now = timezone.now()
+    if (
+        locked.mangabaka_search_snoozed_until is not None
+        and locked.mangabaka_search_snoozed_until > now
+    ):
         return
 
-    mb_id = info.mangabaka_series_id
+    try:
+        info = SeriesInfo.objects.select_for_update(of=("self",)).get(series_id=locked.pk)
+    except SeriesInfo.DoesNotExist:
+        info = None
+
+    if info is not None and info.is_complete and info.mangabaka_series_id is not None:
+        return
+
+    mb_id = info.mangabaka_series_id if info else None
     if mb_id is None:
-        hits, _pag = search_series(query=series.name.strip(), limit=search_limit, page=1)
-        mb_id = _pick_mangabaka_series_id_from_search_hits(local_name=series.name, hits=hits)
+        hits, _pag = search_series(query=locked.name.strip(), limit=search_limit, page=1)
+        mb_id = _pick_mangabaka_series_id_from_search_hits(local_name=locked.name, hits=hits)
         if mb_id is None:
-            info.mangabaka_series_id = None
-            info.description = ""
-            info.rating = None
-            info.is_complete = True
-            info.synced_at = timezone.now()
-            info.save(
-                update_fields=[
-                    "mangabaka_series_id",
-                    "description",
-                    "rating",
-                    "is_complete",
-                    "synced_at",
-                ],
+            locked.mangabaka_search_snoozed_until = now + timedelta(
+                hours=_mangabaka_no_match_snooze_hours(),
             )
+            locked.save(update_fields=["mangabaka_search_snoozed_until"])
             return
+        if info is None:
+            SeriesInfo.objects.create(
+                series=locked,
+                mangabaka_series_id=mb_id,
+                description="",
+                rating=None,
+                is_complete=False,
+            )
+        else:
+            info.mangabaka_series_id = mb_id
+            info.save(update_fields=["mangabaka_series_id"])
+        if locked.mangabaka_search_snoozed_until is not None:
+            locked.mangabaka_search_snoozed_until = None
+            locked.save(update_fields=["mangabaka_search_snoozed_until"])
+        info = SeriesInfo.objects.select_for_update(of=("self",)).get(series_id=locked.pk)
 
     try:
-        detail = fetch_series_detail(series_id=mb_id)
+        detail = fetch_series_detail(series_id=info.mangabaka_series_id)
     except MangaBakaAPIError as exc:
         logger.warning(
             "MangaBaka detail fetch failed series pk=%s mb_id=%s: %s",
-            series.pk,
-            mb_id,
+            locked.pk,
+            info.mangabaka_series_id,
             exc,
         )
-        info.mangabaka_series_id = mb_id
-        info.save(update_fields=["mangabaka_series_id"])
         return
 
     desc = detail.get("description")
     description = desc.strip() if isinstance(desc, str) else ""
     rating = _normalize_mangabaka_rating(detail.get("rating"))
-    info.mangabaka_series_id = mb_id
     info.description = description
     info.rating = rating
     info.is_complete = True
     info.synced_at = timezone.now()
     info.save(
         update_fields=[
-            "mangabaka_series_id",
             "description",
             "rating",
             "is_complete",
