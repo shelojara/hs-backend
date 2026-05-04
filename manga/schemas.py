@@ -93,6 +93,14 @@ class SetSeriesMangabakaResponse(Schema):
     series: SeriesSchema
 
 
+class RefreshSeriesInfoRequest(Schema):
+    series_id: int = Field(ge=1)
+
+
+class RefreshSeriesInfoResponse(Schema):
+    series_id: int
+
+
 class SearchMangabakaSeriesRequest(Schema):
     """Query MangaBaka series search (ids + titles for ``SetSeriesMangabaka``)."""
 

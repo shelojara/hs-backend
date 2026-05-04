@@ -9,6 +9,7 @@ from django.utils import timezone as django_timezone
 from manga.models import Series, SeriesInfo
 from manga.services import (
     _pick_mangabaka_series_id_from_search_hits,
+    refresh_series_info_from_mangabaka,
     set_series_mangabaka_series_id,
     sync_manga_series_info_from_mangabaka,
 )
@@ -294,3 +295,65 @@ def test_set_series_mangabaka_wrong_root_raises():
             series_id=s.pk,
             mangabaka_series_id=1,
         )
+
+
+@pytest.mark.django_db
+def test_refresh_series_info_updates_detail_when_mangabaka_id_set(settings):
+    settings.MANGA_ROOT = "/tmp/lib"
+    s = Series.objects.create(
+        library_root="/tmp/lib",
+        series_rel_path="R",
+        name="Ref",
+        item_count=0,
+    )
+    SeriesInfo.objects.create(
+        series=s,
+        mangabaka_series_id=50,
+        description="old",
+        rating=1,
+        is_complete=True,
+        synced_at=django_timezone.now(),
+    )
+    with patch(
+        "manga.services.fetch_series_detail",
+        return_value={"description": "fresh", "rating": 10, "type": "manga"},
+    ):
+        refresh_series_info_from_mangabaka(manga_root="/tmp/lib", series_id=s.pk)
+    info = SeriesInfo.objects.get(series=s)
+    assert info.description == "fresh"
+    assert info.rating == 10
+    assert info.series_type == "manga"
+    assert info.is_complete is True
+
+
+@pytest.mark.django_db
+def test_refresh_series_info_raises_without_mangabaka_link(settings):
+    settings.MANGA_ROOT = "/tmp/lib"
+    s = Series.objects.create(
+        library_root="/tmp/lib",
+        series_rel_path="S",
+        name="No link",
+        item_count=0,
+    )
+    with pytest.raises(ValueError, match="no MangaBaka link"):
+        refresh_series_info_from_mangabaka(manga_root="/tmp/lib", series_id=s.pk)
+
+
+@pytest.mark.django_db
+def test_refresh_series_info_raises_when_seriesinfo_has_null_mangabaka_id(settings):
+    settings.MANGA_ROOT = "/tmp/lib"
+    s = Series.objects.create(
+        library_root="/tmp/lib",
+        series_rel_path="T",
+        name="Null id",
+        item_count=0,
+    )
+    SeriesInfo.objects.create(
+        series=s,
+        mangabaka_series_id=None,
+        description="",
+        rating=None,
+        is_complete=False,
+    )
+    with pytest.raises(ValueError, match="no MangaBaka link"):
+        refresh_series_info_from_mangabaka(manga_root="/tmp/lib", series_id=s.pk)
