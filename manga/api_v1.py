@@ -1,11 +1,12 @@
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.http import FileResponse
 from ninja import Router
 from ninja.errors import HttpError
 
 from auth.security import protected_api_auth
 from manga import services
-from manga.models import CbzConvertJob
+from manga.models import CbzConvertJob, Series
 from manga.schemas import (
     ConvertCbzRequest,
     ConvertCbzResponse,
@@ -23,11 +24,25 @@ from manga.schemas import (
     ListSeriesCategoriesResponse,
     ListSeriesRequest,
     ListSeriesResponse,
+    SeriesInfoSchema,
     SeriesItemSchema,
     SeriesSchema,
 )
 
 router = Router(auth=protected_api_auth, tags=["Manga"])
+
+
+def _series_info_schema_or_none(series: Series) -> SeriesInfoSchema | None:
+    try:
+        inf = series.series_info
+    except ObjectDoesNotExist:
+        return None
+    return SeriesInfoSchema(
+        mangabaka_series_id=inf.mangabaka_series_id,
+        description=(inf.description or "").strip() or None,
+        rating=inf.rating,
+        synced_at=inf.synced_at,
+    )
 
 
 def _cbz_convert_job_schema(j: CbzConvertJob) -> CbzConvertJobSchema:
@@ -113,6 +128,7 @@ def list_series(request, payload: ListSeriesRequest):
                 category=r.category,
                 cover_image_base64=r.cover_image_base64,
                 cover_image_mime_type=r.cover_image_mime_type or "",
+                info=_series_info_schema_or_none(r),
             )
             for r in rows
         ],

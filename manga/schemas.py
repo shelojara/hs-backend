@@ -5,6 +5,15 @@ from ninja import Schema
 from pydantic import Field, field_validator
 
 
+class SeriesInfoSchema(Schema):
+    """MangaBaka-backed metadata when a ``SeriesInfo`` row exists."""
+
+    mangabaka_series_id: int | None = None
+    description: str | None = None
+    rating: int | None = None
+    synced_at: datetime | None = None
+
+
 class SeriesSchema(Schema):
     id: int
     name: str
@@ -12,6 +21,7 @@ class SeriesSchema(Schema):
     category: str = ""
     cover_image_base64: str | None = None
     cover_image_mime_type: str = ""
+    info: SeriesInfoSchema | None = None
 
 
 class ListSeriesRequest(Schema):
