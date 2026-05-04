@@ -1,15 +1,15 @@
-"""Google Drive uploads for manga backups (service account credentials)."""
+"""Google Drive uploads (OAuth user credentials from Django admin)."""
 
 from __future__ import annotations
 
 import io
 import json
 import logging
-import os
 from typing import Any
 
 from django.conf import settings
-from google.oauth2 import service_account
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials as OAuthCredentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
@@ -20,26 +20,61 @@ _DRIVE_SCOPES = ("https://www.googleapis.com/auth/drive.file",)
 _DRIVE_MIME_FOLDER = "application/vnd.google-apps.folder"
 
 
-def _drive_credentials() -> service_account.Credentials:
-    """Load service account credentials from file path or JSON env string."""
-    path = getattr(settings, "GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "") or ""
-    raw_json = getattr(settings, "GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "") or ""
-    if path:
-        p = os.path.expanduser(path)
-        if not os.path.isfile(p):
-            msg = f"GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE not found: {p}"
-            raise RuntimeError(msg)
-        return service_account.Credentials.from_service_account_file(p, scopes=_DRIVE_SCOPES)
-    if raw_json.strip():
-        try:
-            info = json.loads(raw_json)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON is not valid JSON") from exc
-        return service_account.Credentials.from_service_account_info(info, scopes=_DRIVE_SCOPES)
-    raise RuntimeError(
-        "Google Drive not configured: set GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE "
-        "or GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON",
+def _persist_oauth_tokens(creds: OAuthCredentials) -> None:
+    from manga.models import GoogleDriveApplicationCredentials
+
+    row = GoogleDriveApplicationCredentials.objects.filter(pk=1).first()
+    if not row:
+        return
+    row.access_token = creds.token or ""
+    row.access_token_expires_at = creds.expiry
+    if creds.refresh_token:
+        row.refresh_token = creds.refresh_token
+    row.save(
+        update_fields=[
+            "access_token",
+            "access_token_expires_at",
+            "refresh_token",
+            "updated_at",
+        ],
     )
+
+
+def _oauth_credentials() -> OAuthCredentials | None:
+    from manga.models import GoogleDriveApplicationCredentials
+
+    row = GoogleDriveApplicationCredentials.get_solo()
+    if not row:
+        return None
+    refresh = (row.refresh_token or "").strip()
+    cid = (row.client_id or "").strip()
+    csec = (row.client_secret or "").strip()
+    if not refresh or not cid or not csec:
+        return None
+    token_uri = (row.token_uri or "").strip() or "https://oauth2.googleapis.com/token"
+    creds = OAuthCredentials(
+        token=(row.access_token or "").strip() or None,
+        refresh_token=refresh,
+        token_uri=token_uri,
+        client_id=cid,
+        client_secret=csec,
+        scopes=list(_DRIVE_SCOPES),
+    )
+    if creds.expired or not creds.token:
+        creds.refresh(Request())
+        _persist_oauth_tokens(creds)
+    return creds
+
+
+def _drive_credentials() -> OAuthCredentials:
+    oauth = _oauth_credentials()
+    if oauth is None:
+        raise RuntimeError(
+            "Google Drive not configured: in Django admin open "
+            "Manga → Google Drive OAuth credentials, set Web client id and secret, save, "
+            "then use Start Google OAuth (superuser).",
+        )
+    return oauth
 
 
 def _drive_service() -> Any:
@@ -107,7 +142,7 @@ def _root_folder_name() -> str:
 
 
 def _drive_parent_for_root_folder() -> str:
-    """Folder id where ``MANGA`` root folder is created; must belong to storage with quota (not SA My Drive)."""
+    """Folder id where root ``Manga`` folder is created; ``root`` = authenticated user's My Drive."""
     pid = (getattr(settings, "MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID", None) or "").strip()
     return pid or "root"
 
@@ -210,14 +245,34 @@ def upload_bytes_to_folder(
     return str(created["id"])
 
 
+_DRIVE_QUOTA_HINT = (
+    " Check the signed-in Google account’s Drive storage, or reconnect OAuth in admin "
+    "(Manga → Google Drive OAuth credentials)."
+)
+
+
 def drive_http_error_message(exc: BaseException) -> str:
     if isinstance(exc, HttpError):
         try:
             payload = json.loads(exc.content.decode()) if exc.content else {}
             err = payload.get("error", {})
             msg = err.get("message") if isinstance(err, dict) else None
+            reasons = err.get("errors") if isinstance(err, dict) else None
+            reason_codes: list[str] = []
+            if isinstance(reasons, list):
+                for item in reasons:
+                    if isinstance(item, dict) and item.get("reason"):
+                        reason_codes.append(str(item["reason"]))
+            base: str | None = None
             if msg:
-                return f"Google Drive API error: {msg}"
+                base = f"Google Drive API error: {msg}"
+            if base is None:
+                base = f"Google Drive API HTTP {exc.resp.status if exc.resp else 'error'}"
+            if "storageQuotaExceeded" in reason_codes or (
+                isinstance(msg, str) and "storage quota" in msg.lower()
+            ):
+                return base + _DRIVE_QUOTA_HINT
+            return base
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
         return f"Google Drive API HTTP {exc.resp.status if exc.resp else 'error'}"
