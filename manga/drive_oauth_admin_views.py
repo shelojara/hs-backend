@@ -21,8 +21,16 @@ def _admin_change_url() -> str:
     return reverse("admin:manga_googledriveapplicationcredentials_change", args=(1,))
 
 
+def _public_https_url(request: HttpRequest, location: str | None = None) -> str:
+    """Google OAuth redirect_uri must be HTTPS; prod often sees HTTP behind TLS terminator."""
+    url = request.build_absolute_uri(location)
+    if url.startswith("http://"):
+        return "https://" + url[len("http://") :]
+    return url
+
+
 def _redirect_uri(request: HttpRequest) -> str:
-    return request.build_absolute_uri(reverse("admin_manga_gdrive_oauth_callback"))
+    return _public_https_url(request, reverse("admin_manga_gdrive_oauth_callback"))
 
 
 def _superuser(u):
@@ -100,7 +108,7 @@ def google_drive_oauth_callback(request: HttpRequest) -> HttpResponse:
         redirect_uri=_redirect_uri(request),
     )
     try:
-        flow.fetch_token(authorization_response=request.build_absolute_uri())
+        flow.fetch_token(authorization_response=_public_https_url(request))
     except Exception as exc:
         logger.exception("Google Drive OAuth token exchange failed")
         messages.error(request, f"OAuth token exchange failed: {exc}")
