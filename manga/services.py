@@ -618,6 +618,41 @@ def _iter_series_rel_paths_with_direct_cbz(
     return out
 
 
+def _replace_series_items_from_cbz_listing(
+    *,
+    manga_root: str,
+    series: Series,
+    items: list[MangaListItem],
+) -> None:
+    """Within caller transaction: reconcile ``SeriesItem`` rows with *items* (drop stale, upsert, covers)."""
+    want_rel = {i.path.replace("\\", "/") for i in items}
+    series.items.exclude(rel_path__in=want_rel).delete()
+    for item in items:
+        rp = item.path.replace("\\", "/")
+        row, _created = SeriesItem.objects.update_or_create(
+            series=series,
+            rel_path=rp,
+            defaults={
+                "filename": item.name,
+                "size_bytes": item.size,
+                "is_converted": item.is_converted,
+                "file_created_at": item.file_created_at,
+            },
+        )
+        if item.is_converted and row.dropbox_uploaded_at is None:
+            row.dropbox_uploaded_at = timezone.now()
+            row.save(update_fields=["dropbox_uploaded_at"])
+        elif not item.is_converted and row.dropbox_uploaded_at is not None:
+            row.dropbox_uploaded_at = None
+            row.save(update_fields=["dropbox_uploaded_at"])
+        _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
+
+    _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
+    series.item_count = series.items.count()
+    series.save(update_fields=["item_count"])
+    _refresh_series_items_google_drive_backed_up(series=series)
+
+
 def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
     """Walk filesystem; upsert ``Series`` / ``SeriesItem`` rows (drops vanished).
 
@@ -652,34 +687,11 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
             )
 
             items = list_manga_cbz_files(manga_root=manga_root, path=rel_path)
-            want_rel = {i.path.replace("\\", "/") for i in items}
-
-            series.items.exclude(rel_path__in=want_rel).delete()
-
-            for item in items:
-                rp = item.path.replace("\\", "/")
-                row, _created = SeriesItem.objects.update_or_create(
-                    series=series,
-                    rel_path=rp,
-                    defaults={
-                        "filename": item.name,
-                        "size_bytes": item.size,
-                        "is_converted": item.is_converted,
-                        "file_created_at": item.file_created_at,
-                    },
-                )
-                if item.is_converted and row.dropbox_uploaded_at is None:
-                    row.dropbox_uploaded_at = timezone.now()
-                    row.save(update_fields=["dropbox_uploaded_at"])
-                elif not item.is_converted and row.dropbox_uploaded_at is not None:
-                    row.dropbox_uploaded_at = None
-                    row.save(update_fields=["dropbox_uploaded_at"])
-                _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
-
-            _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
-            series.item_count = series.items.count()
-            series.save(update_fields=["item_count"])
-            _refresh_series_items_google_drive_backed_up(series=series)
+            _replace_series_items_from_cbz_listing(
+                manga_root=manga_root,
+                series=series,
+                items=items,
+            )
 
     series_count = Series.objects.filter(library_root=root_norm).count()
     chapter_total = SeriesItem.objects.filter(series__library_root=root_norm).count()
@@ -705,32 +717,38 @@ def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> Non
             series_rel_path=series_rel,
             defaults={"name": display_name},
         )
-        want_rel = {i.path.replace("\\", "/") for i in items}
-        series.items.exclude(rel_path__in=want_rel).delete()
-        for item in items:
-            rp = item.path.replace("\\", "/")
-            row, _created = SeriesItem.objects.update_or_create(
-                series=series,
-                rel_path=rp,
-                defaults={
-                    "filename": item.name,
-                    "size_bytes": item.size,
-                    "is_converted": item.is_converted,
-                    "file_created_at": item.file_created_at,
-                },
-            )
-            if item.is_converted and row.dropbox_uploaded_at is None:
-                row.dropbox_uploaded_at = timezone.now()
-                row.save(update_fields=["dropbox_uploaded_at"])
-            elif not item.is_converted and row.dropbox_uploaded_at is not None:
-                row.dropbox_uploaded_at = None
-                row.save(update_fields=["dropbox_uploaded_at"])
-            _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
+        _replace_series_items_from_cbz_listing(
+            manga_root=manga_root,
+            series=series,
+            items=items,
+        )
 
-        _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
-        series.item_count = series.items.count()
-        series.save(update_fields=["item_count"])
-        _refresh_series_items_google_drive_backed_up(series=series)
+
+def sync_series_items_for_series(*, manga_root: str, series_id: int) -> Series:
+    """Re-scan one series directory on disk; upsert missing ``SeriesItem`` rows (and prune removed files)."""
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    try:
+        existing = Series.objects.get(pk=series_id, library_root=root_norm)
+    except Series.DoesNotExist as exc:
+        raise ValueError("Series not found") from exc
+    hidden = _manga_hidden_rel_paths()
+    srp = existing.series_rel_path
+    if srp and _directory_hidden_by_config(srp, hidden):
+        raise ValueError("Series path is hidden")
+    items = list_manga_cbz_files(manga_root=manga_root, path=srp)
+    display_name = Path(srp).name if srp else Path(root_norm).name
+    with transaction.atomic():
+        series, _created = Series.objects.update_or_create(
+            library_root=root_norm,
+            series_rel_path=srp,
+            defaults={"name": display_name},
+        )
+        _replace_series_items_from_cbz_listing(
+            manga_root=manga_root,
+            series=series,
+            items=items,
+        )
+    return Series.objects.select_related("series_info").get(pk=series.pk)
 
 
 def convert_cbz(
