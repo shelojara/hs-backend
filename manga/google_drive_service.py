@@ -206,6 +206,54 @@ def ensure_series_drive_folder(*, series_name: str) -> str:
         return _ensure_folder(service=service, parent_id=manga_id, name=series_name)
 
 
+def get_series_drive_folder_id_optional(*, series_name: str) -> str | None:
+    """Return folder id for ``<root>/<series_name>/`` only if ``Manga`` + series folders already exist.
+
+    Does not create folders (library sync / Dropbox-style flag refresh only).
+    """
+    service = _drive_service()
+    with _google_drive_folder_resolve_lock():
+        manga_id = _find_folder_id(
+            service=service,
+            parent_id=_drive_parent_for_root_folder(),
+            name=_root_folder_name(),
+        )
+        if not manga_id:
+            return None
+        return _find_folder_id(service=service, parent_id=manga_id, name=series_name)
+
+
+def list_drive_file_names_in_folder(*, parent_folder_id: str) -> frozenset[str]:
+    """Non-trashed, non-folder file names directly under *parent_folder_id* (paginated)."""
+    service = _drive_service()
+    out: set[str] = set()
+    page_token: str | None = None
+    q = (
+        f"'{parent_folder_id}' in parents and trashed = false "
+        f"and mimeType != '{_DRIVE_MIME_FOLDER}'"
+    )
+    while True:
+        kwargs: dict[str, Any] = {
+            "q": q,
+            "spaces": "drive",
+            "fields": "nextPageToken, files(name)",
+            "pageSize": 1000,
+            "supportsAllDrives": True,
+            "includeItemsFromAllDrives": True,
+        }
+        if page_token:
+            kwargs["pageToken"] = page_token
+        resp = service.files().list(**kwargs).execute()
+        for f in resp.get("files") or []:
+            n = f.get("name")
+            if isinstance(n, str) and n:
+                out.add(n)
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+    return frozenset(out)
+
+
 def find_existing_file_id_with_same_size(
     *,
     parent_folder_id: str,
