@@ -53,7 +53,7 @@ def test_sync_manga_series_info_creates_seriesinfo_from_search_and_detail(settin
     assert info.mangabaka_series_id == 42
     assert info.description == "Hello"
     assert info.rating == 8
-    assert info.mangabaka_type == "manhwa"
+    assert info.series_type == "manhwa"
     assert info.is_complete is True
     assert info.synced_at is not None
 
@@ -81,7 +81,7 @@ def test_sync_seriesinfo_type_empty_when_detail_omits_type(settings):
     ):
         sync_manga_series_info_from_mangabaka()
     info = SeriesInfo.objects.get(series=s)
-    assert info.mangabaka_type == ""
+    assert info.series_type == ""
     assert info.is_complete is True
 
 

@@ -211,7 +211,7 @@ class SeriesInfo(models.Model):
         blank=True,
         help_text="Raw MangaBaka ``rating`` field (see API docs).",
     )
-    mangabaka_type = models.CharField(
+    series_type = models.CharField(
         max_length=64,
         blank=True,
         default="",

@@ -1,4 +1,4 @@
-# One refetch so MangaBaka ``type`` backfills for rows synced before ``mangabaka_type`` existed.
+# One refetch so MangaBaka ``type`` backfills for rows synced before type column existed.
 
 from django.db import migrations
 
