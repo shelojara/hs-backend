@@ -75,6 +75,14 @@ class ListSeriesResponse(Schema):
     items: list[SeriesSchema]
 
 
+class GetSeriesRequest(Schema):
+    series_id: int = Field(ge=1)
+
+
+class GetSeriesResponse(Schema):
+    series: SeriesSchema
+
+
 class ListSeriesCategoriesResponse(Schema):
     categories: list[str]
 

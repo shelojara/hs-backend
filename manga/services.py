@@ -157,6 +157,18 @@ def list_series_items(
     return rows[offset : offset + limit]
 
 
+def get_series(*, manga_root: str, series_id: int) -> Series:
+    """Load single ``Series`` for ``series_id`` under ``manga_root`` (normalized)."""
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    try:
+        return Series.objects.select_related("series_info").get(
+            pk=series_id,
+            library_root=root_norm,
+        )
+    except Series.DoesNotExist as exc:
+        raise ValueError("Series not found") from exc
+
+
 def _path_under_manga_root(*, manga_root: str, rel_path: str) -> str:
     root_abs = os.path.abspath(os.path.expanduser(manga_root))
     joined = os.path.abspath(os.path.join(root_abs, rel_path))
