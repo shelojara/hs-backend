@@ -75,7 +75,10 @@ class CbzConvertKind(models.TextChoices):
 
 
 class GoogleDriveBackupJob(models.Model):
-    """Async upload of a local CBZ to Google Drive under configured root folder (default ``Manga``)."""
+    """Async upload of one local CBZ to Google Drive under configured root folder (default ``Manga``).
+
+    Jobs are created per ``SeriesItem`` when backing up a whole ``Series``.
+    """
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -107,7 +110,7 @@ class GoogleDriveBackupJob(models.Model):
         max_length=128,
         blank=True,
         default="",
-        help_text="Drive file id after successful upload.",
+        help_text="Drive file id after successful upload or when an existing file was reused.",
     )
 
     class Meta:
