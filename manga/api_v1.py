@@ -17,6 +17,8 @@ from manga.schemas import (
     DownloadCbzRequest,
     GetCbzConvertJobRequest,
     GetCbzConvertJobResponse,
+    GetSeriesRequest,
+    GetSeriesResponse,
     ListCbzConvertJobsRequest,
     ListCbzConvertJobsResponse,
     ListSeriesItemsRequest,
@@ -42,6 +44,18 @@ def _series_info_schema_or_none(series: Series) -> SeriesInfoSchema | None:
         description=(inf.description or "").strip() or None,
         rating=inf.rating,
         synced_at=inf.synced_at,
+    )
+
+
+def _series_schema(series: Series) -> SeriesSchema:
+    return SeriesSchema(
+        id=series.id,
+        name=series.name,
+        item_count=series.item_count,
+        category=series.category,
+        cover_image_base64=series.cover_image_base64,
+        cover_image_mime_type=series.cover_image_mime_type or "",
+        info=_series_info_schema_or_none(series),
     )
 
 
@@ -119,20 +133,22 @@ def list_series(request, payload: ListSeriesRequest):
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    return ListSeriesResponse(
-        items=[
-            SeriesSchema(
-                id=r.id,
-                name=r.name,
-                item_count=r.item_count,
-                category=r.category,
-                cover_image_base64=r.cover_image_base64,
-                cover_image_mime_type=r.cover_image_mime_type or "",
-                info=_series_info_schema_or_none(r),
-            )
-            for r in rows
-        ],
-    )
+    return ListSeriesResponse(items=[_series_schema(r) for r in rows])
+
+
+@router.post("/v1.Manga.GetSeries", response=GetSeriesResponse)
+def get_series(request, payload: GetSeriesRequest):
+    try:
+        row = services.get_series(
+            manga_root=settings.MANGA_ROOT,
+            series_id=payload.series_id,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "Series not found":
+            raise HttpError(404, msg) from exc
+        raise HttpError(400, msg) from exc
+    return GetSeriesResponse(series=_series_schema(row))
 
 
 @router.post("/v1.Manga.ListSeriesCategories", response=ListSeriesCategoriesResponse)

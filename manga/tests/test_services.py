@@ -17,6 +17,7 @@ from manga.services import (
     first_cbz_page_as_base64,
     list_distinct_series_categories,
     list_manga_cbz_files,
+    get_series,
     list_series,
     list_series_items,
     resolve_cbz_download,
@@ -756,6 +757,36 @@ def test_list_series_items_unknown_series_raises(tmp_path):
     root.mkdir()
     with pytest.raises(ValueError, match="Series not found"):
         list_series_items(manga_root=str(root), series_id=999)
+
+
+@pytest.mark.django_db
+def test_get_series_returns_row(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    (root / "S" / "ch.cbz").write_bytes(b"x")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+    sync_manga_library_cache(manga_root=str(root))
+    s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
+    got = get_series(manga_root=str(root), series_id=s.id)
+    assert got.pk == s.pk
+    assert got.name == s.name
+
+
+@pytest.mark.django_db
+def test_get_series_wrong_library_raises(tmp_path):
+    root_a = tmp_path / "a"
+    root_b = tmp_path / "b"
+    root_a.mkdir()
+    root_b.mkdir()
+    abs_a = str(root_a.resolve())
+    s = Series.objects.create(
+        library_root=abs_a,
+        series_rel_path="s",
+        name="s",
+    )
+    with pytest.raises(ValueError, match="Series not found"):
+        get_series(manga_root=str(root_b.resolve()), series_id=s.id)
 
 
 @pytest.mark.django_db
