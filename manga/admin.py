@@ -142,6 +142,7 @@ class SeriesItemInline(admin.TabularInline):
         "size_bytes",
         "file_created_at",
         "is_converted",
+        "is_google_drive_backed_up",
         "dropbox_uploaded_at",
         "item_cover_preview",
     )
@@ -151,6 +152,7 @@ class SeriesItemInline(admin.TabularInline):
         "size_bytes",
         "file_created_at",
         "is_converted",
+        "is_google_drive_backed_up",
         "dropbox_uploaded_at",
         "item_cover_preview",
     )
