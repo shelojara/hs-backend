@@ -10,7 +10,7 @@ import zipfile
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import BinaryIO, Literal
+from typing import Any, BinaryIO, Literal
 
 from django.conf import settings
 from django.db import connection, transaction
@@ -804,6 +804,45 @@ def _mangabaka_http_delay_seconds() -> float:
 
 def _mangabaka_search_limit() -> int:
     return max(3, min(25, int(getattr(settings, "MANGABAKA_SEARCH_LIMIT", 12))))
+
+
+def _normalize_mangabaka_search_query(query: str) -> str:
+    s = query.strip()
+    if not s:
+        raise ValueError("query must be a non-empty string")
+    return s
+
+
+def _parse_mangabaka_search_hits(hits: list[dict]) -> list[dict[str, Any]]:
+    """Build serializable rows with ``mangabaka_series_id`` + ``title`` for each valid API hit."""
+    out: list[dict[str, Any]] = []
+    for row in hits:
+        if not isinstance(row, dict):
+            continue
+        title = row.get("title")
+        if not isinstance(title, str) or not title.strip():
+            continue
+        sid = row.get("id")
+        if isinstance(sid, str) and sid.isdigit():
+            sid = int(sid)
+        if not isinstance(sid, int) or sid < 1:
+            continue
+        out.append({"mangabaka_series_id": sid, "title": title})
+    return out
+
+
+def search_mangabaka_series(
+    *,
+    query: str,
+    limit: int,
+    page: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Call MangaBaka ``/v1/series/search``; returns normalized hits and optional pagination dict."""
+    q = _normalize_mangabaka_search_query(query)
+    cap = max(1, min(25, limit))
+    p = max(1, page)
+    raw_hits, pagination = search_series(query=q, limit=cap, page=p)
+    return _parse_mangabaka_search_hits(raw_hits), pagination
 
 
 def _mangabaka_no_match_snooze_hours() -> int:

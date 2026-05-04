@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from ninja import Schema
 from pydantic import Field, computed_field, field_validator
@@ -91,6 +91,32 @@ class SetSeriesMangabakaRequest(Schema):
 
 class SetSeriesMangabakaResponse(Schema):
     series: SeriesSchema
+
+
+class SearchMangabakaSeriesRequest(Schema):
+    """Query MangaBaka series search (ids + titles for ``SetSeriesMangabaka``)."""
+
+    query: str = Field(min_length=1, description="Search string (non-empty after trim).")
+    limit: int = Field(default=12, ge=1, le=25)
+    page: int = Field(default=1, ge=1)
+
+    @field_validator("query")
+    @classmethod
+    def query_strip_non_empty(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("query must be a non-empty string")
+        return s
+
+
+class MangabakaSearchHitSchema(Schema):
+    mangabaka_series_id: int = Field(ge=1)
+    title: str
+
+
+class SearchMangabakaSeriesResponse(Schema):
+    results: list[MangabakaSearchHitSchema]
+    pagination: dict[str, Any] | None = None
 
 
 class ListSeriesCategoriesResponse(Schema):
