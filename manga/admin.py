@@ -152,14 +152,14 @@ class GoogleDriveRestoreJobAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "user",
-        "series",
+        "series_name",
         "status",
         "restored_file_count",
         "created_at",
         "completed_at",
     )
     list_filter = ("status",)
-    search_fields = ("manga_root", "failure_message")
+    search_fields = ("manga_root", "failure_message", "series_name")
     readonly_fields = ("created_at", "completed_at", "restored_file_count")
 
 

@@ -295,16 +295,17 @@ class GetGoogleDriveBackupJobResponse(Schema):
 
 
 class CreateGoogleDriveRestoreJobRequest(Schema):
-    """``series_id`` null/omitted: restore every series subfolder under Drive ``Manga`` into *manga_root*."""
+    """``series_name`` null/omitted/whitespace: restore every series subfolder under Drive ``Manga``."""
 
-    series_id: int | None = Field(default=None)
+    series_name: str | None = Field(default=None, max_length=1024)
 
-    @field_validator("series_id")
+    @field_validator("series_name")
     @classmethod
-    def series_id_positive_when_set(cls, v: int | None) -> int | None:
-        if v is not None and v < 1:
-            raise ValueError("series_id must be >= 1 when provided")
-        return v
+    def series_name_strip_or_none(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        return s or None
 
 
 class CreateGoogleDriveRestoreJobResponse(Schema):
@@ -312,15 +313,23 @@ class CreateGoogleDriveRestoreJobResponse(Schema):
 
 
 class ListGoogleDriveRestoreJobsRequest(Schema):
-    """``series_id`` null/omitted: all restore jobs for user in library (any series)."""
+    """``series_name`` null/omitted: all restore jobs for user; non-empty string filters by stored name."""
 
-    series_id: int | None = Field(default=None, ge=1)
+    series_name: str | None = Field(default=None, max_length=1024)
     status: Literal["pending", "completed", "failed"] | None = None
+
+    @field_validator("series_name")
+    @classmethod
+    def series_name_filter_strip_or_none(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        return s or None
 
 
 class GoogleDriveRestoreJobSchema(Schema):
     restore_job_id: int
-    series_id: int | None = None
+    series_name: str | None = None
     created_at: datetime
     status: str
     completed_at: datetime | None

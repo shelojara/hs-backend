@@ -111,9 +111,10 @@ def _google_drive_backup_job_schema(j: GoogleDriveBackupJob) -> GoogleDriveBacku
 
 
 def _google_drive_restore_job_schema(j: GoogleDriveRestoreJob) -> GoogleDriveRestoreJobSchema:
+    sn = (j.series_name or "").strip() or None
     return GoogleDriveRestoreJobSchema(
         restore_job_id=j.pk,
-        series_id=j.series_id,
+        series_name=sn,
         created_at=j.created_at,
         status=j.status,
         completed_at=j.completed_at,
@@ -226,13 +227,11 @@ def create_google_drive_restore_job_rpc(request, payload: CreateGoogleDriveResto
     try:
         job_id = services.create_google_drive_restore_job(
             manga_root=settings.MANGA_ROOT,
-            series_id=payload.series_id,
+            series_name=payload.series_name,
             user_id=request.auth.pk,
         )
     except ValueError as exc:
         msg = str(exc)
-        if msg == "Series not found":
-            raise HttpError(404, msg) from exc
         if msg == "Another restore is already in progress.":
             raise HttpError(409, msg) from exc
         raise HttpError(400, msg) from exc
@@ -244,14 +243,12 @@ def list_google_drive_restore_jobs_rpc(request, payload: ListGoogleDriveRestoreJ
     try:
         rows = services.list_google_drive_restore_jobs(
             manga_root=settings.MANGA_ROOT,
-            series_id=payload.series_id,
+            series_name=payload.series_name,
             user_id=request.auth.pk,
             status=payload.status,
         )
     except ValueError as exc:
         msg = str(exc)
-        if msg == "Series not found":
-            raise HttpError(404, msg) from exc
         if msg == "Invalid status filter.":
             raise HttpError(400, msg) from exc
         raise HttpError(400, msg) from exc

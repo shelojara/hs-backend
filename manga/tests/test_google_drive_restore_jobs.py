@@ -11,7 +11,6 @@ from manga.models import (
     GoogleDriveBackupJobStatus,
     GoogleDriveRestoreJob,
     Series,
-    SeriesItem,
 )
 from manga.services import (
     create_google_drive_restore_job,
@@ -29,25 +28,19 @@ def test_create_google_drive_restore_job_persists_pending_and_enqueues(mock_asyn
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
     (root / "s").mkdir()
-    SeriesItem.objects.create(
-        series=s,
-        rel_path="s/x.cbz",
-        filename="x.cbz",
-        size_bytes=1,
-    )
     u = User.objects.create_user(username="gdr_u1", password="pw")
 
     jid = create_google_drive_restore_job(
         manga_root=str(root),
-        series_id=s.pk,
+        series_name="s",
         user_id=u.pk,
     )
     j = GoogleDriveRestoreJob.objects.get(pk=jid)
     assert j.user_id == u.pk
     assert j.manga_root == abs_root
-    assert j.series_id == s.pk
+    assert j.series_name == "s"
     assert j.status == GoogleDriveBackupJobStatus.PENDING
     assert j.pending_lock == 1
     mock_async.assert_called_once_with(
@@ -63,29 +56,27 @@ def test_create_google_drive_restore_job_rejects_while_another_pending(mock_asyn
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s1 = Series.objects.create(library_root=abs_root, series_rel_path="a", name="a")
-    s2 = Series.objects.create(library_root=abs_root, series_rel_path="b", name="b")
+    Series.objects.create(library_root=abs_root, series_rel_path="a", name="a")
+    Series.objects.create(library_root=abs_root, series_rel_path="b", name="b")
     (root / "a").mkdir()
     (root / "b").mkdir()
-    SeriesItem.objects.create(series=s1, rel_path="a/1.cbz", filename="1.cbz", size_bytes=1)
-    SeriesItem.objects.create(series=s2, rel_path="b/1.cbz", filename="1.cbz", size_bytes=1)
     u = User.objects.create_user(username="gdr_u6", password="pw")
     create_google_drive_restore_job(
         manga_root=str(root),
-        series_id=s1.pk,
+        series_name="a",
         user_id=u.pk,
     )
     with pytest.raises(ValueError, match="Another restore is already in progress"):
         create_google_drive_restore_job(
             manga_root=str(root),
-            series_id=s2.pk,
+            series_name="b",
             user_id=u.pk,
         )
     assert mock_async.call_count == 1
 
 
 @pytest.mark.django_db
-@patch("manga.services.sync_series_items_for_series")
+@patch("manga.services.sync_manga_library_cache")
 @patch("manga.services.download_drive_file_to_path")
 @patch(
     "manga.services.list_drive_files_in_folder_meta",
@@ -96,19 +87,17 @@ def test_run_google_drive_restore_job_downloads_and_completes(
     _mock_folder,
     _mock_list,
     mock_download,
-    _mock_sync,
+    mock_sync_lib,
     tmp_path,
 ):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
-    (root / "s").mkdir()
     u = User.objects.create_user(username="gdr_u2", password="pw")
     job = GoogleDriveRestoreJob.objects.create(
         user=u,
         manga_root=abs_root,
-        series=s,
+        series_name="s",
         pending_lock=GOOGLE_DRIVE_RESTORE_PENDING_LOCK,
     )
 
@@ -123,7 +112,7 @@ def test_run_google_drive_restore_job_downloads_and_completes(
     _args, kwargs = mock_download.call_args
     assert kwargs["file_id"] == "fid1"
     assert kwargs["dest_path"].endswith(f"{os.sep}s{os.sep}a.cbz")
-    _mock_sync.assert_called_once_with(manga_root=abs_root, series_id=s.pk)
+    mock_sync_lib.assert_called_once_with(manga_root=abs_root)
 
 
 @pytest.mark.django_db
@@ -132,12 +121,11 @@ def test_run_google_drive_restore_job_fails_when_no_drive_folder(_mock_folder, t
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
     u = User.objects.create_user(username="gdr_u3", password="pw")
     job = GoogleDriveRestoreJob.objects.create(
         user=u,
         manga_root=abs_root,
-        series=s,
+        series_name="s",
         pending_lock=GOOGLE_DRIVE_RESTORE_PENDING_LOCK,
     )
 
@@ -154,12 +142,11 @@ def test_get_google_drive_restore_job_owner(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
     u = User.objects.create_user(username="gdr_u4", password="pw")
     job = GoogleDriveRestoreJob.objects.create(
         user=u,
         manga_root=abs_root,
-        series=s,
+        series_name="s",
     )
     got = get_google_drive_restore_job(job_id=job.pk, user_id=u.pk)
     assert got.pk == job.pk
@@ -167,17 +154,17 @@ def test_get_google_drive_restore_job_owner(tmp_path):
 
 @pytest.mark.django_db
 @patch("manga.services.async_task")
-def test_create_google_drive_restore_job_without_series_full_library(mock_async, tmp_path):
+def test_create_google_drive_restore_job_full_library_omits_series_name(mock_async, tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     u = User.objects.create_user(username="gdr_full", password="pw")
     jid = create_google_drive_restore_job(
         manga_root=str(root),
-        series_id=None,
+        series_name=None,
         user_id=u.pk,
     )
     j = GoogleDriveRestoreJob.objects.get(pk=jid)
-    assert j.series_id is None
+    assert j.series_name is None
     assert j.pending_lock == 1
     mock_async.assert_called_once()
 
@@ -209,7 +196,7 @@ def test_run_google_drive_restore_job_full_manga_folder(
     job = GoogleDriveRestoreJob.objects.create(
         user=u,
         manga_root=abs_root,
-        series_id=None,
+        series_name=None,
         pending_lock=GOOGLE_DRIVE_RESTORE_PENDING_LOCK,
     )
     run_google_drive_restore_job(job_id=job.pk)
@@ -223,28 +210,33 @@ def test_run_google_drive_restore_job_full_manga_folder(
 
 
 @pytest.mark.django_db
-def test_list_google_drive_restore_jobs_includes_full_library_rows(tmp_path):
+def test_list_google_drive_restore_jobs_filter_by_series_name(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
     u = User.objects.create_user(username="gdr_list", password="pw")
     j_full = GoogleDriveRestoreJob.objects.create(
         user=u,
         manga_root=abs_root,
-        series_id=None,
+        series_name=None,
     )
     j_ser = GoogleDriveRestoreJob.objects.create(
         user=u,
         manga_root=abs_root,
-        series_id=s.pk,
+        series_name="MySeries",
     )
-    rows = list_google_drive_restore_jobs(
+    all_rows = list_google_drive_restore_jobs(
         manga_root=str(root),
-        series_id=None,
+        series_name=None,
         user_id=u.pk,
     )
-    assert {r.pk for r in rows} == {j_full.pk, j_ser.pk}
+    assert {r.pk for r in all_rows} == {j_full.pk, j_ser.pk}
+    only_named = list_google_drive_restore_jobs(
+        manga_root=str(root),
+        series_name="MySeries",
+        user_id=u.pk,
+    )
+    assert [r.pk for r in only_named] == [j_ser.pk]
 
 
 @pytest.mark.django_db
@@ -255,7 +247,20 @@ def test_list_google_drive_restore_jobs_invalid_status_raises(tmp_path):
     with pytest.raises(ValueError, match="Invalid status filter"):
         list_google_drive_restore_jobs(
             manga_root=str(root),
-            series_id=1,
+            series_name=None,
             user_id=u.pk,
             status="bogus",
+        )
+
+
+@pytest.mark.django_db
+def test_create_google_drive_restore_job_rejects_empty_series_name_string(tmp_path):
+    root = tmp_path / "lib"
+    root.mkdir()
+    u = User.objects.create_user(username="gdr_empty", password="pw")
+    with pytest.raises(ValueError, match="series_name must be non-empty"):
+        create_google_drive_restore_job(
+            manga_root=str(root),
+            series_name="   ",
+            user_id=u.pk,
         )

@@ -135,7 +135,7 @@ GOOGLE_DRIVE_RESTORE_PENDING_LOCK = 1
 
 
 class GoogleDriveRestoreJob(models.Model):
-    """Async restore: download all non-folder files from ``Manga/<series>/`` on Drive into local library."""
+    """Async restore: download Drive ``Manga/<series_name>/`` into ``<manga_root>/<series_name>/``."""
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -146,13 +146,13 @@ class GoogleDriveRestoreJob(models.Model):
         max_length=4096,
         help_text="Normalized absolute manga library root when job was created.",
     )
-    series = models.ForeignKey(
-        "Series",
-        on_delete=models.PROTECT,
-        related_name="google_drive_restore_jobs",
+    series_name = models.CharField(
+        max_length=1024,
         null=True,
         blank=True,
-        help_text="Null when restoring every series folder under the Drive Manga root.",
+        help_text=(
+            "Drive series folder basename under Manga root; null or blank restores every series subfolder."
+        ),
     )
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(
@@ -181,8 +181,8 @@ class GoogleDriveRestoreJob(models.Model):
         verbose_name_plural = "Google Drive restore jobs"
         indexes = [
             models.Index(
-                fields=["user_id", "manga_root", "series_id"],
-                name="manga_gdrive_rst_user_root_ser",
+                fields=["user_id", "manga_root", "series_name"],
+                name="manga_gdrive_rst_user_root_nm",
             ),
         ]
         constraints = [
@@ -195,8 +195,8 @@ class GoogleDriveRestoreJob(models.Model):
         ]
 
     def __str__(self) -> str:
-        sid = self.series_id or "all"
-        return f"GoogleDriveRestoreJob(series={sid}, status={self.status}, user={self.user_id})"
+        label = (self.series_name or "").strip() or "all"
+        return f"GoogleDriveRestoreJob(series_name={label!r}, status={self.status}, user={self.user_id})"
 
 
 class GoogleDriveApplicationCredentials(models.Model):

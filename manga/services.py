@@ -1073,24 +1073,25 @@ def get_google_drive_backup_job(job_id: int, *, user_id: int) -> GoogleDriveBack
 def create_google_drive_restore_job(
     *,
     manga_root: str,
-    series_id: int | None,
+    series_name: str | None,
     user_id: int,
 ) -> int:
     """Create pending ``GoogleDriveRestoreJob`` and enqueue worker; returns primary key.
 
-    *series_id* ``None``: restore every series subfolder under the Drive ``Manga`` root into *manga_root*
-    (folders removed locally / absent from DB).
+    *series_name* ``None`` or blank after strip: restore every series subfolder under the Drive ``Manga`` root.
 
     At most one *pending* restore may exist (global). Raises ``ValueError("Another restore is already in progress.")
     when a pending job is already queued or running.
     """
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
-    series_pk: int | None = None
-    if series_id is not None:
-        try:
-            series_pk = Series.objects.get(pk=series_id, library_root=root_norm).pk
-        except Series.DoesNotExist as exc:
-            raise ValueError("Series not found") from exc
+    stored_name: str | None
+    if series_name is None:
+        stored_name = None
+    else:
+        raw = series_name.strip()
+        if not raw:
+            raise ValueError("series_name must be non-empty when provided.")
+        stored_name = raw
     if GoogleDriveRestoreJob.objects.filter(
         status=GoogleDriveBackupJobStatus.PENDING,
     ).exists():
@@ -1100,7 +1101,7 @@ def create_google_drive_restore_job(
             row = GoogleDriveRestoreJob.objects.create(
                 user_id=user_id,
                 manga_root=root_norm,
-                series_id=series_pk,
+                series_name=stored_name,
                 pending_lock=GOOGLE_DRIVE_RESTORE_PENDING_LOCK,
             )
     except IntegrityError as exc:
@@ -1116,7 +1117,7 @@ def create_google_drive_restore_job(
 def list_google_drive_restore_jobs(
     *,
     manga_root: str,
-    series_id: int | None,
+    series_name: str | None,
     user_id: int,
     status: str | None = None,
 ) -> list[GoogleDriveRestoreJob]:
@@ -1124,16 +1125,9 @@ def list_google_drive_restore_jobs(
         raise ValueError("Invalid status filter.")
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
     qs = GoogleDriveRestoreJob.objects.filter(user_id=user_id, manga_root=root_norm)
-    if series_id is None:
-        qs = qs.filter(
-            Q(series__library_root=root_norm) | Q(series_id__isnull=True),
-        )
-    else:
-        try:
-            series = Series.objects.get(pk=series_id, library_root=root_norm)
-        except Series.DoesNotExist as exc:
-            raise ValueError("Series not found") from exc
-        qs = qs.filter(series_id=series.pk)
+    if series_name is not None:
+        sn = series_name.strip()
+        qs = qs.filter(series_name=sn)
     if status is not None:
         qs = qs.filter(status=status)
     return list(qs.order_by("-created_at", "-pk"))
@@ -1595,15 +1589,16 @@ def run_google_drive_backup_job(*, job_id: int) -> None:
 
 
 def run_google_drive_restore_job(*, job_id: int) -> None:
-    """Background worker: download Drive ``Manga/<series>/`` into library (single series or all series folders)."""
+    """Background worker: download Drive ``Manga/<series_name>/`` into library (one folder or all)."""
     try:
-        job = GoogleDriveRestoreJob.objects.select_related("series").get(pk=job_id)
+        job = GoogleDriveRestoreJob.objects.get(pk=job_id)
     except GoogleDriveRestoreJob.DoesNotExist:
         logger.warning("run_google_drive_restore_job: missing GoogleDriveRestoreJob id=%s", job_id)
         return
     root_norm = job.manga_root
+    target = (job.series_name or "").strip()
     try:
-        if job.series_id is None:
+        if not target:
             manga_id = get_manga_root_drive_folder_id_optional()
             if not manga_id:
                 raise ValueError(
@@ -1622,18 +1617,17 @@ def run_google_drive_restore_job(*, job_id: int) -> None:
                 )
             sync_manga_library_cache(manga_root=root_norm)
         else:
-            series = job.series
-            folder_id = get_series_drive_folder_id_optional(series_name=series.name)
+            folder_id = get_series_drive_folder_id_optional(series_name=target)
             if not folder_id:
                 raise ValueError(
                     "Series folder not found on Google Drive (expected under configured Manga root).",
                 )
             ensured = _restore_files_from_drive_series_folder(
                 manga_root=root_norm,
-                series_rel_path=series.series_rel_path,
+                series_rel_path=target,
                 series_folder_id=folder_id,
             )
-            sync_series_items_for_series(manga_root=root_norm, series_id=series.pk)
+            sync_manga_library_cache(manga_root=root_norm)
         job.status = GoogleDriveBackupJobStatus.COMPLETED
         job.completed_at = timezone.now()
         job.failure_message = None
