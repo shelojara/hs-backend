@@ -22,40 +22,59 @@ User = get_user_model()
 @patch("manga.services.list_drive_cbz_files_in_folder")
 @patch("manga.services.list_child_folder_names_and_ids")
 @patch("manga.services.get_manga_root_drive_folder_id_optional")
-def test_list_restore_candidates_counts_missing(mock_root_id, mock_children, mock_cbzs, tmp_path):
+def test_list_restore_candidates_counts_missing_across_categories(
+    mock_root_id,
+    mock_children,
+    mock_cbzs,
+    tmp_path,
+):
+    """Gap uses series name only: file under any matching ``Series`` row counts present."""
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
     mock_root_id.return_value = "manga_folder"
 
-    def cbzs_side_effect(*, parent_folder_id):
-        if parent_folder_id == "fold_a":
-            return [
-                {"id": "x1", "name": "a.cbz", "size": 10},
-                {"id": "x2", "name": "b.cbz", "size": 20},
-            ]
-        if parent_folder_id == "fold_b":
-            return [{"id": "y1", "name": "only.cbz", "size": 5}]
-        return []
-
-    mock_children.return_value = [
-        ("fold_a", "Alpha"),
-        ("fold_b", "Bad/Name"),
+    mock_children.return_value = [("fold_a", "Alpha")]
+    mock_cbzs.return_value = [
+        {"id": "x1", "name": "a.cbz", "size": 10},
+        {"id": "x2", "name": "b.cbz", "size": 20},
     ]
-    mock_cbzs.side_effect = cbzs_side_effect
 
-    Series.objects.create(library_root=abs_root, series_rel_path="Alpha", name="Alpha")
-    a_path = root / "Alpha" / "a.cbz"
-    a_path.parent.mkdir()
+    Series.objects.create(
+        library_root=abs_root,
+        series_rel_path=posixpath.join("manga", "Alpha"),
+        name="Alpha",
+    )
+    a_path = root / "manga" / "Alpha" / "a.cbz"
+    a_path.parent.mkdir(parents=True)
     a_path.write_bytes(b"x" * 10)
 
     rows = list_google_drive_restore_candidates(manga_root=str(root))
-    by_name = {r["series_name"]: r for r in rows}
-    assert by_name["Alpha"]["drive_cbz_count"] == 2
-    assert by_name["Alpha"]["missing_files"] == 1
-    assert by_name["Alpha"]["exists_locally"] is True
-    assert by_name["Bad/Name"]["missing_files"] == 1
-    assert by_name["Bad/Name"]["exists_locally"] is False
+    assert len(rows) == 1
+    assert rows[0]["series_name"] == "Alpha"
+    assert rows[0]["missing_files"] == 1
+    assert rows[0]["exists_locally"] is True
+
+
+@pytest.mark.django_db
+@patch("manga.services.list_drive_cbz_files_in_folder")
+@patch("manga.services.list_child_folder_names_and_ids")
+@patch("manga.services.get_manga_root_drive_folder_id_optional")
+def test_list_restore_invalid_drive_folder_name_all_missing(
+    mock_root_id,
+    mock_children,
+    mock_cbzs,
+    tmp_path,
+):
+    root = tmp_path / "lib"
+    root.mkdir()
+    mock_root_id.return_value = "manga_folder"
+    mock_children.return_value = [("fold_b", "Bad/Name")]
+    mock_cbzs.return_value = [{"id": "y1", "name": "only.cbz", "size": 5}]
+
+    rows = list_google_drive_restore_candidates(manga_root=str(root))
+    assert rows[0]["missing_files"] == 1
+    assert rows[0]["exists_locally"] is False
 
 
 @pytest.mark.django_db

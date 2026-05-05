@@ -1043,17 +1043,30 @@ def _local_file_matches_drive_size(*, abs_path: str, drive_size: int) -> bool:
         return False
 
 
-def list_google_drive_restore_candidates(
+def _local_cbz_matches_any_series_with_name(
     *,
-    manga_root: str,
-    category: str | None = None,
-) -> list[dict[str, Any]]:
-    """Drive ``Manga/<series>/`` folders vs local CBZs; ``missing_files`` = count not present matching size.
+    root_norm: str,
+    series_name: str,
+    filename: str,
+    drive_size: int,
+) -> bool:
+    """True if any ``Series`` with *series_name* under *root_norm* has *filename* at expected size on disk."""
+    qs = Series.objects.filter(library_root=root_norm, name=series_name).only("series_rel_path")
+    for ser in qs:
+        rel = posixpath.join(ser.series_rel_path, filename) if ser.series_rel_path else filename
+        abs_p = os.path.join(root_norm, rel.replace("/", os.sep))
+        if _local_file_matches_drive_size(abs_path=abs_p, drive_size=drive_size):
+            return True
+    return False
 
-    *category* set: local path compared as ``<category>/<series_name>/*.cbz``. Empty/omitted: ``<series_name>/*.cbz`` only.
+
+def list_google_drive_restore_candidates(*, manga_root: str) -> list[dict[str, Any]]:
+    """Drive ``Manga/<series>/`` folders vs local CBZs by **series name** (any ``Series`` row path).
+
+    Gaps ignore category: if any cached ``Series`` named like the Drive folder has the file at the right size,
+    that chapter counts as present.
     """
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
-    cat_for_path = (category or "").strip()
     manga_folder_id = get_manga_root_drive_folder_id_optional()
     if not manga_folder_id:
         return []
@@ -1062,11 +1075,7 @@ def list_google_drive_restore_candidates(
         drive_cbzs = list_drive_cbz_files_in_folder(parent_folder_id=folder_id)
         drive_total = len(drive_cbzs)
         try:
-            srp = _restore_series_rel_path(
-                manga_root=manga_root,
-                category=cat_for_path,
-                series_name=folder_name,
-            )
+            seg = _normalize_restore_series_segment(folder_name)
         except ValueError:
             rows.append(
                 {
@@ -1077,15 +1086,19 @@ def list_google_drive_restore_candidates(
                 },
             )
             continue
-        exists = Series.objects.filter(library_root=root_norm, series_rel_path=srp).exists()
+        exists = Series.objects.filter(library_root=root_norm, name=seg).exists()
         missing = 0
         for ent in drive_cbzs:
             name = ent["name"]
             sz = int(ent.get("size") or 0)
-            rel = posixpath.join(srp, name) if srp else name
-            abs_p = os.path.join(root_norm, rel.replace("/", os.sep))
-            if not _local_file_matches_drive_size(abs_path=abs_p, drive_size=sz):
-                missing += 1
+            if _local_cbz_matches_any_series_with_name(
+                root_norm=root_norm,
+                series_name=seg,
+                filename=name,
+                drive_size=sz,
+            ):
+                continue
+            missing += 1
         rows.append(
             {
                 "series_name": folder_name,
