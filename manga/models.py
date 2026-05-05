@@ -222,6 +222,18 @@ class GoogleDriveApplicationCredentials(models.Model):
         max_length=256,
         default="https://oauth2.googleapis.com/token",
     )
+    developer_key = models.CharField(
+        max_length=256,
+        blank=True,
+        default="",
+        help_text="Google Cloud browser API key (Picker in admin). Restrict HTTP referrers to this site.",
+    )
+    parent_folder_id = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        help_text="Drive folder id where the library root folder is created (default: My Drive). Use Pick folder or paste id.",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

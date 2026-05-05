@@ -12,6 +12,7 @@ from typing import Any
 
 from django.conf import settings
 from django.db import connection, transaction
+from django.utils import timezone
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from googleapiclient.discovery import build
@@ -190,8 +191,45 @@ def _root_folder_name() -> str:
 
 def _drive_parent_for_root_folder() -> str:
     """Folder id where root ``Manga`` folder is created; ``root`` = authenticated user's My Drive."""
+    from manga.models import GoogleDriveApplicationCredentials
+
+    row = GoogleDriveApplicationCredentials.objects.filter(pk=1).first()
+    if row:
+        db_pid = (row.parent_folder_id or "").strip()
+        if db_pid:
+            return db_pid
     pid = (getattr(settings, "MANGA_GOOGLE_DRIVE_PARENT_FOLDER_ID", None) or "").strip()
     return pid or "root"
+
+
+def picker_access_token_payload() -> dict[str, Any]:
+    """Short-lived OAuth access token + browser API key for Google Picker (staff admin UI)."""
+    from manga.models import GoogleDriveApplicationCredentials
+
+    creds = _drive_credentials()
+    if creds.expired or not creds.token:
+        creds.refresh(Request())
+        _persist_oauth_tokens(creds)
+    token = (creds.token or "").strip()
+    if not token:
+        raise RuntimeError("No Google Drive access token; complete OAuth in admin first.")
+    row = GoogleDriveApplicationCredentials.get_solo()
+    api_key = (row.developer_key if row else "") or ""
+    api_key = api_key.strip()
+    if not api_key:
+        raise RuntimeError(
+            "Set Developer API key on Google Drive OAuth credentials (Google Cloud → APIs & Services → Credentials).",
+        )
+    expires_in = 3600
+    if creds.expiry:
+        delta = creds.expiry - timezone.now()
+        if hasattr(delta, "total_seconds"):
+            expires_in = max(60, int(delta.total_seconds()))
+    return {
+        "access_token": token,
+        "expires_in": expires_in,
+        "api_key": api_key,
+    }
 
 
 def ensure_series_drive_folder(*, series_name: str) -> str:

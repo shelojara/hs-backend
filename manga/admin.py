@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import admin
 from django.contrib import messages
 from django.http import HttpResponseRedirect
@@ -71,8 +72,10 @@ def clean_cbz_filename(modeladmin, request, queryset) -> None:
 class GoogleDriveApplicationCredentialsAdmin(admin.ModelAdmin):
     """OAuth web client + stored refresh token (singleton)."""
 
+    change_form_template = "admin/manga/googledriveapplicationcredentials/change_form.html"
+
     list_display = ("__str__", "has_refresh_token", "updated_at")
-    readonly_fields = ("oauth_actions", "updated_at")
+    readonly_fields = ("oauth_actions", "picker_hint", "updated_at")
 
     fieldsets = (
         (
@@ -82,6 +85,9 @@ class GoogleDriveApplicationCredentialsAdmin(admin.ModelAdmin):
                     "oauth_actions",
                     "client_id",
                     "client_secret",
+                    "developer_key",
+                    "parent_folder_id",
+                    "picker_hint",
                     "refresh_token",
                     "access_token",
                     "access_token_expires_at",
@@ -113,8 +119,25 @@ class GoogleDriveApplicationCredentialsAdmin(admin.ModelAdmin):
         return format_html(
             '<p><a class="button" href="{}">Start Google OAuth (sign in; offline consent)</a></p>'
             "<p>Add authorized redirect URI in Google Cloud Console: "
-            "<code>…/admin/manga/googledriveoauth/callback/</code> (full URL of this site).</p>",
+            "<code>…/admin/manga/googledriveoauth/callback/</code> (full URL of this site).</p>"
+            "<p>Enable <strong>Google Picker API</strong> and <strong>Google Drive API</strong> for the project; "
+            "create a <strong>API key</strong> (Application restrictions: HTTP referrers) and paste it in "
+            "<em>Developer API key</em> below for folder picker.</p>",
             start,
+        )
+
+    @admin.display(description="Folder picker", boolean=False)
+    def picker_hint(self, obj: GoogleDriveApplicationCredentials) -> str:
+        if not obj or not obj.pk:
+            return "Save the form first."
+        return format_html(
+            '<p><button type="button" class="button" id="manga-gdrive-folder-picker-btn">'
+            "Pick parent folder in Google Drive</button></p>"
+            '<p class="help" id="manga-gdrive-picker-err" style="display:none;color:#ba2121;"></p>'
+            "<p class=\"help\">Parent folder: where the <code>{}</code> library folder is created. "
+            "Empty = your My Drive root. Use picker to place backups on a Shared drive or subfolder.</p>"
+            "<p class=\"help\">Or paste a folder id from the Drive URL (last path segment after <code>/folders/</code>).</p>",
+            settings.MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME,
         )
 
     @admin.display(description="Connected", boolean=True)
