@@ -295,7 +295,16 @@ class GetGoogleDriveBackupJobResponse(Schema):
 
 
 class CreateGoogleDriveRestoreJobRequest(Schema):
-    series_id: int = Field(ge=1)
+    """``series_id`` null/omitted: restore every series subfolder under Drive ``Manga`` into *manga_root*."""
+
+    series_id: int | None = Field(default=None)
+
+    @field_validator("series_id")
+    @classmethod
+    def series_id_positive_when_set(cls, v: int | None) -> int | None:
+        if v is not None and v < 1:
+            raise ValueError("series_id must be >= 1 when provided")
+        return v
 
 
 class CreateGoogleDriveRestoreJobResponse(Schema):
@@ -311,7 +320,7 @@ class ListGoogleDriveRestoreJobsRequest(Schema):
 
 class GoogleDriveRestoreJobSchema(Schema):
     restore_job_id: int
-    series_id: int
+    series_id: int | None = None
     created_at: datetime
     status: str
     completed_at: datetime | None

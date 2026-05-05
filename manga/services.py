@@ -38,9 +38,11 @@ from manga.google_drive_service import (
     download_drive_file_to_path,
     ensure_series_drive_folder,
     find_existing_file_id_with_same_size,
+    get_manga_root_drive_folder_id_optional,
     get_series_drive_folder_id_optional,
     list_drive_file_names_in_folder,
     list_drive_files_in_folder_meta,
+    list_series_folder_children_meta,
     upload_file_to_folder,
 )
 from manga.models import (
@@ -1071,19 +1073,24 @@ def get_google_drive_backup_job(job_id: int, *, user_id: int) -> GoogleDriveBack
 def create_google_drive_restore_job(
     *,
     manga_root: str,
-    series_id: int,
+    series_id: int | None,
     user_id: int,
 ) -> int:
     """Create pending ``GoogleDriveRestoreJob`` and enqueue worker; returns primary key.
+
+    *series_id* ``None``: restore every series subfolder under the Drive ``Manga`` root into *manga_root*
+    (folders removed locally / absent from DB).
 
     At most one *pending* restore may exist (global). Raises ``ValueError("Another restore is already in progress.")
     when a pending job is already queued or running.
     """
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
-    try:
-        series = Series.objects.get(pk=series_id, library_root=root_norm)
-    except Series.DoesNotExist as exc:
-        raise ValueError("Series not found") from exc
+    series_pk: int | None = None
+    if series_id is not None:
+        try:
+            series_pk = Series.objects.get(pk=series_id, library_root=root_norm).pk
+        except Series.DoesNotExist as exc:
+            raise ValueError("Series not found") from exc
     if GoogleDriveRestoreJob.objects.filter(
         status=GoogleDriveBackupJobStatus.PENDING,
     ).exists():
@@ -1093,7 +1100,7 @@ def create_google_drive_restore_job(
             row = GoogleDriveRestoreJob.objects.create(
                 user_id=user_id,
                 manga_root=root_norm,
-                series_id=series.pk,
+                series_id=series_pk,
                 pending_lock=GOOGLE_DRIVE_RESTORE_PENDING_LOCK,
             )
     except IntegrityError as exc:
@@ -1118,7 +1125,9 @@ def list_google_drive_restore_jobs(
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
     qs = GoogleDriveRestoreJob.objects.filter(user_id=user_id, manga_root=root_norm)
     if series_id is None:
-        qs = qs.filter(series__library_root=root_norm)
+        qs = qs.filter(
+            Q(series__library_root=root_norm) | Q(series_id__isnull=True),
+        )
     else:
         try:
             series = Series.objects.get(pk=series_id, library_root=root_norm)
@@ -1132,6 +1141,36 @@ def list_google_drive_restore_jobs(
 
 def get_google_drive_restore_job(job_id: int, *, user_id: int) -> GoogleDriveRestoreJob:
     return GoogleDriveRestoreJob.objects.get(pk=job_id, user_id=user_id)
+
+
+def _restore_files_from_drive_series_folder(
+    *,
+    manga_root: str,
+    series_rel_path: str,
+    series_folder_id: str,
+) -> int:
+    """Download non-folder files from *series_folder_id* into ``<manga_root>/<series_rel_path>/``.
+
+    Skips download when a local file exists with same byte size (when Drive reports size).
+    Returns count of files counted as ensured (downloaded or skipped as matching).
+    """
+    files_meta = list_drive_files_in_folder_meta(parent_folder_id=series_folder_id)
+    ensured = 0
+    for file_id, drive_name, drive_sz in files_meta:
+        rel_target = (
+            posixpath.join(series_rel_path, drive_name) if series_rel_path else drive_name
+        )
+        abs_dest = _path_under_manga_root(manga_root=manga_root, rel_path=rel_target)
+        if drive_sz is not None:
+            try:
+                if os.path.isfile(abs_dest) and os.path.getsize(abs_dest) == drive_sz:
+                    ensured += 1
+                    continue
+            except OSError:
+                pass
+        download_drive_file_to_path(file_id=file_id, dest_path=abs_dest)
+        ensured += 1
+    return ensured
 
 
 def list_cbz_convert_jobs(
@@ -1556,36 +1595,45 @@ def run_google_drive_backup_job(*, job_id: int) -> None:
 
 
 def run_google_drive_restore_job(*, job_id: int) -> None:
-    """Background worker: download all files from ``Manga/<series>/`` on Drive into local series folder."""
+    """Background worker: download Drive ``Manga/<series>/`` into library (single series or all series folders)."""
     try:
         job = GoogleDriveRestoreJob.objects.select_related("series").get(pk=job_id)
     except GoogleDriveRestoreJob.DoesNotExist:
         logger.warning("run_google_drive_restore_job: missing GoogleDriveRestoreJob id=%s", job_id)
         return
     root_norm = job.manga_root
-    series = job.series
     try:
-        folder_id = get_series_drive_folder_id_optional(series_name=series.name)
-        if not folder_id:
-            raise ValueError(
-                "Series folder not found on Google Drive (expected under configured Manga root).",
+        if job.series_id is None:
+            manga_id = get_manga_root_drive_folder_id_optional()
+            if not manga_id:
+                raise ValueError(
+                    "Manga folder not found on Google Drive (expected configured root folder name).",
+                )
+            ensured = 0
+            for child_id, child_name, is_folder in list_series_folder_children_meta(
+                manga_folder_id=manga_id,
+            ):
+                if not is_folder:
+                    continue
+                ensured += _restore_files_from_drive_series_folder(
+                    manga_root=root_norm,
+                    series_rel_path=child_name,
+                    series_folder_id=child_id,
+                )
+            sync_manga_library_cache(manga_root=root_norm)
+        else:
+            series = job.series
+            folder_id = get_series_drive_folder_id_optional(series_name=series.name)
+            if not folder_id:
+                raise ValueError(
+                    "Series folder not found on Google Drive (expected under configured Manga root).",
+                )
+            ensured = _restore_files_from_drive_series_folder(
+                manga_root=root_norm,
+                series_rel_path=series.series_rel_path,
+                series_folder_id=folder_id,
             )
-        files_meta = list_drive_files_in_folder_meta(parent_folder_id=folder_id)
-        series_rel = series.series_rel_path
-        ensured = 0
-        for file_id, drive_name, drive_sz in files_meta:
-            rel_target = posixpath.join(series_rel, drive_name) if series_rel else drive_name
-            abs_dest = _path_under_manga_root(manga_root=root_norm, rel_path=rel_target)
-            if drive_sz is not None:
-                try:
-                    if os.path.isfile(abs_dest) and os.path.getsize(abs_dest) == drive_sz:
-                        ensured += 1
-                        continue
-                except OSError:
-                    pass
-            download_drive_file_to_path(file_id=file_id, dest_path=abs_dest)
-            ensured += 1
-        sync_series_items_for_series(manga_root=root_norm, series_id=series.pk)
+            sync_series_items_for_series(manga_root=root_norm, series_id=series.pk)
         job.status = GoogleDriveBackupJobStatus.COMPLETED
         job.completed_at = timezone.now()
         job.failure_message = None

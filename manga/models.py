@@ -150,6 +150,9 @@ class GoogleDriveRestoreJob(models.Model):
         "Series",
         on_delete=models.PROTECT,
         related_name="google_drive_restore_jobs",
+        null=True,
+        blank=True,
+        help_text="Null when restoring every series folder under the Drive Manga root.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(
@@ -192,9 +195,8 @@ class GoogleDriveRestoreJob(models.Model):
         ]
 
     def __str__(self) -> str:
-        return (
-            f"GoogleDriveRestoreJob(series={self.series_id}, status={self.status}, user={self.user_id})"
-        )
+        sid = self.series_id or "all"
+        return f"GoogleDriveRestoreJob(series={sid}, status={self.status}, user={self.user_id})"
 
 
 class GoogleDriveApplicationCredentials(models.Model):

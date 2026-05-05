@@ -166,6 +166,88 @@ def test_get_google_drive_restore_job_owner(tmp_path):
 
 
 @pytest.mark.django_db
+@patch("manga.services.async_task")
+def test_create_google_drive_restore_job_without_series_full_library(mock_async, tmp_path):
+    root = tmp_path / "lib"
+    root.mkdir()
+    u = User.objects.create_user(username="gdr_full", password="pw")
+    jid = create_google_drive_restore_job(
+        manga_root=str(root),
+        series_id=None,
+        user_id=u.pk,
+    )
+    j = GoogleDriveRestoreJob.objects.get(pk=jid)
+    assert j.series_id is None
+    assert j.pending_lock == 1
+    mock_async.assert_called_once()
+
+
+@pytest.mark.django_db
+@patch("manga.services.sync_manga_library_cache")
+@patch("manga.services.download_drive_file_to_path")
+@patch(
+    "manga.services.list_drive_files_in_folder_meta",
+    return_value=[("fid1", "a.cbz", 3)],
+)
+@patch(
+    "manga.services.list_series_folder_children_meta",
+    return_value=[("sf1", "RestoredSeries", True)],
+)
+@patch("manga.services.get_manga_root_drive_folder_id_optional", return_value="manga_root_id")
+def test_run_google_drive_restore_job_full_manga_folder(
+    _mock_m_root,
+    _mock_children,
+    _mock_meta,
+    mock_download,
+    mock_sync_lib,
+    tmp_path,
+):
+    root = tmp_path / "lib"
+    root.mkdir()
+    abs_root = str(root.resolve())
+    u = User.objects.create_user(username="gdr_run_all", password="pw")
+    job = GoogleDriveRestoreJob.objects.create(
+        user=u,
+        manga_root=abs_root,
+        series_id=None,
+        pending_lock=GOOGLE_DRIVE_RESTORE_PENDING_LOCK,
+    )
+    run_google_drive_restore_job(job_id=job.pk)
+    job.refresh_from_db()
+    assert job.status == GoogleDriveBackupJobStatus.COMPLETED
+    assert job.restored_file_count == 1
+    mock_download.assert_called_once()
+    _, dl_kwargs = mock_download.call_args
+    assert dl_kwargs["dest_path"].endswith(f"RestoredSeries{os.sep}a.cbz")
+    mock_sync_lib.assert_called_once_with(manga_root=abs_root)
+
+
+@pytest.mark.django_db
+def test_list_google_drive_restore_jobs_includes_full_library_rows(tmp_path):
+    root = tmp_path / "lib"
+    root.mkdir()
+    abs_root = str(root.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    u = User.objects.create_user(username="gdr_list", password="pw")
+    j_full = GoogleDriveRestoreJob.objects.create(
+        user=u,
+        manga_root=abs_root,
+        series_id=None,
+    )
+    j_ser = GoogleDriveRestoreJob.objects.create(
+        user=u,
+        manga_root=abs_root,
+        series_id=s.pk,
+    )
+    rows = list_google_drive_restore_jobs(
+        manga_root=str(root),
+        series_id=None,
+        user_id=u.pk,
+    )
+    assert {r.pk for r in rows} == {j_full.pk, j_ser.pk}
+
+
+@pytest.mark.django_db
 def test_list_google_drive_restore_jobs_invalid_status_raises(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()

@@ -224,6 +224,49 @@ def get_series_drive_folder_id_optional(*, series_name: str) -> str | None:
         return _find_folder_id(service=service, parent_id=manga_id, name=series_name)
 
 
+def get_manga_root_drive_folder_id_optional() -> str | None:
+    """Return Drive folder id for configured ``Manga`` root only if it already exists (no creation)."""
+    service = _drive_service()
+    with _google_drive_folder_resolve_lock():
+        return _find_folder_id(
+            service=service,
+            parent_id=_drive_parent_for_root_folder(),
+            name=_root_folder_name(),
+        )
+
+
+def list_series_folder_children_meta(*, manga_folder_id: str) -> list[tuple[str, str, bool]]:
+    """Direct children of *manga_folder_id*: ``(id, name, is_folder)``. Non-trashed only."""
+    service = _drive_service()
+    out: list[tuple[str, str, bool]] = []
+    page_token: str | None = None
+    q = f"'{manga_folder_id}' in parents and trashed = false"
+    while True:
+        kwargs: dict[str, Any] = {
+            "q": q,
+            "spaces": "drive",
+            "fields": "nextPageToken, files(id, name, mimeType)",
+            "pageSize": 1000,
+            "supportsAllDrives": True,
+            "includeItemsFromAllDrives": True,
+        }
+        if page_token:
+            kwargs["pageToken"] = page_token
+        resp = service.files().list(**kwargs).execute()
+        for f in resp.get("files") or []:
+            fid = f.get("id")
+            n = f.get("name")
+            mt = f.get("mimeType")
+            if not isinstance(fid, str) or not fid or not isinstance(n, str) or not n:
+                continue
+            is_folder = mt == _DRIVE_MIME_FOLDER
+            out.append((fid, n, is_folder))
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+    return out
+
+
 def list_drive_file_names_in_folder(*, parent_folder_id: str) -> frozenset[str]:
     """Non-trashed, non-folder file names directly under *parent_folder_id* (paginated)."""
     meta = list_drive_files_in_folder_meta(parent_folder_id=parent_folder_id)
