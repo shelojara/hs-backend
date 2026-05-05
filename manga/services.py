@@ -194,23 +194,19 @@ def _path_under_manga_root(*, manga_root: str, rel_path: str) -> str:
 def clean_cbz_display_name(filename: str) -> str | None:
     """Derive cleaned ``.cbz`` basename.
 
-    Leading ``#`` in stem becomes ``Chapter`` (rest of stem unchanged). Then: 2+ underscores →
-    segment between first two; exactly 1 → segment before first underscore. If only the ``#`` rule
-    applies (no underscores after normalization), still returns that normalized name. Returns
-    ``None`` if nothing changes or result invalid."""
+    Underscore rules first: 2+ underscores → segment between first two; exactly 1 → segment before
+    first underscore. If there are no underscores, only the ``#`` rule applies: stem starting with
+    ``#`` becomes ``Chapter`` + rest. After underscore extraction, if the result stem starts with
+    ``#``, replace that prefix with ``Chapter``. Returns ``None`` if nothing changes or result invalid."""
     if not filename.lower().endswith(".cbz"):
         return None
-    original_stem = filename[:-4]
-    stem = original_stem
-    if stem.startswith("#"):
-        stem = "Chapter" + stem[1:]
+    stem = filename[:-4]
     n = stem.count("_")
     if n == 0:
-        if stem != original_stem:
-            out = f"{stem}.cbz"
-            return out if out != filename else None
-        return None
-    if n >= 2:
+        if not stem.startswith("#"):
+            return None
+        new_stem = "Chapter" + stem[1:]
+    elif n >= 2:
         _a, middle, _rest = stem.split("_", 2)
         new_stem = middle
     else:
@@ -218,6 +214,8 @@ def clean_cbz_display_name(filename: str) -> str | None:
     new_stem = new_stem.strip()
     if not new_stem:
         return None
+    if new_stem.startswith("#"):
+        new_stem = "Chapter" + new_stem[1:]
     out = f"{new_stem}.cbz"
     return out if out != filename else None
 
@@ -225,8 +223,8 @@ def clean_cbz_display_name(filename: str) -> str | None:
 def clean_series_item_filename_on_disk(*, item_id: int) -> SeriesItem:
     """Rename CBZ on disk and update ``SeriesItem`` ``rel_path`` / ``filename``.
 
-    Uses ``clean_cbz_display_name`` (``#`` → ``Chapter`` prefix, then underscore rules); no-op if
-    name already clean. Raises if target basename exists.
+    Uses ``clean_cbz_display_name`` (underscore rules, then ``#`` → ``Chapter`` on result stem when
+    needed); no-op if name already clean. Raises if target basename exists.
     """
     try:
         item = SeriesItem.objects.select_related("series").get(pk=item_id)

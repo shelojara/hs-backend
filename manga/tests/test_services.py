@@ -1099,7 +1099,9 @@ def test_clean_cbz_display_name_leading_hash_becomes_chapter() -> None:
 
 
 def test_clean_cbz_display_name_hash_then_underscore_rules() -> None:
+    """Two underscores: middle segment may start with #; Chapter applied after extraction."""
     assert clean_cbz_display_name("#a_b_c.cbz") == "b.cbz"
+    assert clean_cbz_display_name("pre_#mid_suf.cbz") == "Chaptermid.cbz"
 
 
 def test_clean_cbz_display_name_plain_no_change_returns_none() -> None:
