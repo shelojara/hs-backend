@@ -71,8 +71,6 @@ def clean_cbz_filename(modeladmin, request, queryset) -> None:
 class GoogleDriveApplicationCredentialsAdmin(admin.ModelAdmin):
     """OAuth web client + stored refresh token (singleton)."""
 
-    change_form_template = "admin/manga/googledriveapplicationcredentials/change_form.html"
-
     list_display = ("__str__", "has_refresh_token", "updated_at")
     readonly_fields = ("oauth_actions", "updated_at")
 
@@ -84,7 +82,6 @@ class GoogleDriveApplicationCredentialsAdmin(admin.ModelAdmin):
                     "oauth_actions",
                     "client_id",
                     "client_secret",
-                    "developer_key",
                     "refresh_token",
                     "access_token",
                     "access_token_expires_at",
@@ -117,9 +114,7 @@ class GoogleDriveApplicationCredentialsAdmin(admin.ModelAdmin):
             '<p><a class="button" href="{}">Start Google OAuth (sign in; offline consent)</a></p>'
             "<p>Add authorized redirect URI in Google Cloud Console: "
             "<code>…/admin/manga/googledriveoauth/callback/</code> (full URL of this site).</p>"
-            "<p>Enable <strong>Google Picker API</strong> and <strong>Google Drive API</strong>; "
-            "create an <strong>API key</strong> (HTTP referrer restriction) and paste it in "
-            "<em>Developer API key</em> below enables optional folder browser after OAuth.</p>",
+            "<p>Enable <strong>Google Drive API</strong> for this project.</p>",
             start,
         )
 
