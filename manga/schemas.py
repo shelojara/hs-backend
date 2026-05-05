@@ -253,12 +253,6 @@ class ListGoogleDriveRestoreCandidatesResponse(Schema):
     items: list[GoogleDriveRestoreCandidateSchema]
 
 
-class ListGoogleDriveRestoreCandidatesRequest(Schema):
-    """Omit *category* or send empty string to compare locals at ``<series_name>/*.cbz`` (library root)."""
-
-    category: str | None = Field(default=None, max_length=1024)
-
-
 class CreateGoogleDriveRestoreJobRequest(Schema):
     series_name: str = Field(min_length=1, max_length=1024)
     category: str = Field(min_length=1, max_length=1024)

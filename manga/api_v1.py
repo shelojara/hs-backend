@@ -35,7 +35,6 @@ from manga.schemas import (
     ListCbzConvertJobsResponse,
     ListGoogleDriveBackupJobsRequest,
     ListGoogleDriveBackupJobsResponse,
-    ListGoogleDriveRestoreCandidatesRequest,
     ListGoogleDriveRestoreCandidatesResponse,
     ListSeriesItemsRequest,
     ListSeriesItemsResponse,
@@ -220,15 +219,8 @@ def get_google_drive_backup_job_rpc(request, payload: GetGoogleDriveBackupJobReq
 
 
 @router.post("/v1.Manga.ListGoogleDriveRestoreCandidates", response=ListGoogleDriveRestoreCandidatesResponse)
-def list_google_drive_restore_candidates_rpc(
-    request,
-    payload: ListGoogleDriveRestoreCandidatesRequest,
-):
-    cat = (payload.category or "").strip() or None
-    rows = services.list_google_drive_restore_candidates(
-        manga_root=settings.MANGA_ROOT,
-        category=cat,
-    )
+def list_google_drive_restore_candidates_rpc(request):
+    rows = services.list_google_drive_restore_candidates(manga_root=settings.MANGA_ROOT)
     return ListGoogleDriveRestoreCandidatesResponse(
         items=[
             GoogleDriveRestoreCandidateSchema(

@@ -44,16 +44,12 @@ def test_list_restore_candidates_counts_missing(mock_root_id, mock_children, moc
     ]
     mock_cbzs.side_effect = cbzs_side_effect
 
-    Series.objects.create(
-        library_root=abs_root,
-        series_rel_path=posixpath.join("manga", "Alpha"),
-        name="Alpha",
-    )
-    a_path = root / "manga" / "Alpha" / "a.cbz"
-    a_path.parent.mkdir(parents=True)
+    Series.objects.create(library_root=abs_root, series_rel_path="Alpha", name="Alpha")
+    a_path = root / "Alpha" / "a.cbz"
+    a_path.parent.mkdir()
     a_path.write_bytes(b"x" * 10)
 
-    rows = list_google_drive_restore_candidates(manga_root=str(root), category="manga")
+    rows = list_google_drive_restore_candidates(manga_root=str(root))
     by_name = {r["series_name"]: r for r in rows}
     assert by_name["Alpha"]["drive_cbz_count"] == 2
     assert by_name["Alpha"]["missing_files"] == 1
