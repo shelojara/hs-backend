@@ -28,6 +28,7 @@ from manga.services import (
     list_series,
     list_series_items,
     resolve_cbz_download,
+    series_is_fully_backed_up_value,
     sync_manga_library_cache,
     sync_series_items_for_cbz_path,
     sync_series_items_for_series,
@@ -1171,3 +1172,38 @@ def test_clean_series_item_filename_on_disk_errors_when_target_exists(tmp_path) 
     with pytest.raises(ValueError, match="already exists"):
         clean_series_item_filename_on_disk(item_id=item.pk)
     assert (root / "S" / "x_y_z.cbz").is_file()
+
+
+@pytest.mark.django_db
+def test_series_is_fully_backed_up_vacuous_when_no_items(tmp_path) -> None:
+    abs_root = str(tmp_path.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S", item_count=0)
+    assert s.is_fully_backed_up is True
+
+
+@pytest.mark.django_db
+def test_series_is_fully_backed_up_false_when_any_item_not_backed_up(tmp_path) -> None:
+    abs_root = str(tmp_path.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S", item_count=2)
+    SeriesItem.objects.create(series=s, rel_path="S/a.cbz", filename="a.cbz", is_backed_up=True)
+    SeriesItem.objects.create(series=s, rel_path="S/b.cbz", filename="b.cbz", is_backed_up=False)
+    assert s.is_fully_backed_up is False
+
+
+@pytest.mark.django_db
+def test_list_series_annotates_is_fully_backed_up(tmp_path) -> None:
+    abs_root = str(tmp_path.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S", item_count=1)
+    SeriesItem.objects.create(series=s, rel_path="S/a.cbz", filename="a.cbz", is_backed_up=True)
+    rows = list_series(manga_root=abs_root)
+    assert len(rows) == 1
+    assert series_is_fully_backed_up_value(rows[0]) is True
+
+
+@pytest.mark.django_db
+def test_get_series_annotates_is_fully_backed_up(tmp_path) -> None:
+    abs_root = str(tmp_path.resolve())
+    s = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S", item_count=1)
+    SeriesItem.objects.create(series=s, rel_path="S/a.cbz", filename="a.cbz", is_backed_up=False)
+    row = get_series(manga_root=abs_root, series_id=s.pk)
+    assert series_is_fully_backed_up_value(row) is False

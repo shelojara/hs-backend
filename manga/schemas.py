@@ -30,6 +30,7 @@ class SeriesSchema(Schema):
     cover_image_base64: str | None = None
     cover_image_mime_type: str = ""
     info: SeriesInfoSchema | None = None
+    is_fully_backed_up: bool
 
 
 class ListSeriesRequest(Schema):

@@ -360,6 +360,11 @@ class Series(models.Model):
         self.category = series_category_for_rel_path(self.series_rel_path)
         super().save(*args, **kwargs)
 
+    @property
+    def is_fully_backed_up(self) -> bool:
+        """True when every ``SeriesItem`` has ``is_backed_up`` (vacuously true if no items)."""
+        return not self.items.filter(is_backed_up=False).exists()
+
     def __str__(self) -> str:
         return f"{self.name} ({self.series_rel_path or '.'})"
 

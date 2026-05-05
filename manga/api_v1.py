@@ -7,6 +7,7 @@ from ninja.errors import HttpError
 from auth.security import protected_api_auth
 from manga.mangabaka_client import MangaBakaAPIError
 from manga import services
+from manga.services import series_is_fully_backed_up_value
 from manga.models import CbzConvertJob, GoogleDriveBackupJob, GoogleDriveRestoreJob, Series
 from manga.schemas import (
     ConvertCbzRequest,
@@ -80,6 +81,7 @@ def _series_schema(series: Series) -> SeriesSchema:
         cover_image_base64=series.cover_image_base64,
         cover_image_mime_type=series.cover_image_mime_type or "",
         info=_series_info_schema_or_none(series),
+        is_fully_backed_up=series_is_fully_backed_up_value(series),
     )
 
 
