@@ -16,6 +16,27 @@ from manga.models import (
 from manga.services import clean_series_item_filename_on_disk
 
 
+class FilenameUnderscoreFilter(admin.SimpleListFilter):
+    """Filter SeriesItem rows where ``.cbz`` basename contains ``_``."""
+
+    title = "underscore in filename"
+    parameter_name = "filename_underscore"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("yes", "Has underscore"),
+            ("no", "No underscore"),
+        )
+
+    def queryset(self, request, queryset):
+        val = self.value()
+        if val == "yes":
+            return queryset.filter(filename__contains="_")
+        if val == "no":
+            return queryset.exclude(filename__contains="_")
+        return queryset
+
+
 @admin.action(description="Clean CBZ filename (underscore rule; rename on disk)")
 def clean_cbz_filename(modeladmin, request, queryset) -> None:
     ok = 0
@@ -213,7 +234,7 @@ class SeriesItemAdmin(admin.ModelAdmin):
         "is_converted",
         "is_backed_up",
     )
-    list_filter = ("is_converted", "is_backed_up")
+    list_filter = (FilenameUnderscoreFilter, "is_converted", "is_backed_up")
     search_fields = ("rel_path", "filename", "series__name")
     actions = (clean_cbz_filename,)
 
