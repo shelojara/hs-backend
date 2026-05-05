@@ -191,13 +191,26 @@ def _path_under_manga_root(*, manga_root: str, rel_path: str) -> str:
     return joined
 
 
+def _chapter_replacement_for_hash_stem(stem: str) -> str:
+    """Replace leading ``#`` with ``Chapter``; insert one space after ``Chapter`` if next char is not
+    already whitespace (so ``#12`` → ``Chapter 12``; ``# 12`` → ``Chapter 12``). *stem* must be
+    non-empty and start with ``#``."""
+    rest = stem[1:]
+    if not rest:
+        return "Chapter"
+    if rest[0].isspace():
+        return "Chapter" + rest
+    return f"Chapter {rest}"
+
+
 def clean_cbz_display_name(filename: str) -> str | None:
     """Derive cleaned ``.cbz`` basename.
 
     Underscore rules first: 2+ underscores → segment between first two; exactly 1 → segment before
-    first underscore. If there are no underscores, only the ``#`` rule applies: stem starting with
-    ``#`` becomes ``Chapter`` + rest. After underscore extraction, if the result stem starts with
-    ``#``, replace that prefix with ``Chapter``. Returns ``None`` if nothing changes or result invalid."""
+    first underscore. If there are no underscores, only the ``#`` rule applies: leading ``#`` becomes
+    ``Chapter`` (with a space before the rest of the title when needed). After underscore
+    extraction, the same ``#`` → ``Chapter`` rule applies to the result stem. Returns ``None`` if
+    nothing changes or result invalid."""
     if not filename.lower().endswith(".cbz"):
         return None
     stem = filename[:-4]
@@ -205,7 +218,7 @@ def clean_cbz_display_name(filename: str) -> str | None:
     if n == 0:
         if not stem.startswith("#"):
             return None
-        new_stem = "Chapter" + stem[1:]
+        new_stem = _chapter_replacement_for_hash_stem(stem)
     elif n >= 2:
         _a, middle, _rest = stem.split("_", 2)
         new_stem = middle
@@ -215,7 +228,7 @@ def clean_cbz_display_name(filename: str) -> str | None:
     if not new_stem:
         return None
     if new_stem.startswith("#"):
-        new_stem = "Chapter" + new_stem[1:]
+        new_stem = _chapter_replacement_for_hash_stem(new_stem)
     out = f"{new_stem}.cbz"
     return out if out != filename else None
 
@@ -223,8 +236,8 @@ def clean_cbz_display_name(filename: str) -> str | None:
 def clean_series_item_filename_on_disk(*, item_id: int) -> SeriesItem:
     """Rename CBZ on disk and update ``SeriesItem`` ``rel_path`` / ``filename``.
 
-    Uses ``clean_cbz_display_name`` (underscore rules, then ``#`` → ``Chapter`` on result stem when
-    needed); no-op if name already clean. Raises if target basename exists.
+    Uses ``clean_cbz_display_name`` (underscore rules, then ``#`` → ``Chapter`` with spacing); no-op
+    if name already clean. Raises if target basename exists.
     """
     try:
         item = SeriesItem.objects.select_related("series").get(pk=item_id)
