@@ -8,6 +8,7 @@ from manga.models import (
     CbzConvertJob,
     GoogleDriveApplicationCredentials,
     GoogleDriveBackupJob,
+    GoogleDriveRestoreJob,
     MangaHiddenDirectory,
     Series,
     SeriesInfo,
@@ -144,6 +145,22 @@ class GoogleDriveBackupJobAdmin(admin.ModelAdmin):
     list_filter = ("status",)
     search_fields = ("manga_root", "failure_message", "google_drive_file_id")
     readonly_fields = ("created_at", "completed_at")
+
+
+@admin.register(GoogleDriveRestoreJob)
+class GoogleDriveRestoreJobAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "series",
+        "status",
+        "restored_file_count",
+        "created_at",
+        "completed_at",
+    )
+    list_filter = ("status",)
+    search_fields = ("manga_root", "failure_message")
+    readonly_fields = ("created_at", "completed_at", "restored_file_count")
 
 
 @admin.register(CbzConvertJob)

@@ -20,6 +20,11 @@ def run_google_drive_backup_job(job_id: int) -> None:
     services.run_google_drive_backup_job(job_id=job_id)
 
 
+def run_google_drive_restore_job(job_id: int) -> None:
+    """django-q2 entrypoint: download series folder from Google Drive into local library."""
+    services.run_google_drive_restore_job(job_id=job_id)
+
+
 def run_manga_mangabaka_series_info_sync() -> None:
     """Periodic job: small batch MangaBaka metadata → ``SeriesInfo``."""
     services.sync_manga_series_info_from_mangabaka()

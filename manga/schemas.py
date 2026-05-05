@@ -242,6 +242,43 @@ class GetGoogleDriveBackupJobResponse(Schema):
     job: GoogleDriveBackupJobSchema
 
 
+class CreateGoogleDriveRestoreJobRequest(Schema):
+    series_id: int = Field(ge=1)
+
+
+class CreateGoogleDriveRestoreJobResponse(Schema):
+    restore_job_id: int
+
+
+class ListGoogleDriveRestoreJobsRequest(Schema):
+    """``series_id`` null/omitted: all restore jobs for user in library (any series)."""
+
+    series_id: int | None = Field(default=None, ge=1)
+    status: Literal["pending", "completed", "failed"] | None = None
+
+
+class GoogleDriveRestoreJobSchema(Schema):
+    restore_job_id: int
+    series_id: int
+    created_at: datetime
+    status: str
+    completed_at: datetime | None
+    failure_message: str | None = None
+    restored_file_count: int
+
+
+class ListGoogleDriveRestoreJobsResponse(Schema):
+    jobs: list[GoogleDriveRestoreJobSchema]
+
+
+class GetGoogleDriveRestoreJobRequest(Schema):
+    restore_job_id: int
+
+
+class GetGoogleDriveRestoreJobResponse(Schema):
+    job: GoogleDriveRestoreJobSchema
+
+
 class DownloadCbzRequest(Schema):
     item_id: int
 

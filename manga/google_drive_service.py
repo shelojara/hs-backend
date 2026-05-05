@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import os
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload, MediaIoBaseUpload
 
 logger = logging.getLogger(__name__)
 
@@ -225,8 +226,14 @@ def get_series_drive_folder_id_optional(*, series_name: str) -> str | None:
 
 def list_drive_file_names_in_folder(*, parent_folder_id: str) -> frozenset[str]:
     """Non-trashed, non-folder file names directly under *parent_folder_id* (paginated)."""
+    meta = list_drive_files_in_folder_meta(parent_folder_id=parent_folder_id)
+    return frozenset(name for _fid, name, _sz in meta)
+
+
+def list_drive_files_in_folder_meta(*, parent_folder_id: str) -> list[tuple[str, str, int | None]]:
+    """Non-trashed files under *parent_folder_id*: ``(file_id, name, size)``; size None when absent."""
     service = _drive_service()
-    out: set[str] = set()
+    out: list[tuple[str, str, int | None]] = []
     page_token: str | None = None
     q = (
         f"'{parent_folder_id}' in parents and trashed = false "
@@ -236,7 +243,7 @@ def list_drive_file_names_in_folder(*, parent_folder_id: str) -> frozenset[str]:
         kwargs: dict[str, Any] = {
             "q": q,
             "spaces": "drive",
-            "fields": "nextPageToken, files(name)",
+            "fields": "nextPageToken, files(id, name, size)",
             "pageSize": 1000,
             "supportsAllDrives": True,
             "includeItemsFromAllDrives": True,
@@ -245,13 +252,56 @@ def list_drive_file_names_in_folder(*, parent_folder_id: str) -> frozenset[str]:
             kwargs["pageToken"] = page_token
         resp = service.files().list(**kwargs).execute()
         for f in resp.get("files") or []:
+            fid = f.get("id")
             n = f.get("name")
-            if isinstance(n, str) and n:
-                out.add(n)
+            if not isinstance(fid, str) or not fid or not isinstance(n, str) or not n:
+                continue
+            sz_raw = f.get("size")
+            sz: int | None
+            if isinstance(sz_raw, str) and sz_raw.isdigit():
+                sz = int(sz_raw)
+            elif isinstance(sz_raw, int):
+                sz = sz_raw
+            else:
+                sz = None
+            out.append((fid, n, sz))
         page_token = resp.get("nextPageToken")
         if not page_token:
             break
-    return frozenset(out)
+    return out
+
+
+def list_drive_files_in_folder(*, parent_folder_id: str) -> list[tuple[str, str]]:
+    """Non-trashed files directly under *parent_folder_id*: ``(file_id, name)`` (excludes subfolders)."""
+    return [
+        (fid, name)
+        for fid, name, _sz in list_drive_files_in_folder_meta(parent_folder_id=parent_folder_id)
+    ]
+
+
+def download_drive_file_to_path(*, file_id: str, dest_path: str) -> None:
+    """Download Drive file *file_id* to *dest_path* (overwrites; atomic replace from temp file)."""
+    dest_abs = os.path.abspath(dest_path)
+    parent = os.path.dirname(dest_abs)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".gdrive_dl_", dir=parent if parent else None)
+    try:
+        os.close(fd)
+        service = _drive_service()
+        request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+        with open(tmp, "wb") as fh:
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                _status, done = downloader.next_chunk()
+        os.replace(tmp, dest_abs)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def find_existing_file_id_with_same_size(

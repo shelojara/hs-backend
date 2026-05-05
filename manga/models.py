@@ -130,6 +130,54 @@ class GoogleDriveBackupJob(models.Model):
         )
 
 
+class GoogleDriveRestoreJob(models.Model):
+    """Async restore: download all non-folder files from ``Manga/<series>/`` on Drive into local library."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="manga_google_drive_restore_jobs",
+    )
+    manga_root = models.CharField(
+        max_length=4096,
+        help_text="Normalized absolute manga library root when job was created.",
+    )
+    series = models.ForeignKey(
+        "Series",
+        on_delete=models.PROTECT,
+        related_name="google_drive_restore_jobs",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=16,
+        choices=GoogleDriveBackupJobStatus.choices,
+        default=GoogleDriveBackupJobStatus.PENDING,
+        db_index=True,
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    failure_message = models.TextField(null=True, blank=True)
+    restored_file_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Non-folder files written from Drive after successful completion.",
+    )
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        verbose_name = "Google Drive restore job"
+        verbose_name_plural = "Google Drive restore jobs"
+        indexes = [
+            models.Index(
+                fields=["user_id", "manga_root", "series_id"],
+                name="manga_gdrive_rst_user_root_ser",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"GoogleDriveRestoreJob(series={self.series_id}, status={self.status}, user={self.user_id})"
+        )
+
+
 class GoogleDriveApplicationCredentials(models.Model):
     """Singleton (pk=1): OAuth web client + refresh token for manga Drive backups.
 
