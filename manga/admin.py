@@ -3,6 +3,7 @@ from django.contrib import messages
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from manga.models import (
     CbzConvertJob,
@@ -128,7 +129,8 @@ class GoogleDriveApplicationCredentialsAdmin(admin.ModelAdmin):
     def picker_hint(self, obj: GoogleDriveApplicationCredentials) -> str:
         if not obj or not obj.pk:
             return "Save the form first."
-        return format_html(
+        # Static HTML: format_html requires ≥1 replacement arg; use mark_safe here.
+        return mark_safe(
             '<p><button type="button" class="button" id="manga-gdrive-folder-picker-btn">'
             "Browse folders in Google Drive</button></p>"
             '<p class="help" id="manga-gdrive-picker-err" style="display:none;color:#ba2121;"></p>'
