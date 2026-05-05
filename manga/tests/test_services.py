@@ -18,6 +18,8 @@ from manga.models import (
 )
 from manga.services import (
     build_cbz_page_slice,
+    clean_cbz_display_name,
+    clean_series_item_filename_on_disk,
     convert_cbz,
     first_cbz_page_as_base64,
     list_distinct_series_categories,
@@ -1082,3 +1084,55 @@ def test_sync_series_items_for_cbz_path_refreshes_cover(tmp_path, monkeypatch):
     assert s.cover_image_base64 is not None
     out = Image.open(BytesIO(base64.standard_b64decode(s.cover_image_base64)))
     assert out.format == "JPEG"
+
+
+def test_clean_cbz_display_name_two_underscores_takes_middle_segment() -> None:
+    assert clean_cbz_display_name("a_b_c.cbz") == "b.cbz"
+
+
+def test_clean_cbz_display_name_one_underscore_takes_first_segment() -> None:
+    assert clean_cbz_display_name("first_rest.cbz") == "first.cbz"
+
+
+def test_clean_cbz_display_name_no_underscore_returns_none() -> None:
+    assert clean_cbz_display_name("plain.cbz") is None
+
+
+@pytest.mark.django_db
+def test_clean_series_item_filename_on_disk_renames_file_and_row(tmp_path) -> None:
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    (root / "S" / "x_y_z.cbz").write_bytes(b"x")
+    abs_root = str(root.resolve())
+    series = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S")
+    item = SeriesItem.objects.create(
+        series=series,
+        rel_path="S/x_y_z.cbz",
+        filename="x_y_z.cbz",
+    )
+    clean_series_item_filename_on_disk(item_id=item.pk)
+    item.refresh_from_db()
+    assert item.rel_path == "S/y.cbz"
+    assert item.filename == "y.cbz"
+    assert (root / "S" / "y.cbz").is_file()
+    assert not (root / "S" / "x_y_z.cbz").exists()
+
+
+@pytest.mark.django_db
+def test_clean_series_item_filename_on_disk_errors_when_target_exists(tmp_path) -> None:
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    (root / "S" / "x_y_z.cbz").write_bytes(b"a")
+    (root / "S" / "y.cbz").write_bytes(b"b")
+    abs_root = str(root.resolve())
+    series = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S")
+    item = SeriesItem.objects.create(
+        series=series,
+        rel_path="S/x_y_z.cbz",
+        filename="x_y_z.cbz",
+    )
+    with pytest.raises(ValueError, match="already exists"):
+        clean_series_item_filename_on_disk(item_id=item.pk)
+    assert (root / "S" / "x_y_z.cbz").is_file()

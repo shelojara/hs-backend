@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.contrib import messages
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.html import format_html
@@ -12,6 +13,36 @@ from manga.models import (
     SeriesInfo,
     SeriesItem,
 )
+from manga.services import clean_series_item_filename_on_disk
+
+
+@admin.action(description="Clean CBZ filename (underscore rule; rename on disk)")
+def clean_cbz_filename(modeladmin, request, queryset) -> None:
+    ok = 0
+    skipped = 0
+    for item in queryset:
+        old = item.rel_path
+        try:
+            updated = clean_series_item_filename_on_disk(item_id=item.pk)
+        except ValueError as exc:
+            modeladmin.message_user(
+                request,
+                f"{old}: {exc}",
+                level=messages.ERROR,
+            )
+            continue
+        if updated.rel_path == old:
+            skipped += 1
+        else:
+            ok += 1
+    if ok:
+        modeladmin.message_user(request, f"Renamed {ok} file(s).", level=messages.SUCCESS)
+    if skipped:
+        modeladmin.message_user(
+            request,
+            f"Skipped {skipped} row(s) (already clean or rule did not apply).",
+            level=messages.INFO,
+        )
 
 
 @admin.register(GoogleDriveApplicationCredentials)
@@ -169,6 +200,22 @@ class SeriesItemInline(admin.TabularInline):
             '<img src="{}" alt="" style="max-height: 40px; max-width: 32px; object-fit: contain; vertical-align: middle;" />',
             data_url,
         )
+
+
+@admin.register(SeriesItem)
+class SeriesItemAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "series",
+        "rel_path",
+        "filename",
+        "size_bytes",
+        "is_converted",
+        "is_backed_up",
+    )
+    list_filter = ("is_converted", "is_backed_up")
+    search_fields = ("rel_path", "filename", "series__name")
+    actions = (clean_cbz_filename,)
 
 
 @admin.register(Series)
