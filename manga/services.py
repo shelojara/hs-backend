@@ -100,6 +100,96 @@ class CbzPagesDownload:
     filename: str
 
 
+@dataclass(frozen=True)
+class SeriesGoogleDriveLocalGap:
+    """Per-series counts from Drive folder vs files present under ``manga_root``."""
+
+    series: Series
+    google_drive_file_count: int
+    missing_local_file_count: int
+
+
+def list_series_google_drive_local_gaps(
+    *,
+    manga_root: str,
+    limit: int = 100,
+    offset: int = 0,
+    category: str | None = None,
+    search: str | None = None,
+) -> list[SeriesGoogleDriveLocalGap]:
+    """For each cached ``Series`` in the page, list Drive files under ``Manga/<name>/`` and count how many
+    filenames are absent as regular files under the series directory locally.
+
+    When the Drive folder is missing or listing fails, ``google_drive_file_count`` and
+    ``missing_local_file_count`` are both zero (nothing to compare).
+    """
+    rows = list_series(
+        manga_root=manga_root,
+        limit=limit,
+        offset=offset,
+        category=category,
+        search=search,
+    )
+    out: list[SeriesGoogleDriveLocalGap] = []
+    for series in rows:
+        drive_names: frozenset[str] = frozenset()
+        try:
+            folder_id = get_series_drive_folder_id_optional(series_name=series.name)
+            if folder_id:
+                drive_names = list_drive_file_names_in_folder(parent_folder_id=folder_id)
+        except Exception:
+            logger.warning(
+                "Google Drive local-gap skipped (series id=%s)",
+                series.pk,
+                exc_info=True,
+            )
+            out.append(
+                SeriesGoogleDriveLocalGap(
+                    series=series,
+                    google_drive_file_count=0,
+                    missing_local_file_count=0,
+                ),
+            )
+            continue
+
+        n_drive = len(drive_names)
+        if n_drive == 0:
+            out.append(
+                SeriesGoogleDriveLocalGap(
+                    series=series,
+                    google_drive_file_count=0,
+                    missing_local_file_count=0,
+                ),
+            )
+            continue
+
+        try:
+            series_abs = _path_under_manga_root(
+                manga_root=manga_root,
+                rel_path=series.series_rel_path,
+            )
+        except ValueError:
+            series_abs = ""
+
+        missing = 0
+        if series_abs and os.path.isdir(series_abs):
+            for name in drive_names:
+                full = os.path.join(series_abs, name)
+                if not os.path.isfile(full):
+                    missing += 1
+        else:
+            missing = n_drive
+
+        out.append(
+            SeriesGoogleDriveLocalGap(
+                series=series,
+                google_drive_file_count=n_drive,
+                missing_local_file_count=missing,
+            ),
+        )
+    return out
+
+
 def list_series(
     *,
     manga_root: str,

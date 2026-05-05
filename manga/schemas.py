@@ -76,6 +76,58 @@ class ListSeriesResponse(Schema):
     items: list[SeriesSchema]
 
 
+class SeriesGoogleDriveLocalGapSchema(Schema):
+    """Series row plus Drive vs local filename counts for ``Manga/<series name>/``."""
+
+    series: SeriesSchema
+    google_drive_file_count: int
+    missing_local_file_count: int
+
+
+class ListSeriesGoogleDriveLocalGapsRequest(Schema):
+    limit: int = Field(default=100, ge=1, le=500)
+    offset: int = Field(default=0, ge=0)
+    category: str | None = Field(
+        default=None,
+        description=(
+            "Omit or null for all series; non-empty string filters by parent folder name "
+            "under the library root. Empty or whitespace-only values are invalid."
+        ),
+    )
+    search: str | None = Field(
+        default=None,
+        description=(
+            "Omit or null for no text filter; non-empty string matches display name, "
+            "full series path under the library root, or category (case-insensitive substring). "
+            "Empty or whitespace-only values are invalid."
+        ),
+    )
+
+    @field_validator("category")
+    @classmethod
+    def category_non_empty_when_set(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        if not s:
+            raise ValueError("category must be a non-empty string when provided")
+        return s
+
+    @field_validator("search")
+    @classmethod
+    def search_non_empty_when_set(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        if not s:
+            raise ValueError("search must be a non-empty string when provided")
+        return s
+
+
+class ListSeriesGoogleDriveLocalGapsResponse(Schema):
+    items: list[SeriesGoogleDriveLocalGapSchema]
+
+
 class GetSeriesRequest(Schema):
     series_id: int = Field(ge=1)
 

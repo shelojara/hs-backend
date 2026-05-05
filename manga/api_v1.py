@@ -36,6 +36,8 @@ from manga.schemas import (
     ListGoogleDriveBackupJobsResponse,
     ListGoogleDriveRestoreJobsRequest,
     ListGoogleDriveRestoreJobsResponse,
+    ListSeriesGoogleDriveLocalGapsRequest,
+    ListSeriesGoogleDriveLocalGapsResponse,
     ListSeriesItemsRequest,
     ListSeriesItemsResponse,
     ListSeriesCategoriesResponse,
@@ -45,6 +47,7 @@ from manga.schemas import (
     RefreshSeriesInfoResponse,
     SearchMangabakaSeriesRequest,
     SearchMangabakaSeriesResponse,
+    SeriesGoogleDriveLocalGapSchema,
     SetSeriesMangabakaRequest,
     SetSeriesMangabakaResponse,
     SyncSeriesItemsRequest,
@@ -267,6 +270,30 @@ def get_google_drive_restore_job_rpc(request, payload: GetGoogleDriveRestoreJobR
     except GoogleDriveRestoreJob.DoesNotExist as exc:
         raise HttpError(404, "Restore job not found.") from exc
     return GetGoogleDriveRestoreJobResponse(job=_google_drive_restore_job_schema(j))
+
+
+@router.post("/v1.Manga.ListSeriesGoogleDriveLocalGaps", response=ListSeriesGoogleDriveLocalGapsResponse)
+def list_series_google_drive_local_gaps_rpc(request, payload: ListSeriesGoogleDriveLocalGapsRequest):
+    try:
+        gaps = services.list_series_google_drive_local_gaps(
+            manga_root=settings.MANGA_ROOT,
+            limit=payload.limit,
+            offset=payload.offset,
+            category=payload.category,
+            search=payload.search,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return ListSeriesGoogleDriveLocalGapsResponse(
+        items=[
+            SeriesGoogleDriveLocalGapSchema(
+                series=_series_schema(g.series),
+                google_drive_file_count=g.google_drive_file_count,
+                missing_local_file_count=g.missing_local_file_count,
+            )
+            for g in gaps
+        ],
+    )
 
 
 @router.post("/v1.Manga.ListSeries", response=ListSeriesResponse)
