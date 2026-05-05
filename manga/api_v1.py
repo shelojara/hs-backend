@@ -35,6 +35,7 @@ from manga.schemas import (
     ListCbzConvertJobsResponse,
     ListGoogleDriveBackupJobsRequest,
     ListGoogleDriveBackupJobsResponse,
+    ListGoogleDriveRestoreCandidatesRequest,
     ListGoogleDriveRestoreCandidatesResponse,
     ListSeriesItemsRequest,
     ListSeriesItemsResponse,
@@ -112,6 +113,7 @@ def _google_drive_restore_job_schema(j: GoogleDriveRestoreJob) -> GoogleDriveRes
         restore_job_id=j.pk,
         created_at=j.created_at,
         series_name=j.series_name,
+        category=(j.category or "").strip(),
         status=j.status,
         completed_at=j.completed_at,
         failure_message=((j.failure_message or "").strip() or None),
@@ -218,8 +220,15 @@ def get_google_drive_backup_job_rpc(request, payload: GetGoogleDriveBackupJobReq
 
 
 @router.post("/v1.Manga.ListGoogleDriveRestoreCandidates", response=ListGoogleDriveRestoreCandidatesResponse)
-def list_google_drive_restore_candidates_rpc(request):
-    rows = services.list_google_drive_restore_candidates(manga_root=settings.MANGA_ROOT)
+def list_google_drive_restore_candidates_rpc(
+    request,
+    payload: ListGoogleDriveRestoreCandidatesRequest,
+):
+    cat = (payload.category or "").strip() or None
+    rows = services.list_google_drive_restore_candidates(
+        manga_root=settings.MANGA_ROOT,
+        category=cat,
+    )
     return ListGoogleDriveRestoreCandidatesResponse(
         items=[
             GoogleDriveRestoreCandidateSchema(
@@ -239,6 +248,7 @@ def create_google_drive_restore_job_rpc(request, payload: CreateGoogleDriveResto
         jid = services.create_google_drive_restore_job(
             manga_root=settings.MANGA_ROOT,
             series_name=payload.series_name,
+            category=payload.category,
             user_id=request.auth.pk,
         )
     except ValueError as exc:

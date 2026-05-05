@@ -152,6 +152,7 @@ class GoogleDriveRestoreJobAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "user",
+        "category",
         "series_name",
         "status",
         "created_at",

@@ -152,6 +152,12 @@ class GoogleDriveRestoreJob(models.Model):
         max_length=1024,
         help_text="Series folder name under Drive ``Manga/<name>/`` (matches backup layout).",
     )
+    category = models.CharField(
+        max_length=1024,
+        blank=True,
+        default="",
+        help_text="Library subdirectory under manga root; files go to ``<root>/<category>/<series_name>/``.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(
         max_length=16,
@@ -172,7 +178,10 @@ class GoogleDriveRestoreJob(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"GoogleDriveRestoreJob(series_name={self.series_name!r}, status={self.status}, user={self.user_id})"
+        return (
+            f"GoogleDriveRestoreJob(category={self.category!r}, series_name={self.series_name!r}, "
+            f"status={self.status}, user={self.user_id})"
+        )
 
 
 class GoogleDriveApplicationCredentials(models.Model):

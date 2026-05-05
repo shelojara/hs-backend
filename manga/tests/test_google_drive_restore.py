@@ -1,5 +1,6 @@
 """Google Drive restore: list backup folders vs local gaps + async download."""
 
+import posixpath
 from pathlib import Path
 from unittest.mock import patch
 
@@ -43,12 +44,16 @@ def test_list_restore_candidates_counts_missing(mock_root_id, mock_children, moc
     ]
     mock_cbzs.side_effect = cbzs_side_effect
 
-    Series.objects.create(library_root=abs_root, series_rel_path="Alpha", name="Alpha")
-    a_path = root / "Alpha" / "a.cbz"
-    a_path.parent.mkdir()
+    Series.objects.create(
+        library_root=abs_root,
+        series_rel_path=posixpath.join("manga", "Alpha"),
+        name="Alpha",
+    )
+    a_path = root / "manga" / "Alpha" / "a.cbz"
+    a_path.parent.mkdir(parents=True)
     a_path.write_bytes(b"x" * 10)
 
-    rows = list_google_drive_restore_candidates(manga_root=str(root))
+    rows = list_google_drive_restore_candidates(manga_root=str(root), category="manga")
     by_name = {r["series_name"]: r for r in rows}
     assert by_name["Alpha"]["drive_cbz_count"] == 2
     assert by_name["Alpha"]["missing_files"] == 1
@@ -69,16 +74,32 @@ def test_create_restore_job_enqueues(_mock_folder, mock_list_cbz, mock_async, tm
     jid = create_google_drive_restore_job(
         manga_root=str(root),
         series_name="  MySeries  ",
+        category="manga",
         user_id=u.pk,
     )
     job = GoogleDriveRestoreJob.objects.get(pk=jid)
     assert job.status == GoogleDriveRestoreJobStatus.PENDING
     assert job.series_name == "MySeries"
+    assert job.category == "manga"
     mock_async.assert_called_once_with(
         "manga.scheduled_tasks.run_google_drive_restore_job",
         jid,
         task_name=f"manga_gdrive_restore:{jid}",
     )
+
+
+@pytest.mark.django_db
+def test_create_restore_job_empty_category_raises(tmp_path):
+    root = tmp_path / "lib"
+    root.mkdir()
+    u = User.objects.create_user(username="gr_u_cat", password="pw")
+    with pytest.raises(ValueError, match="category must be non-empty"):
+        create_google_drive_restore_job(
+            manga_root=str(root),
+            series_name="S",
+            category="   ",
+            user_id=u.pk,
+        )
 
 
 @pytest.mark.django_db
@@ -91,6 +112,7 @@ def test_create_restore_job_no_drive_folder_raises(_mock_opt, tmp_path):
         create_google_drive_restore_job(
             manga_root=str(root),
             series_name="Nope",
+            category="manga",
             user_id=u.pk,
         )
 
@@ -123,6 +145,7 @@ def test_run_restore_job_downloads_and_creates_series(
         user=u,
         manga_root=abs_root,
         series_name="Restored",
+        category="manga",
     )
 
     run_google_drive_restore_job(job_id=job.pk)
@@ -130,11 +153,14 @@ def test_run_restore_job_downloads_and_creates_series(
     job.refresh_from_db()
     assert job.status == GoogleDriveRestoreJobStatus.COMPLETED
     assert job.failure_message is None
-    out = root / "Restored" / "one.cbz"
+    out = root / "manga" / "Restored" / "one.cbz"
     assert out.is_file()
     mock_download.assert_called_once()
     assert mock_sync.called
-    s = Series.objects.get(library_root=abs_root, series_rel_path="Restored")
+    s = Series.objects.get(
+        library_root=abs_root,
+        series_rel_path=posixpath.join("manga", "Restored"),
+    )
     assert s.name == "Restored"
 
 
@@ -148,6 +174,7 @@ def test_get_google_drive_restore_job_owner(tmp_path):
         user=u,
         manga_root=abs_root,
         series_name="X",
+        category="manga",
     )
     got = get_google_drive_restore_job(job_id=job.pk, user_id=u.pk)
     assert got.pk == job.pk
