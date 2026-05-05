@@ -130,6 +130,51 @@ class GoogleDriveBackupJob(models.Model):
         )
 
 
+class GoogleDriveRestoreJobStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    COMPLETED = "completed", "Completed"
+    FAILED = "failed", "Failed"
+
+
+class GoogleDriveRestoreJob(models.Model):
+    """Async restore of one series from Google Drive backup (download CBZs into library)."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="manga_google_drive_restore_jobs",
+    )
+    manga_root = models.CharField(
+        max_length=4096,
+        help_text="Normalized absolute manga library root when job was created.",
+    )
+    series_name = models.CharField(
+        max_length=1024,
+        help_text="Series folder name under Drive ``Manga/<name>/`` (matches backup layout).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=16,
+        choices=GoogleDriveRestoreJobStatus.choices,
+        default=GoogleDriveRestoreJobStatus.PENDING,
+        db_index=True,
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    failure_message = models.TextField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(
+                fields=["user_id", "manga_root"],
+                name="manga_gdrive_restore_user_root",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"GoogleDriveRestoreJob(series_name={self.series_name!r}, status={self.status}, user={self.user_id})"
+
+
 class GoogleDriveApplicationCredentials(models.Model):
     """Singleton (pk=1): OAuth web client + refresh token for manga Drive backups.
 

@@ -16,7 +16,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload, MediaIoBaseUpload
 
 logger = logging.getLogger(__name__)
 
@@ -252,6 +252,116 @@ def list_drive_file_names_in_folder(*, parent_folder_id: str) -> frozenset[str]:
         if not page_token:
             break
     return frozenset(out)
+
+
+def list_drive_cbz_files_in_folder(
+    *,
+    parent_folder_id: str,
+) -> list[dict[str, Any]]:
+    """Non-trashed files directly under *parent_folder_id* whose name ends with ``.cbz`` (case-insensitive).
+
+    Each entry: ``{"id", "name", "size"}`` (``size`` int when Drive reports it, else ``0``).
+    """
+    service = _drive_service()
+    out: list[dict[str, Any]] = []
+    page_token: str | None = None
+    q = (
+        f"'{parent_folder_id}' in parents and trashed = false "
+        f"and mimeType != '{_DRIVE_MIME_FOLDER}'"
+    )
+    while True:
+        kwargs: dict[str, Any] = {
+            "q": q,
+            "spaces": "drive",
+            "fields": "nextPageToken, files(id, name, size)",
+            "pageSize": 1000,
+            "supportsAllDrives": True,
+            "includeItemsFromAllDrives": True,
+        }
+        if page_token:
+            kwargs["pageToken"] = page_token
+        resp = service.files().list(**kwargs).execute()
+        for f in resp.get("files") or []:
+            n = f.get("name")
+            if not isinstance(n, str) or not n:
+                continue
+            if not n.lower().endswith(".cbz"):
+                continue
+            fid = f.get("id")
+            if not isinstance(fid, str) or not fid:
+                continue
+            sz_raw = f.get("size")
+            try:
+                size = int(sz_raw) if sz_raw is not None else 0
+            except (TypeError, ValueError):
+                size = 0
+            out.append({"id": fid, "name": n, "size": size})
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+    out.sort(key=lambda r: r["name"])
+    return out
+
+
+def list_child_folder_names_and_ids(*, parent_folder_id: str) -> list[tuple[str, str]]:
+    """Immediate non-trashed subfolders: ``(folder_id, name)`` sorted by name."""
+    service = _drive_service()
+    out: list[tuple[str, str]] = []
+    page_token: str | None = None
+    q = (
+        f"'{parent_folder_id}' in parents and trashed = false "
+        f"and mimeType = '{_DRIVE_MIME_FOLDER}'"
+    )
+    while True:
+        kwargs: dict[str, Any] = {
+            "q": q,
+            "spaces": "drive",
+            "fields": "nextPageToken, files(id, name)",
+            "pageSize": 1000,
+            "supportsAllDrives": True,
+            "includeItemsFromAllDrives": True,
+        }
+        if page_token:
+            kwargs["pageToken"] = page_token
+        resp = service.files().list(**kwargs).execute()
+        for f in resp.get("files") or []:
+            name = f.get("name")
+            fid = f.get("id")
+            if isinstance(name, str) and name and isinstance(fid, str) and fid:
+                out.append((fid, name))
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+    out.sort(key=lambda t: t[1])
+    return out
+
+
+def get_manga_root_drive_folder_id_optional() -> str | None:
+    """Return Drive folder id for configured ``Manga`` root under parent (no folder creation)."""
+    service = _drive_service()
+    with _google_drive_folder_resolve_lock():
+        return _find_folder_id(
+            service=service,
+            parent_id=_drive_parent_for_root_folder(),
+            name=_root_folder_name(),
+        )
+
+
+def download_drive_file_to_path(*, file_id: str, dest_path: str) -> None:
+    """Download file bytes to *dest_path* (parent directory must exist)."""
+    service = _drive_service()
+    request = service.files().get_media(fileId=file_id)
+    with open(dest_path, "wb") as fh:
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+            if status is not None:
+                logger.debug(
+                    "Drive download %s %d%%",
+                    file_id,
+                    int(status.progress() * 100),
+                )
 
 
 def find_existing_file_id_with_same_size(
