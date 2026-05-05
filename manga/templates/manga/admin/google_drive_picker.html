@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Google Drive Picker — Manga</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 52rem; margin: 1.5rem auto; padding: 0 1rem; }
+    .warn { color: #856404; background: #fff3cd; border: 1px solid #ffc107; padding: 0.75rem 1rem; border-radius: 4px; }
+    .err { color: #721c24; background: #f8d7da; border: 1px solid #f5c6cb; padding: 0.75rem 1rem; border-radius: 4px; }
+    button { padding: 0.5rem 1rem; cursor: pointer; }
+    pre { background: #f5f5f5; padding: 1rem; overflow: auto; font-size: 0.85rem; }
+    a { color: #417690; }
+  </style>
+</head>
+<body>
+  <p><a href="{% url 'admin:manga_googledriveapplicationcredentials_change' 1 %}">← Google Drive OAuth credentials</a></p>
+  <h1>Google Drive Picker</h1>
+  <p>Select files or folders so Google associates them with this app under the <code>drive.file</code> scope (e.g. uploads you added outside the backup worker).</p>
+
+  {% if not has_refresh %}
+    <div class="err"><strong>Not connected.</strong> Complete <strong>Start Google OAuth</strong> on the credentials page first.</div>
+  {% elif not picker_api_key_configured %}
+    <div class="warn"><strong>Missing Browser API key.</strong> Create an API key in Google Cloud Console (restrict by HTTP referrer), paste it into <strong>Browser API key</strong> on the credentials page, save, then reload this page.</div>
+  {% elif not picker_client_id_configured %}
+    <div class="err"><strong>Missing OAuth Web client ID.</strong> Set it on the credentials page.</div>
+  {% endif %}
+
+  {% if picker_ready %}
+    <p>
+      <button type="button" id="open-picker">Open Google Picker</button>
+    </p>
+    <p id="token-status" aria-live="polite"></p>
+    <p><strong>Last picker response</strong></p>
+    <pre id="picker-result">(none yet)</pre>
+  {% endif %}
+
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script>
+    function getCookie(name) {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop().split(';').shift();
+      return '';
+    }
+    {% if picker_ready %}
+    (function () {
+      const csrfToken = getCookie('csrftoken');
+      const tokenUrl = '{% url "admin_manga_gdrive_picker_token" %}';
+      const btn = document.getElementById('open-picker');
+      const statusEl = document.getElementById('token-status');
+      const resultEl = document.getElementById('picker-result');
+
+      function setStatus(msg) {
+        if (statusEl) statusEl.textContent = msg || '';
+      }
+
+      function fetchAccessToken() {
+        return fetch(tokenUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'X-CSRFToken': csrfToken,
+            'Content-Type': 'application/json',
+          },
+          body: '{}',
+        }).then(function (r) {
+          return r.json().then(function (body) {
+            if (!r.ok) {
+              throw new Error(body.error || r.statusText);
+            }
+            return body.access_token;
+          });
+        });
+      }
+
+      function pickerCallback(data) {
+        const r = google.picker.Response;
+        if (data[r.ACTION] === google.picker.Action.PICKED) {
+          const docs = data[r.DOCUMENTS] || [];
+          resultEl.textContent = JSON.stringify(docs, null, 2);
+        } else if (data[r.ACTION] === google.picker.Action.CANCEL) {
+          resultEl.textContent = '(cancelled)';
+        } else {
+          resultEl.textContent = JSON.stringify(data, null, 2);
+        }
+      }
+
+      function openPickerWithToken(accessToken) {
+        const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+          .setIncludeFolders(true)
+          .setSelectFolderEnabled(true);
+        const picker = new google.picker.PickerBuilder()
+          .enableFeature(google.picker.Feature.NAV_HIDDEN)
+          .addView(view)
+          .setOAuthToken(accessToken)
+          .setDeveloperKey('{{ browser_api_key|escapejs }}')
+          .setCallback(pickerCallback)
+          .build();
+        picker.setVisible(true);
+      }
+
+      btn.addEventListener('click', function () {
+        setStatus('Fetching access token…');
+        fetchAccessToken()
+          .then(function (token) {
+            setStatus('Loading Picker…');
+            gapi.load('picker', function () {
+              setStatus('');
+              openPickerWithToken(token);
+            });
+          })
+          .catch(function (err) {
+            setStatus('');
+            resultEl.textContent = 'Error: ' + (err && err.message ? err.message : String(err));
+          });
+      });
+    })();
+    {% endif %}
+  </script>
+</body>
+</html>

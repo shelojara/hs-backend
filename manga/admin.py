@@ -82,6 +82,7 @@ class GoogleDriveApplicationCredentialsAdmin(admin.ModelAdmin):
                     "oauth_actions",
                     "client_id",
                     "client_secret",
+                    "browser_api_key",
                     "refresh_token",
                     "access_token",
                     "access_token_expires_at",
@@ -110,11 +111,15 @@ class GoogleDriveApplicationCredentialsAdmin(admin.ModelAdmin):
         if not obj or not obj.pk:
             return "Save once, then use buttons below."
         start = reverse("admin_manga_gdrive_oauth_start")
+        picker = reverse("admin_manga_gdrive_picker")
         return format_html(
             '<p><a class="button" href="{}">Start Google OAuth (sign in; offline consent)</a></p>'
+            '<p><a class="button" href="{}">Open Google Drive Picker</a> — grant manual uploads under '
+            "<code>drive.file</code> (superuser; set Browser API key first).</p>"
             "<p>Add authorized redirect URI in Google Cloud Console: "
             "<code>…/admin/manga/googledriveoauth/callback/</code> (full URL of this site).</p>",
             start,
+            picker,
         )
 
     @admin.display(description="Connected", boolean=True)

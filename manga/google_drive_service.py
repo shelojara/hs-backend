@@ -86,6 +86,15 @@ def _drive_credentials() -> OAuthCredentials:
     return oauth
 
 
+def get_drive_access_token_for_picker() -> str:
+    """OAuth access token for Google Picker in admin (same ``drive.file`` scope as backend)."""
+    creds = _drive_credentials()
+    token = (creds.token or "").strip()
+    if not token:
+        raise RuntimeError("Access token unavailable after refresh.")
+    return token
+
+
 def _drive_service() -> Any:
     creds = _drive_credentials()
     return build("drive", "v3", credentials=creds, cache_discovery=False)

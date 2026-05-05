@@ -222,6 +222,15 @@ class GoogleDriveApplicationCredentials(models.Model):
         max_length=256,
         default="https://oauth2.googleapis.com/token",
     )
+    browser_api_key = models.CharField(
+        max_length=256,
+        blank=True,
+        default="",
+        help_text=(
+            "Browser API key for Google Picker (optional). Restrict this key by HTTP "
+            "referrer in Google Cloud Console."
+        ),
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
