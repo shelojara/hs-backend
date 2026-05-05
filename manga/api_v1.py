@@ -230,6 +230,8 @@ def create_google_drive_restore_job_rpc(request, payload: CreateGoogleDriveResto
         msg = str(exc)
         if msg == "Series not found":
             raise HttpError(404, msg) from exc
+        if msg == "Another restore is already in progress.":
+            raise HttpError(409, msg) from exc
         raise HttpError(400, msg) from exc
     return CreateGoogleDriveRestoreJobResponse(restore_job_id=job_id)
 

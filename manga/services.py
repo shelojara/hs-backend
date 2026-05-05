@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Literal
 
 from django.conf import settings
-from django.db import connection, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 from django_q.tasks import async_task
@@ -49,6 +49,7 @@ from manga.models import (
     CbzConvertKind,
     GoogleDriveBackupJob,
     GoogleDriveBackupJobStatus,
+    GOOGLE_DRIVE_RESTORE_PENDING_LOCK,
     GoogleDriveRestoreJob,
     Series,
     SeriesInfo,
@@ -983,17 +984,30 @@ def create_google_drive_restore_job(
     series_id: int,
     user_id: int,
 ) -> int:
-    """Create pending ``GoogleDriveRestoreJob`` and enqueue worker; returns primary key."""
+    """Create pending ``GoogleDriveRestoreJob`` and enqueue worker; returns primary key.
+
+    At most one *pending* restore may exist (global). Raises ``ValueError("Another restore is already in progress.")
+    when a pending job is already queued or running.
+    """
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
     try:
         series = Series.objects.get(pk=series_id, library_root=root_norm)
     except Series.DoesNotExist as exc:
         raise ValueError("Series not found") from exc
-    row = GoogleDriveRestoreJob.objects.create(
-        user_id=user_id,
-        manga_root=root_norm,
-        series_id=series.pk,
-    )
+    if GoogleDriveRestoreJob.objects.filter(
+        status=GoogleDriveBackupJobStatus.PENDING,
+    ).exists():
+        raise ValueError("Another restore is already in progress.")
+    try:
+        with transaction.atomic():
+            row = GoogleDriveRestoreJob.objects.create(
+                user_id=user_id,
+                manga_root=root_norm,
+                series_id=series.pk,
+                pending_lock=GOOGLE_DRIVE_RESTORE_PENDING_LOCK,
+            )
+    except IntegrityError as exc:
+        raise ValueError("Another restore is already in progress.") from exc
     async_task(
         "manga.scheduled_tasks.run_google_drive_restore_job",
         row.pk,
@@ -1486,12 +1500,14 @@ def run_google_drive_restore_job(*, job_id: int) -> None:
         job.completed_at = timezone.now()
         job.failure_message = None
         job.restored_file_count = ensured
+        job.pending_lock = 0
         job.save(
             update_fields=[
                 "status",
                 "completed_at",
                 "failure_message",
                 "restored_file_count",
+                "pending_lock",
             ],
         )
     except Exception as exc:
@@ -1499,4 +1515,7 @@ def run_google_drive_restore_job(*, job_id: int) -> None:
         job.status = GoogleDriveBackupJobStatus.FAILED
         job.completed_at = timezone.now()
         job.failure_message = drive_http_error_message(exc)
-        job.save(update_fields=["status", "completed_at", "failure_message"])
+        job.pending_lock = 0
+        job.save(
+            update_fields=["status", "completed_at", "failure_message", "pending_lock"],
+        )

@@ -7,6 +7,7 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from manga.models import (
+    GOOGLE_DRIVE_RESTORE_PENDING_LOCK,
     GoogleDriveBackupJobStatus,
     GoogleDriveRestoreJob,
     Series,
@@ -48,11 +49,39 @@ def test_create_google_drive_restore_job_persists_pending_and_enqueues(mock_asyn
     assert j.manga_root == abs_root
     assert j.series_id == s.pk
     assert j.status == GoogleDriveBackupJobStatus.PENDING
+    assert j.pending_lock == 1
     mock_async.assert_called_once_with(
         "manga.scheduled_tasks.run_google_drive_restore_job",
         jid,
         task_name=f"manga_gdrive_restore:{jid}",
     )
+
+
+@pytest.mark.django_db
+@patch("manga.services.async_task")
+def test_create_google_drive_restore_job_rejects_while_another_pending(mock_async, tmp_path):
+    root = tmp_path / "lib"
+    root.mkdir()
+    abs_root = str(root.resolve())
+    s1 = Series.objects.create(library_root=abs_root, series_rel_path="a", name="a")
+    s2 = Series.objects.create(library_root=abs_root, series_rel_path="b", name="b")
+    (root / "a").mkdir()
+    (root / "b").mkdir()
+    SeriesItem.objects.create(series=s1, rel_path="a/1.cbz", filename="1.cbz", size_bytes=1)
+    SeriesItem.objects.create(series=s2, rel_path="b/1.cbz", filename="1.cbz", size_bytes=1)
+    u = User.objects.create_user(username="gdr_u6", password="pw")
+    create_google_drive_restore_job(
+        manga_root=str(root),
+        series_id=s1.pk,
+        user_id=u.pk,
+    )
+    with pytest.raises(ValueError, match="Another restore is already in progress"):
+        create_google_drive_restore_job(
+            manga_root=str(root),
+            series_id=s2.pk,
+            user_id=u.pk,
+        )
+    assert mock_async.call_count == 1
 
 
 @pytest.mark.django_db
@@ -80,6 +109,7 @@ def test_run_google_drive_restore_job_downloads_and_completes(
         user=u,
         manga_root=abs_root,
         series=s,
+        pending_lock=GOOGLE_DRIVE_RESTORE_PENDING_LOCK,
     )
 
     run_google_drive_restore_job(job_id=job.pk)
@@ -87,6 +117,7 @@ def test_run_google_drive_restore_job_downloads_and_completes(
     job.refresh_from_db()
     assert job.status == GoogleDriveBackupJobStatus.COMPLETED
     assert job.restored_file_count == 1
+    assert job.pending_lock == 0
     assert job.failure_message is None
     mock_download.assert_called_once()
     _args, kwargs = mock_download.call_args
@@ -107,12 +138,14 @@ def test_run_google_drive_restore_job_fails_when_no_drive_folder(_mock_folder, t
         user=u,
         manga_root=abs_root,
         series=s,
+        pending_lock=GOOGLE_DRIVE_RESTORE_PENDING_LOCK,
     )
 
     run_google_drive_restore_job(job_id=job.pk)
 
     job.refresh_from_db()
     assert job.status == GoogleDriveBackupJobStatus.FAILED
+    assert job.pending_lock == 0
     assert "Series folder not found" in (job.failure_message or "")
 
 

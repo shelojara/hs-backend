@@ -130,6 +130,10 @@ class GoogleDriveBackupJob(models.Model):
         )
 
 
+# Only one row may use this value while ``status`` is pending (see UniqueConstraint).
+GOOGLE_DRIVE_RESTORE_PENDING_LOCK = 1
+
+
 class GoogleDriveRestoreJob(models.Model):
     """Async restore: download all non-folder files from ``Manga/<series>/`` on Drive into local library."""
 
@@ -160,6 +164,13 @@ class GoogleDriveRestoreJob(models.Model):
         default=0,
         help_text="Non-folder files written from Drive after successful completion.",
     )
+    pending_lock = models.PositiveSmallIntegerField(
+        default=0,
+        help_text=(
+            f"{GOOGLE_DRIVE_RESTORE_PENDING_LOCK} while this row is the queued restore; "
+            "0 after completed/failed. At most one pending job may use this value."
+        ),
+    )
 
     class Meta:
         ordering = ("-created_at", "-id")
@@ -169,6 +180,14 @@ class GoogleDriveRestoreJob(models.Model):
             models.Index(
                 fields=["user_id", "manga_root", "series_id"],
                 name="manga_gdrive_rst_user_root_ser",
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("pending_lock",),
+                condition=models.Q(status=GoogleDriveBackupJobStatus.PENDING)
+                & models.Q(pending_lock=GOOGLE_DRIVE_RESTORE_PENDING_LOCK),
+                name="manga_gdrive_restore_one_pending",
             ),
         ]
 
