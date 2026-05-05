@@ -1094,8 +1094,43 @@ def test_clean_cbz_display_name_one_underscore_takes_first_segment() -> None:
     assert clean_cbz_display_name("first_rest.cbz") == "first.cbz"
 
 
-def test_clean_cbz_display_name_no_underscore_returns_none() -> None:
+def test_clean_cbz_display_name_leading_hash_becomes_chapter() -> None:
+    assert clean_cbz_display_name("#12.cbz") == "Chapter 12.cbz"
+
+
+def test_clean_cbz_display_name_hash_with_space_after_no_extra_space() -> None:
+    assert clean_cbz_display_name("# 99.cbz") == "Chapter 99.cbz"
+
+
+def test_clean_cbz_display_name_hash_then_underscore_rules() -> None:
+    """Two underscores: middle segment may start with #; Chapter applied after extraction."""
+    assert clean_cbz_display_name("#a_b_c.cbz") == "b.cbz"
+    assert clean_cbz_display_name("pre_#mid_suf.cbz") == "Chapter mid.cbz"
+
+
+def test_clean_cbz_display_name_plain_no_change_returns_none() -> None:
     assert clean_cbz_display_name("plain.cbz") is None
+
+
+@pytest.mark.django_db
+def test_clean_series_item_filename_on_disk_renames_hash_prefix_to_chapter(tmp_path) -> None:
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    (root / "S" / "#9.cbz").write_bytes(b"x")
+    abs_root = str(root.resolve())
+    series = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S")
+    item = SeriesItem.objects.create(
+        series=series,
+        rel_path="S/#9.cbz",
+        filename="#9.cbz",
+    )
+    clean_series_item_filename_on_disk(item_id=item.pk)
+    item.refresh_from_db()
+    assert item.rel_path == "S/Chapter 9.cbz"
+    assert item.filename == "Chapter 9.cbz"
+    assert (root / "S" / "Chapter 9.cbz").is_file()
+    assert not (root / "S" / "#9.cbz").exists()
 
 
 @pytest.mark.django_db
