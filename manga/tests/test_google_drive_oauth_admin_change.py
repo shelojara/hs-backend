@@ -22,3 +22,35 @@ def test_google_drive_oauth_change_page_ok():
     url = reverse("admin:manga_googledriveapplicationcredentials_change", args=(1,))
     r = client.get(url)
     assert r.status_code == 200
+
+
+@pytest.mark.django_db
+def test_google_drive_oauth_change_form_post_no_fake_field_error():
+    GoogleDriveApplicationCredentials.objects.update_or_create(
+        pk=1,
+        defaults={
+            "client_id": "x.apps.googleusercontent.com",
+            "client_secret": "secret",
+            "refresh_token": "r",
+        },
+    )
+    client = Client()
+    u = User.objects.create_superuser("su2", "su2@x.com", "pw")
+    client.force_login(u)
+    url = reverse("admin:manga_googledriveapplicationcredentials_change", args=(1,))
+    r = client.get(url)
+    assert r.status_code == 200
+    post = client.post(
+        url,
+        {
+            "client_id": "x.apps.googleusercontent.com",
+            "client_secret": "secret",
+            "refresh_token": "r",
+            "access_token": "",
+            "access_token_expires_at": "",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "developer_key": "",
+            "_save": "Save",
+        },
+    )
+    assert post.status_code == 302

@@ -6,3 +6,15 @@
 window.MANGA_GDRIVE_PICKER_TOKEN_URL = "{% url 'admin_manga_gdrive_picker_token' %}";
 </script>
 {% endblock %}
+
+{% block after_field_sets %}
+<fieldset class="module aligned">
+  <h2>Drive folder browser</h2>
+  <div class="form-row">
+    <p><button type="button" class="button" id="manga-gdrive-folder-picker-btn">Browse folders in Google Drive</button></p>
+    <p class="help" id="manga-gdrive-picker-err" style="display:none;color:#ba2121;"></p>
+    <p class="help">Selected folder id: <code id="manga-gdrive-picker-folder-id">—</code></p>
+    <p class="help">Backups always use <code>Manga/</code> at <strong>My Drive root</strong> (parent is not configurable). Picker is only for checking folder ids or navigation.</p>
+  </div>
+</fieldset>
+{% endblock %}
