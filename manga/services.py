@@ -191,6 +191,72 @@ def _path_under_manga_root(*, manga_root: str, rel_path: str) -> str:
     return joined
 
 
+def clean_cbz_display_name(filename: str) -> str | None:
+    """Derive shorter ``.cbz`` basename from underscores: 2+ underscores → segment between first two;
+    exactly 1 → segment before first underscore. Returns ``None`` if rule does not apply or result invalid."""
+    if not filename.lower().endswith(".cbz"):
+        return None
+    stem = filename[:-4]
+    n = stem.count("_")
+    if n == 0:
+        return None
+    if n >= 2:
+        _a, middle, _rest = stem.split("_", 2)
+        new_stem = middle
+    else:
+        new_stem = stem.split("_", 1)[0]
+    new_stem = new_stem.strip()
+    if not new_stem:
+        return None
+    return f"{new_stem}.cbz"
+
+
+def clean_series_item_filename_on_disk(*, item_id: int) -> SeriesItem:
+    """Rename CBZ on disk and update ``SeriesItem`` ``rel_path`` / ``filename``.
+
+    Uses ``clean_cbz_display_name``; no-op if name already clean. Raises if target basename exists.
+    """
+    try:
+        item = SeriesItem.objects.select_related("series").get(pk=item_id)
+    except SeriesItem.DoesNotExist as exc:
+        raise ValueError("Item not found") from exc
+
+    manga_root = item.series.library_root
+    old_base = os.path.basename(item.rel_path)
+    new_base = clean_cbz_display_name(old_base)
+    if new_base is None or new_base == old_base:
+        return item
+
+    parent_rel = posixpath.dirname(item.rel_path)
+    new_rel = posixpath.join(parent_rel, new_base) if parent_rel else new_base
+
+    old_abs = _path_under_manga_root(manga_root=manga_root, rel_path=item.rel_path)
+    new_abs = _path_under_manga_root(manga_root=manga_root, rel_path=new_rel)
+
+    if not os.path.isfile(old_abs):
+        raise ValueError("CBZ not found")
+    if os.path.exists(new_abs):
+        raise ValueError("Target filename already exists")
+
+    with transaction.atomic():
+        os.rename(old_abs, new_abs)
+        try:
+            item.rel_path = new_rel.replace("\\", "/")
+            item.filename = new_base
+            item.save(update_fields=["rel_path", "filename"])
+        except Exception:
+            try:
+                os.rename(new_abs, old_abs)
+            except OSError:
+                logger.exception(
+                    "clean_series_item_filename_on_disk: rollback rename failed (item_id=%s)",
+                    item_id,
+                )
+            raise
+
+    return SeriesItem.objects.get(pk=item.pk)
+
+
 def _series_item_for_manga_root(*, manga_root: str, item_id: int) -> SeriesItem:
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
     try:
