@@ -242,6 +242,44 @@ class GetGoogleDriveBackupJobResponse(Schema):
     job: GoogleDriveBackupJobSchema
 
 
+class GoogleDriveRestoreCandidateSchema(Schema):
+    series_name: str
+    drive_cbz_count: int
+    missing_files: int
+    exists_locally: bool
+
+
+class ListGoogleDriveRestoreCandidatesResponse(Schema):
+    items: list[GoogleDriveRestoreCandidateSchema]
+
+
+class CreateGoogleDriveRestoreJobRequest(Schema):
+    series_name: str = Field(min_length=1, max_length=1024)
+    category: str = Field(min_length=1, max_length=1024)
+
+
+class CreateGoogleDriveRestoreJobResponse(Schema):
+    restore_job_id: int
+
+
+class GetGoogleDriveRestoreJobRequest(Schema):
+    restore_job_id: int = Field(ge=1)
+
+
+class GoogleDriveRestoreJobSchema(Schema):
+    restore_job_id: int
+    created_at: datetime
+    series_name: str
+    category: str
+    status: str
+    completed_at: datetime | None
+    failure_message: str | None = None
+
+
+class GetGoogleDriveRestoreJobResponse(Schema):
+    job: GoogleDriveRestoreJobSchema
+
+
 class DownloadCbzRequest(Schema):
     item_id: int
 

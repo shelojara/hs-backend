@@ -7,7 +7,7 @@ from ninja.errors import HttpError
 from auth.security import protected_api_auth
 from manga.mangabaka_client import MangaBakaAPIError
 from manga import services
-from manga.models import CbzConvertJob, GoogleDriveBackupJob, Series
+from manga.models import CbzConvertJob, GoogleDriveBackupJob, GoogleDriveRestoreJob, Series
 from manga.schemas import (
     ConvertCbzRequest,
     ConvertCbzResponse,
@@ -15,6 +15,8 @@ from manga.schemas import (
     CreateCbzConvertJobResponse,
     CreateGoogleDriveBackupJobRequest,
     CreateGoogleDriveBackupJobResponse,
+    CreateGoogleDriveRestoreJobRequest,
+    CreateGoogleDriveRestoreJobResponse,
     CbzConvertJobSchema,
     DownloadCbzPagesRequest,
     DownloadCbzRequest,
@@ -22,13 +24,18 @@ from manga.schemas import (
     GetCbzConvertJobResponse,
     GetGoogleDriveBackupJobRequest,
     GetGoogleDriveBackupJobResponse,
+    GetGoogleDriveRestoreJobRequest,
+    GetGoogleDriveRestoreJobResponse,
     GetSeriesRequest,
     GetSeriesResponse,
     GoogleDriveBackupJobSchema,
+    GoogleDriveRestoreCandidateSchema,
+    GoogleDriveRestoreJobSchema,
     ListCbzConvertJobsRequest,
     ListCbzConvertJobsResponse,
     ListGoogleDriveBackupJobsRequest,
     ListGoogleDriveBackupJobsResponse,
+    ListGoogleDriveRestoreCandidatesResponse,
     ListSeriesItemsRequest,
     ListSeriesItemsResponse,
     ListSeriesCategoriesResponse,
@@ -97,6 +104,18 @@ def _google_drive_backup_job_schema(j: GoogleDriveBackupJob) -> GoogleDriveBacku
         completed_at=j.completed_at,
         failure_message=((j.failure_message or "").strip() or None),
         google_drive_file_id=((j.google_drive_file_id or "").strip() or None),
+    )
+
+
+def _google_drive_restore_job_schema(j: GoogleDriveRestoreJob) -> GoogleDriveRestoreJobSchema:
+    return GoogleDriveRestoreJobSchema(
+        restore_job_id=j.pk,
+        created_at=j.created_at,
+        series_name=j.series_name,
+        category=(j.category or "").strip(),
+        status=j.status,
+        completed_at=j.completed_at,
+        failure_message=((j.failure_message or "").strip() or None),
     )
 
 
@@ -197,6 +216,51 @@ def get_google_drive_backup_job_rpc(request, payload: GetGoogleDriveBackupJobReq
     except GoogleDriveBackupJob.DoesNotExist as exc:
         raise HttpError(404, "Backup job not found.") from exc
     return GetGoogleDriveBackupJobResponse(job=_google_drive_backup_job_schema(j))
+
+
+@router.post("/v1.Manga.ListGoogleDriveRestoreCandidates", response=ListGoogleDriveRestoreCandidatesResponse)
+def list_google_drive_restore_candidates_rpc(request):
+    rows = services.list_google_drive_restore_candidates(manga_root=settings.MANGA_ROOT)
+    return ListGoogleDriveRestoreCandidatesResponse(
+        items=[
+            GoogleDriveRestoreCandidateSchema(
+                series_name=r["series_name"],
+                drive_cbz_count=r["drive_cbz_count"],
+                missing_files=r["missing_files"],
+                exists_locally=r["exists_locally"],
+            )
+            for r in rows
+        ],
+    )
+
+
+@router.post("/v1.Manga.CreateGoogleDriveRestoreJob", response=CreateGoogleDriveRestoreJobResponse)
+def create_google_drive_restore_job_rpc(request, payload: CreateGoogleDriveRestoreJobRequest):
+    try:
+        jid = services.create_google_drive_restore_job(
+            manga_root=settings.MANGA_ROOT,
+            series_name=payload.series_name,
+            category=payload.category,
+            user_id=request.auth.pk,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "Series not found on Google Drive":
+            raise HttpError(404, msg) from exc
+        raise HttpError(400, msg) from exc
+    return CreateGoogleDriveRestoreJobResponse(restore_job_id=jid)
+
+
+@router.post("/v1.Manga.GetGoogleDriveRestoreJob", response=GetGoogleDriveRestoreJobResponse)
+def get_google_drive_restore_job_rpc(request, payload: GetGoogleDriveRestoreJobRequest):
+    try:
+        j = services.get_google_drive_restore_job(
+            job_id=payload.restore_job_id,
+            user_id=request.auth.pk,
+        )
+    except GoogleDriveRestoreJob.DoesNotExist as exc:
+        raise HttpError(404, "Restore job not found.") from exc
+    return GetGoogleDriveRestoreJobResponse(job=_google_drive_restore_job_schema(j))
 
 
 @router.post("/v1.Manga.ListSeries", response=ListSeriesResponse)

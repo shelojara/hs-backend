@@ -35,9 +35,13 @@ from manga.cbztools.utils import (
 from manga.mangabaka_client import MangaBakaAPIError, fetch_series_detail, search_series
 from manga.google_drive_service import (
     drive_http_error_message,
+    download_drive_file_to_path,
     ensure_series_drive_folder,
     find_existing_file_id_with_same_size,
+    get_manga_root_drive_folder_id_optional,
     get_series_drive_folder_id_optional,
+    list_child_folder_names_and_ids,
+    list_drive_cbz_files_in_folder,
     list_drive_file_names_in_folder,
     upload_file_to_folder,
 )
@@ -47,6 +51,8 @@ from manga.models import (
     CbzConvertKind,
     GoogleDriveBackupJob,
     GoogleDriveBackupJobStatus,
+    GoogleDriveRestoreJob,
+    GoogleDriveRestoreJobStatus,
     Series,
     SeriesInfo,
     SeriesItem,
@@ -972,6 +978,252 @@ def list_google_drive_backup_jobs(
 
 def get_google_drive_backup_job(job_id: int, *, user_id: int) -> GoogleDriveBackupJob:
     return GoogleDriveBackupJob.objects.get(pk=job_id, user_id=user_id)
+
+
+def _normalize_restore_category(category: str) -> str:
+    """Single segment or nested path under manga root; empty = library root (no subfolder)."""
+    s = (category or "").strip()
+    if not s:
+        return ""
+    return normalize_manga_hidden_rel_path(s)
+
+
+def _normalize_restore_series_segment(series_name: str) -> str:
+    sn = (series_name or "").strip()
+    if not sn or sn in (".", ".."):
+        raise ValueError("Invalid series name for restore path")
+    if "/" in sn or "\\" in sn:
+        raise ValueError("Invalid series name for restore path")
+    out = normalize_manga_hidden_rel_path(sn)
+    if not out or "/" in out:
+        raise ValueError("Invalid series name for restore path")
+    return out
+
+
+def _restore_series_rel_path(
+    *,
+    manga_root: str,
+    category: str,
+    series_name: str,
+) -> str:
+    """Relative path ``category/series_name`` or ``series_name`` when *category* empty."""
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    cat = _normalize_restore_category(category)
+    seg = _normalize_restore_series_segment(series_name)
+    if cat:
+        srp = normalize_manga_hidden_rel_path(posixpath.join(cat, seg))
+    else:
+        srp = seg
+    try:
+        _path_under_manga_root(manga_root=manga_root, rel_path=srp)
+    except ValueError as exc:
+        raise ValueError("Invalid restore path") from exc
+    existing = (
+        Series.objects.filter(
+            library_root=root_norm,
+            name=seg,
+            series_rel_path=srp,
+        )
+        .order_by("pk")
+        .first()
+    )
+    if existing:
+        return existing.series_rel_path
+    return srp
+
+
+def _local_file_matches_drive_size(*, abs_path: str, drive_size: int) -> bool:
+    if not os.path.isfile(abs_path):
+        return False
+    if drive_size <= 0:
+        return True
+    try:
+        return os.path.getsize(abs_path) == drive_size
+    except OSError:
+        return False
+
+
+def _local_cbz_matches_any_series_with_name(
+    *,
+    root_norm: str,
+    series_name: str,
+    filename: str,
+    drive_size: int,
+) -> bool:
+    """True if any ``Series`` with *series_name* under *root_norm* has *filename* at expected size on disk."""
+    qs = Series.objects.filter(library_root=root_norm, name=series_name).only("series_rel_path")
+    for ser in qs:
+        rel = posixpath.join(ser.series_rel_path, filename) if ser.series_rel_path else filename
+        abs_p = os.path.join(root_norm, rel.replace("/", os.sep))
+        if _local_file_matches_drive_size(abs_path=abs_p, drive_size=drive_size):
+            return True
+    return False
+
+
+def list_google_drive_restore_candidates(*, manga_root: str) -> list[dict[str, Any]]:
+    """Drive ``Manga/<series>/`` folders vs local CBZs by **series name** (any ``Series`` row path).
+
+    Gaps ignore category: if any cached ``Series`` named like the Drive folder has the file at the right size,
+    that chapter counts as present.
+    """
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    manga_folder_id = get_manga_root_drive_folder_id_optional()
+    if not manga_folder_id:
+        return []
+    rows: list[dict[str, Any]] = []
+    for folder_id, folder_name in list_child_folder_names_and_ids(parent_folder_id=manga_folder_id):
+        drive_cbzs = list_drive_cbz_files_in_folder(parent_folder_id=folder_id)
+        drive_total = len(drive_cbzs)
+        try:
+            seg = _normalize_restore_series_segment(folder_name)
+        except ValueError:
+            rows.append(
+                {
+                    "series_name": folder_name,
+                    "drive_cbz_count": drive_total,
+                    "missing_files": drive_total,
+                    "exists_locally": False,
+                },
+            )
+            continue
+        exists = Series.objects.filter(library_root=root_norm, name=seg).exists()
+        missing = 0
+        for ent in drive_cbzs:
+            name = ent["name"]
+            sz = int(ent.get("size") or 0)
+            if _local_cbz_matches_any_series_with_name(
+                root_norm=root_norm,
+                series_name=seg,
+                filename=name,
+                drive_size=sz,
+            ):
+                continue
+            missing += 1
+        rows.append(
+            {
+                "series_name": folder_name,
+                "drive_cbz_count": drive_total,
+                "missing_files": missing,
+                "exists_locally": exists,
+            },
+        )
+    rows.sort(key=lambda r: alphanum_key(r["series_name"]))
+    return rows
+
+
+def create_google_drive_restore_job(
+    *,
+    manga_root: str,
+    series_name: str,
+    category: str,
+    user_id: int,
+) -> int:
+    """Enqueue full-series restore from Drive backup folder name; returns ``GoogleDriveRestoreJob`` pk.
+
+    Files are written to ``<manga_root>/<category>/<series_name>/*.cbz``.
+    """
+    name = (series_name or "").strip()
+    if not name:
+        raise ValueError("series_name must be non-empty")
+    cat_in = (category or "").strip()
+    if not cat_in:
+        raise ValueError("category must be non-empty")
+    cat_norm = _normalize_restore_category(cat_in)
+    if not cat_norm:
+        raise ValueError("category must be non-empty")
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    folder_id = get_series_drive_folder_id_optional(series_name=name)
+    if not folder_id:
+        raise ValueError("Series not found on Google Drive")
+    if not list_drive_cbz_files_in_folder(parent_folder_id=folder_id):
+        raise ValueError("No CBZ files in Drive folder for this series")
+    try:
+        _restore_series_rel_path(manga_root=manga_root, category=cat_norm, series_name=name)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+    row = GoogleDriveRestoreJob.objects.create(
+        user_id=user_id,
+        manga_root=root_norm,
+        series_name=name,
+        category=cat_norm,
+    )
+    async_task(
+        "manga.scheduled_tasks.run_google_drive_restore_job",
+        row.pk,
+        task_name=f"manga_gdrive_restore:{row.pk}",
+    )
+    return row.pk
+
+
+def get_google_drive_restore_job(job_id: int, *, user_id: int) -> GoogleDriveRestoreJob:
+    return GoogleDriveRestoreJob.objects.get(pk=job_id, user_id=user_id)
+
+
+def run_google_drive_restore_job(*, job_id: int) -> None:
+    """Background worker: download Drive CBZs into library and rescan ``Series`` / ``SeriesItem``."""
+    try:
+        job = GoogleDriveRestoreJob.objects.get(pk=job_id)
+    except GoogleDriveRestoreJob.DoesNotExist:
+        logger.warning("run_google_drive_restore_job: missing GoogleDriveRestoreJob id=%s", job_id)
+        return
+    root_norm = job.manga_root
+    series_label = job.series_name.strip()
+    category_label = (job.category or "").strip()
+    try:
+        folder_id = get_series_drive_folder_id_optional(series_name=series_label)
+        if not folder_id:
+            raise ValueError("Series folder not found on Google Drive")
+        drive_files = list_drive_cbz_files_in_folder(parent_folder_id=folder_id)
+        if not drive_files:
+            raise ValueError("No CBZ files in Drive folder")
+
+        series_rel = _restore_series_rel_path(
+            manga_root=root_norm,
+            category=category_label,
+            series_name=series_label,
+        )
+        abs_dir = _path_under_manga_root(manga_root=root_norm, rel_path=series_rel)
+        os.makedirs(abs_dir, exist_ok=True)
+
+        for ent in drive_files:
+            fname = ent["name"]
+            fid = ent["id"]
+            sz = int(ent.get("size") or 0)
+            rel_one = posixpath.join(series_rel, fname) if series_rel else fname
+            abs_cbz = _path_under_manga_root(manga_root=root_norm, rel_path=rel_one)
+            if _local_file_matches_drive_size(abs_path=abs_cbz, drive_size=sz):
+                continue
+            part_path = abs_cbz + ".part"
+            try:
+                download_drive_file_to_path(file_id=fid, dest_path=part_path)
+                os.replace(part_path, abs_cbz)
+            except Exception:
+                if os.path.isfile(part_path):
+                    try:
+                        os.unlink(part_path)
+                    except OSError:
+                        pass
+                raise
+
+        with transaction.atomic():
+            series, _created = Series.objects.update_or_create(
+                library_root=root_norm,
+                series_rel_path=series_rel,
+                defaults={"name": _normalize_restore_series_segment(series_label)},
+            )
+        sync_series_items_for_series(manga_root=root_norm, series_id=series.pk)
+
+        job.status = GoogleDriveRestoreJobStatus.COMPLETED
+        job.completed_at = timezone.now()
+        job.failure_message = None
+        job.save(update_fields=["status", "completed_at", "failure_message"])
+    except Exception as exc:
+        logger.exception("run_google_drive_restore_job failed (job id=%s)", job_id)
+        job.status = GoogleDriveRestoreJobStatus.FAILED
+        job.completed_at = timezone.now()
+        job.failure_message = drive_http_error_message(exc)
+        job.save(update_fields=["status", "completed_at", "failure_message"])
 
 
 def list_cbz_convert_jobs(
