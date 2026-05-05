@@ -49,7 +49,6 @@ def test_google_drive_oauth_change_form_post_no_fake_field_error():
             "access_token": "",
             "access_token_expires_at": "",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "developer_key": "",
             "_save": "Save",
         },
     )

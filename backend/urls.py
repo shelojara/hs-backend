@@ -20,7 +20,6 @@ from django.urls import path
 from ninja import NinjaAPI
 
 from manga.drive_oauth_admin_views import google_drive_oauth_callback, google_drive_oauth_start
-from manga.drive_picker_admin_views import google_drive_picker_token
 
 api = NinjaAPI()
 
@@ -41,11 +40,6 @@ urlpatterns = [
         "admin/manga/googledriveoauth/callback/",
         google_drive_oauth_callback,
         name="admin_manga_gdrive_oauth_callback",
-    ),
-    path(
-        "admin/manga/googledriveoauth/picker-token/",
-        google_drive_picker_token,
-        name="admin_manga_gdrive_picker_token",
     ),
     path("admin/", admin.site.urls),
     path("api/", api.urls),
