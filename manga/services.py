@@ -14,7 +14,7 @@ from typing import Any, BinaryIO, Literal
 
 from django.conf import settings
 from django.db import connection, transaction
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import BooleanField, Case, Exists, OuterRef, Q, Value, When
 from django.utils import timezone
 from django_q.tasks import async_task
 from PIL import Image
@@ -102,6 +102,25 @@ class CbzPagesDownload:
     filename: str
 
 
+def _series_queryset_with_fully_backed_up(qs):
+    """Annotate ``_is_fully_backed_up_annot`` (matches ``Series.is_fully_backed_up``)."""
+    unbacked = SeriesItem.objects.filter(series_id=OuterRef("pk"), is_backed_up=False)
+    return qs.annotate(
+        _is_fully_backed_up_annot=Case(
+            When(Exists(unbacked), then=Value(False)),
+            default=Value(True),
+            output_field=BooleanField(),
+        ),
+    )
+
+
+def series_is_fully_backed_up_value(series: Series) -> bool:
+    """Prefer ORM annotation when present to avoid N+1."""
+    if hasattr(series, "_is_fully_backed_up_annot"):
+        return bool(series._is_fully_backed_up_annot)
+    return series.is_fully_backed_up
+
+
 def list_series(
     *,
     manga_root: str,
@@ -136,6 +155,7 @@ def list_series(
             | Q(series_rel_path__icontains=q)
             | Q(category__icontains=q),
         )
+    qs = _series_queryset_with_fully_backed_up(qs)
     return list(qs.select_related("series_info")[offset : offset + limit])
 
 
@@ -177,10 +197,9 @@ def get_series(*, manga_root: str, series_id: int) -> Series:
     """Load single ``Series`` for ``series_id`` under ``manga_root`` (normalized)."""
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
     try:
-        return Series.objects.select_related("series_info").get(
-            pk=series_id,
-            library_root=root_norm,
-        )
+        return _series_queryset_with_fully_backed_up(
+            Series.objects.filter(pk=series_id, library_root=root_norm)
+        ).select_related("series_info").get()
     except Series.DoesNotExist as exc:
         raise ValueError("Series not found") from exc
 
@@ -843,7 +862,9 @@ def sync_series_items_for_series(*, manga_root: str, series_id: int) -> Series:
             series=series,
             items=items,
         )
-    return Series.objects.select_related("series_info").get(pk=series.pk)
+    return _series_queryset_with_fully_backed_up(
+        Series.objects.filter(pk=series.pk)
+    ).select_related("series_info").get()
 
 
 def convert_cbz(
@@ -1421,7 +1442,9 @@ def set_series_mangabaka_series_id(
             locked.mangabaka_search_snoozed_until = None
             locked.save(update_fields=["mangabaka_search_snoozed_until"])
 
-    return Series.objects.select_related("series_info").get(pk=series_id, library_root=root_norm)
+    return _series_queryset_with_fully_backed_up(
+        Series.objects.filter(pk=series_id, library_root=root_norm)
+    ).select_related("series_info").get()
 
 
 def refresh_series_info_from_mangabaka(*, manga_root: str, series_id: int) -> Series:
@@ -1452,7 +1475,9 @@ def refresh_series_info_from_mangabaka(*, manga_root: str, series_id: int) -> Se
                 continue
             _apply_mangabaka_detail_to_series_info(info=info, detail=detail)
             break
-    return Series.objects.select_related("series_info").get(pk=series_id, library_root=root_norm)
+    return _series_queryset_with_fully_backed_up(
+        Series.objects.filter(pk=series_id, library_root=root_norm)
+    ).select_related("series_info").get()
 
 
 def sync_manga_series_info_from_mangabaka() -> int:
