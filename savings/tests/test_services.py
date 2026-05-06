@@ -1262,6 +1262,56 @@ def test_withdraw_asset_nonzero_balance_no_active_peers_errors():
 
 
 @pytest.mark.django_db
+def test_withdraw_asset_reconciles_distribution_lines_like_delete():
+    user = _user()
+    paused = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Paused",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        state=AssetState.PAUSED,
+    )
+    keep_me = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Keep",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    dist = Distribution.objects.create(
+        owner_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        family=None,
+        budget_amount=Decimal("30"),
+        currency="CLP",
+    )
+    DistributionLine.objects.create(
+        distribution=dist,
+        asset_id=paused,
+        allocated_amount=Decimal("10"),
+    )
+    DistributionLine.objects.create(
+        distribution=dist,
+        asset_id=keep_me,
+        allocated_amount=Decimal("20"),
+    )
+    withdraw_asset(user_id=user.pk, asset_id=paused)
+    assert Asset.objects.filter(pk=paused).exists()
+    assert not DistributionLine.objects.filter(asset_id=paused).exists()
+    dist.refresh_from_db()
+    assert dist.budget_amount == Decimal("20")
+    assert (
+        DistributionLine.objects.filter(distribution_id=dist.pk).count() == 1
+    )
+    assert DistributionLine.objects.get(distribution_id=dist.pk).asset_id == keep_me
+
+
+@pytest.mark.django_db
 def test_create_distribution_personal_updates_balances():
     user = _user()
     a1 = create_asset(

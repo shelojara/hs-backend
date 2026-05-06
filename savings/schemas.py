@@ -388,7 +388,7 @@ class WithdrawAssetRequest(Schema):
 
 
 class WithdrawAssetResponse(Schema):
-    ok: bool = True
+    pass
 
 
 class RushAssetRequest(Schema):
