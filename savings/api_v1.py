@@ -29,6 +29,8 @@ from savings.schemas import (
     UpdateAssetResponse,
     UpdateDistributionNotesRequest,
     UpdateDistributionNotesResponse,
+    WithdrawAssetRequest,
+    WithdrawAssetResponse,
 )
 from savings.services import AssetMutationError, DistributionMutationError
 
@@ -209,6 +211,16 @@ def delete_asset(request, payload: DeleteAssetRequest) -> DeleteAssetResponse:
     except AssetMutationError as exc:
         raise HttpError(exc.status_code, str(exc)) from exc
     return DeleteAssetResponse()
+
+
+@router.post("/v1.Savings.WithdrawAsset", response=WithdrawAssetResponse)
+def withdraw_asset(request, payload: WithdrawAssetRequest) -> WithdrawAssetResponse:
+    user = request.auth
+    try:
+        services.withdraw_asset(user_id=user.pk, asset_id=payload.asset_id)
+    except AssetMutationError as exc:
+        raise HttpError(exc.status_code, str(exc)) from exc
+    return WithdrawAssetResponse()
 
 
 @router.post("/v1.Savings.SimulateRushAsset", response=SimulateDistributionResponse)
