@@ -2,19 +2,38 @@
 
 import logging
 
-from django.conf import settings
-
 from manga import services
 
 logger = logging.getLogger(__name__)
 
 
-def run_manga_library_cache_refresh() -> None:
-    """Periodic job: rescan manga root and persist series/chapter rows."""
-    try:
-        services.sync_manga_library_cache(manga_root=settings.MANGA_ROOT)
-    except services.LibrarySyncAlreadyRunningError:
-        logger.info("manga library cache refresh skipped (another sync in progress)")
+def run_manga_library_cache_refresh(library_id: int | None = None) -> None:
+    """Periodic job: rescan manga library filesystem(s) and persist series/chapter rows.
+
+    When *library_id* is set, only that library is synced (``SyncLibrary`` RPC).
+    When omitted (django-q schedule), every ``MangaLibrary`` row is synced in order.
+    """
+    if library_id is not None:
+        try:
+            services.sync_manga_library_cache(library_id=library_id)
+        except services.LibrarySyncAlreadyRunningError:
+            logger.info(
+                "manga library cache refresh skipped (another sync in progress; library_id=%s)",
+                library_id,
+            )
+        return
+
+    from manga.models import MangaLibrary
+
+    for lib in MangaLibrary.objects.order_by("pk").iterator(chunk_size=50):
+        try:
+            services.sync_manga_library_cache(library_id=lib.pk)
+        except services.LibrarySyncAlreadyRunningError:
+            logger.info(
+                "manga library cache refresh skipped (another sync in progress; stopped at library_id=%s)",
+                lib.pk,
+            )
+            break
 
 
 def run_cbz_convert_job(job_id: int) -> None:

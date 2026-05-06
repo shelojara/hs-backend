@@ -10,6 +10,7 @@ from manga.models import (
     GoogleDriveBackupJob,
     GoogleDriveRestoreJob,
     MangaHiddenDirectory,
+    MangaLibrary,
     Series,
     SeriesInfo,
     SeriesItem,
@@ -65,6 +66,12 @@ def clean_cbz_filename(modeladmin, request, queryset) -> None:
             f"Skipped {skipped} row(s) (already clean or rule did not apply).",
             level=messages.INFO,
         )
+
+
+@admin.register(MangaLibrary)
+class MangaLibraryAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "filesystem_path")
+    search_fields = ("name", "filesystem_path")
 
 
 @admin.register(GoogleDriveApplicationCredentials)

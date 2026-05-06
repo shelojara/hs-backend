@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import FileResponse
 from ninja import Router
@@ -18,7 +17,11 @@ from manga.schemas import (
     CreateGoogleDriveBackupJobResponse,
     CreateGoogleDriveRestoreJobRequest,
     CreateGoogleDriveRestoreJobResponse,
+    CreateMangaLibraryRequest,
+    CreateMangaLibraryResponse,
     CbzConvertJobSchema,
+    DeleteMangaLibraryRequest,
+    DeleteMangaLibraryResponse,
     DownloadCbzPagesRequest,
     DownloadCbzRequest,
     GetCbzConvertJobRequest,
@@ -36,14 +39,19 @@ from manga.schemas import (
     ListCbzConvertJobsResponse,
     ListGoogleDriveBackupJobsRequest,
     ListGoogleDriveBackupJobsResponse,
+    ListGoogleDriveRestoreCandidatesRequest,
     ListGoogleDriveRestoreCandidatesResponse,
+    ListMangaLibrariesResponse,
     ListSeriesItemsRequest,
     ListSeriesItemsResponse,
+    ListSeriesCategoriesRequest,
     ListSeriesCategoriesResponse,
     ListSeriesRequest,
     ListSeriesResponse,
+    MangaLibrarySchema,
     RefreshSeriesInfoRequest,
     RefreshSeriesInfoResponse,
+    SyncLibraryRequest,
     SyncLibraryResponse,
     SearchMangabakaSeriesRequest,
     SearchMangabakaSeriesResponse,
@@ -54,9 +62,19 @@ from manga.schemas import (
     SeriesInfoSchema,
     SeriesItemSchema,
     SeriesSchema,
+    UpdateMangaLibraryRequest,
+    UpdateMangaLibraryResponse,
 )
 
 router = Router(auth=protected_api_auth, tags=["Manga"])
+
+
+def _manga_library_schema(lib) -> MangaLibrarySchema:
+    return MangaLibrarySchema(
+        library_id=lib.pk,
+        name=lib.name,
+        filesystem_path=lib.filesystem_path,
+    )
 
 
 def _series_info_schema_or_none(series: Series) -> SeriesInfoSchema | None:
@@ -122,11 +140,59 @@ def _google_drive_restore_job_schema(j: GoogleDriveRestoreJob) -> GoogleDriveRes
     )
 
 
+@router.post("/v1.Manga.ListMangaLibraries", response=ListMangaLibrariesResponse)
+def list_manga_libraries_rpc(request):
+    rows = services.list_manga_libraries()
+    return ListMangaLibrariesResponse(libraries=[_manga_library_schema(r) for r in rows])
+
+
+@router.post("/v1.Manga.CreateMangaLibrary", response=CreateMangaLibraryResponse)
+def create_manga_library_rpc(request, payload: CreateMangaLibraryRequest):
+    try:
+        lib = services.create_manga_library(
+            name=payload.name,
+            filesystem_path=payload.filesystem_path,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return CreateMangaLibraryResponse(library=_manga_library_schema(lib))
+
+
+@router.post("/v1.Manga.UpdateMangaLibrary", response=UpdateMangaLibraryResponse)
+def update_manga_library_rpc(request, payload: UpdateMangaLibraryRequest):
+    if payload.name is None and payload.filesystem_path is None:
+        raise HttpError(400, "Provide name and/or filesystem_path to update.")
+    try:
+        lib = services.update_manga_library(
+            library_id=payload.library_id,
+            name=payload.name,
+            filesystem_path=payload.filesystem_path,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "Library not found":
+            raise HttpError(404, msg) from exc
+        raise HttpError(400, msg) from exc
+    return UpdateMangaLibraryResponse(library=_manga_library_schema(lib))
+
+
+@router.post("/v1.Manga.DeleteMangaLibrary", response=DeleteMangaLibraryResponse)
+def delete_manga_library_rpc(request, payload: DeleteMangaLibraryRequest):
+    try:
+        services.delete_manga_library(library_id=payload.library_id)
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "Library not found":
+            raise HttpError(404, msg) from exc
+        raise HttpError(400, msg) from exc
+    return DeleteMangaLibraryResponse()
+
+
 @router.post("/v1.Manga.CreateCbzConvertJob", response=CreateCbzConvertJobResponse)
 def create_cbz_convert_job(request, payload: CreateCbzConvertJobRequest):
     try:
         job_id = services.create_cbz_convert_job(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             item_id=payload.item_id,
             kind=payload.kind,
             user_id=request.auth.pk,
@@ -134,6 +200,8 @@ def create_cbz_convert_job(request, payload: CreateCbzConvertJobRequest):
     except ValueError as exc:
         msg = str(exc)
         if msg == "Item not found":
+            raise HttpError(404, msg) from exc
+        if msg == "Library not found":
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     return CreateCbzConvertJobResponse(convert_job_id=job_id)
@@ -143,7 +211,7 @@ def create_cbz_convert_job(request, payload: CreateCbzConvertJobRequest):
 def list_cbz_convert_jobs(request, payload: ListCbzConvertJobsRequest):
     try:
         rows = services.list_cbz_convert_jobs(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             series_id=payload.series_id,
             user_id=request.auth.pk,
             status=payload.status,
@@ -154,6 +222,8 @@ def list_cbz_convert_jobs(request, payload: ListCbzConvertJobsRequest):
             raise HttpError(404, msg) from exc
         if msg == "Invalid status filter.":
             raise HttpError(400, msg) from exc
+        if msg == "Library not found":
+            raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     return ListCbzConvertJobsResponse(
         jobs=[_cbz_convert_job_schema(j) for j in rows],
@@ -176,13 +246,15 @@ def get_cbz_convert_job(request, payload: GetCbzConvertJobRequest):
 def create_google_drive_backup_job_rpc(request, payload: CreateGoogleDriveBackupJobRequest):
     try:
         job_ids = services.create_google_drive_backup_job(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             series_id=payload.series_id,
             user_id=request.auth.pk,
         )
     except ValueError as exc:
         msg = str(exc)
         if msg == "Series not found":
+            raise HttpError(404, msg) from exc
+        if msg == "Library not found":
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     return CreateGoogleDriveBackupJobResponse(backup_job_ids=job_ids)
@@ -192,7 +264,7 @@ def create_google_drive_backup_job_rpc(request, payload: CreateGoogleDriveBackup
 def list_google_drive_backup_jobs_rpc(request, payload: ListGoogleDriveBackupJobsRequest):
     try:
         rows = services.list_google_drive_backup_jobs(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             series_id=payload.series_id,
             user_id=request.auth.pk,
             status=payload.status,
@@ -203,6 +275,8 @@ def list_google_drive_backup_jobs_rpc(request, payload: ListGoogleDriveBackupJob
             raise HttpError(404, msg) from exc
         if msg == "Invalid status filter.":
             raise HttpError(400, msg) from exc
+        if msg == "Library not found":
+            raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     return ListGoogleDriveBackupJobsResponse(
         jobs=[_google_drive_backup_job_schema(j) for j in rows],
@@ -222,8 +296,16 @@ def get_google_drive_backup_job_rpc(request, payload: GetGoogleDriveBackupJobReq
 
 
 @router.post("/v1.Manga.ListGoogleDriveRestoreCandidates", response=ListGoogleDriveRestoreCandidatesResponse)
-def list_google_drive_restore_candidates_rpc(request):
-    rows = services.list_google_drive_restore_candidates(manga_root=settings.MANGA_ROOT)
+def list_google_drive_restore_candidates_rpc(request, payload: ListGoogleDriveRestoreCandidatesRequest):
+    try:
+        rows = services.list_google_drive_restore_candidates(
+            library_id=payload.library_id,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "Library not found":
+            raise HttpError(404, msg) from exc
+        raise HttpError(400, msg) from exc
     return ListGoogleDriveRestoreCandidatesResponse(
         items=[
             GoogleDriveRestoreCandidateSchema(
@@ -241,7 +323,7 @@ def list_google_drive_restore_candidates_rpc(request):
 def create_google_drive_restore_job_rpc(request, payload: CreateGoogleDriveRestoreJobRequest):
     try:
         jid = services.create_google_drive_restore_job(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             series_name=payload.series_name,
             category=payload.category,
             user_id=request.auth.pk,
@@ -249,6 +331,8 @@ def create_google_drive_restore_job_rpc(request, payload: CreateGoogleDriveResto
     except ValueError as exc:
         msg = str(exc)
         if msg == "Series not found on Google Drive":
+            raise HttpError(404, msg) from exc
+        if msg == "Library not found":
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     return CreateGoogleDriveRestoreJobResponse(restore_job_id=jid)
@@ -270,13 +354,16 @@ def get_google_drive_restore_job_rpc(request, payload: GetGoogleDriveRestoreJobR
 def list_series(request, payload: ListSeriesRequest):
     try:
         rows = services.list_series(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             limit=payload.limit,
             offset=payload.offset,
             category=payload.category,
             search=payload.search,
         )
     except ValueError as exc:
+        msg = str(exc)
+        if msg == "Library not found":
+            raise HttpError(404, msg) from exc
         raise HttpError(400, str(exc)) from exc
     return ListSeriesResponse(items=[_series_schema(r) for r in rows])
 
@@ -285,12 +372,14 @@ def list_series(request, payload: ListSeriesRequest):
 def get_series(request, payload: GetSeriesRequest):
     try:
         row = services.get_series(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             series_id=payload.series_id,
         )
     except ValueError as exc:
         msg = str(exc)
         if msg == "Series not found":
+            raise HttpError(404, msg) from exc
+        if msg == "Library not found":
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     return GetSeriesResponse(series=_series_schema(row))
@@ -300,13 +389,15 @@ def get_series(request, payload: GetSeriesRequest):
 def set_series_mangabaka(request, payload: SetSeriesMangabakaRequest):
     try:
         row = services.set_series_mangabaka_series_id(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             series_id=payload.series_id,
             mangabaka_series_id=payload.mangabaka_series_id,
         )
     except ValueError as exc:
         msg = str(exc)
         if msg == "Series not found":
+            raise HttpError(404, msg) from exc
+        if msg == "Library not found":
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     except MangaBakaAPIError as exc:
@@ -318,12 +409,14 @@ def set_series_mangabaka(request, payload: SetSeriesMangabakaRequest):
 def refresh_series_info(request, payload: RefreshSeriesInfoRequest):
     try:
         row = services.refresh_series_info_from_mangabaka(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             series_id=payload.series_id,
         )
     except ValueError as exc:
         msg = str(exc)
         if msg == "Series not found":
+            raise HttpError(404, msg) from exc
+        if msg == "Library not found":
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     except MangaBakaAPIError as exc:
@@ -335,22 +428,27 @@ def refresh_series_info(request, payload: RefreshSeriesInfoRequest):
 def sync_series_items_rpc(request, payload: SyncSeriesItemsRequest):
     try:
         row = services.sync_series_items_for_series(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             series_id=payload.series_id,
         )
     except ValueError as exc:
         msg = str(exc)
         if msg == "Series not found":
             raise HttpError(404, msg) from exc
+        if msg == "Library not found":
+            raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     return SyncSeriesItemsResponse(series_id=row.pk)
 
 
 @router.post("/v1.Manga.SyncLibrary", response=SyncLibraryResponse)
-def sync_library_rpc(request):
+def sync_library_rpc(request, payload: SyncLibraryRequest):
     try:
-        services.sync_library(manga_root=settings.MANGA_ROOT)
+        services.sync_library(library_id=payload.library_id)
     except ValueError as exc:
+        msg = str(exc)
+        if msg == "Library not found":
+            raise HttpError(404, msg) from exc
         raise HttpError(400, str(exc)) from exc
     return SyncLibraryResponse()
 
@@ -367,8 +465,16 @@ def search_mangabaka_series_rpc(request, payload: SearchMangabakaSeriesRequest):
 
 
 @router.post("/v1.Manga.ListSeriesCategories", response=ListSeriesCategoriesResponse)
-def list_series_categories(request):
-    categories = services.list_distinct_series_categories(manga_root=settings.MANGA_ROOT)
+def list_series_categories(request, payload: ListSeriesCategoriesRequest):
+    try:
+        categories = services.list_distinct_series_categories(
+            library_id=payload.library_id,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "Library not found":
+            raise HttpError(404, msg) from exc
+        raise HttpError(400, msg) from exc
     return ListSeriesCategoriesResponse(categories=categories)
 
 
@@ -376,7 +482,7 @@ def list_series_categories(request):
 def list_series_items(request, payload: ListSeriesItemsRequest):
     try:
         rows = services.list_series_items(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             series_id=payload.series_id,
             limit=payload.limit,
             offset=payload.offset,
@@ -385,6 +491,8 @@ def list_series_items(request, payload: ListSeriesItemsRequest):
     except ValueError as exc:
         msg = str(exc)
         if msg == "Series not found":
+            raise HttpError(404, msg) from exc
+        if msg == "Library not found":
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     return ListSeriesItemsResponse(
@@ -408,7 +516,7 @@ def list_series_items(request, payload: ListSeriesItemsRequest):
 def convert_cbz(request, payload: ConvertCbzRequest):
     try:
         services.convert_cbz(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             item_id=payload.item_id,
             kind=payload.kind,
         )
@@ -424,12 +532,14 @@ def convert_cbz(request, payload: ConvertCbzRequest):
 def download_cbz(request, payload: DownloadCbzRequest):
     try:
         resolved = services.resolve_cbz_download(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             item_id=payload.item_id,
         )
     except ValueError as exc:
         msg = str(exc)
         if msg in ("CBZ not found", "Item not found"):
+            raise HttpError(404, msg) from exc
+        if msg == "Library not found":
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     return FileResponse(
@@ -444,7 +554,7 @@ def download_cbz(request, payload: DownloadCbzRequest):
 def download_cbz_pages(request, payload: DownloadCbzPagesRequest):
     try:
         built = services.build_cbz_page_slice(
-            manga_root=settings.MANGA_ROOT,
+            library_id=payload.library_id,
             item_id=payload.item_id,
             offset=payload.offset,
             limit=payload.limit,
@@ -452,6 +562,8 @@ def download_cbz_pages(request, payload: DownloadCbzPagesRequest):
     except ValueError as exc:
         msg = str(exc)
         if msg in ("CBZ not found", "Item not found"):
+            raise HttpError(404, msg) from exc
+        if msg == "Library not found":
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     return FileResponse(

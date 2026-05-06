@@ -59,13 +59,70 @@ from manga.models import (
     GoogleDriveBackupJobStatus,
     GoogleDriveRestoreJob,
     GoogleDriveRestoreJobStatus,
+    MangaLibrary,
     Series,
     SeriesInfo,
     SeriesItem,
     normalize_manga_hidden_rel_path,
+    normalize_manga_library_filesystem_path,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def get_manga_library(*, library_id: int) -> MangaLibrary:
+    """Load ``MangaLibrary`` by pk; raises ``ValueError`` when missing."""
+    try:
+        return MangaLibrary.objects.get(pk=library_id)
+    except MangaLibrary.DoesNotExist as exc:
+        raise ValueError("Library not found") from exc
+
+
+def list_manga_libraries() -> list[MangaLibrary]:
+    return list(MangaLibrary.objects.order_by("name", "pk"))
+
+
+def create_manga_library(*, name: str, filesystem_path: str) -> MangaLibrary:
+    n = (name or "").strip()
+    if not n:
+        raise ValueError("name must be non-empty")
+    path_norm = normalize_manga_library_filesystem_path(filesystem_path)
+    if not path_norm:
+        raise ValueError("filesystem_path must be non-empty")
+    row = MangaLibrary(name=n, filesystem_path=path_norm)
+    row.full_clean()
+    row.save()
+    return row
+
+
+def update_manga_library(
+    *,
+    library_id: int,
+    name: str | None = None,
+    filesystem_path: str | None = None,
+) -> MangaLibrary:
+    lib = get_manga_library(library_id=library_id)
+    if name is not None:
+        nn = name.strip()
+        if not nn:
+            raise ValueError("name must be non-empty")
+        lib.name = nn
+    if filesystem_path is not None:
+        pn = normalize_manga_library_filesystem_path(filesystem_path)
+        if not pn:
+            raise ValueError("filesystem_path must be non-empty")
+        lib.filesystem_path = pn
+    lib.full_clean()
+    lib.save()
+    if filesystem_path is not None:
+        Series.objects.filter(library_id=lib.pk).update(library_root=lib.filesystem_path)
+    return lib
+
+
+def delete_manga_library(*, library_id: int) -> None:
+    lib = get_manga_library(library_id=library_id)
+    lib.delete()
+
 
 # Serialize Dropbox eviction + upload across workers (PostgreSQL only).
 _DROPBOX_UPLOAD_ADVISORY_LOCK_1 = 0x6D616E67
@@ -188,13 +245,13 @@ def series_is_fully_backed_up_value(series: Series) -> bool:
 
 def list_series(
     *,
-    manga_root: str,
+    library_id: int,
     limit: int = 100,
     offset: int = 0,
     category: str | None = None,
     search: str | None = None,
 ) -> list[Series]:
-    """Query ``Series`` for ``manga_root`` (normalized), ordered by display ``name``.
+    """Query ``Series`` for *library_id*, ordered by display ``name``.
 
     *category* ``None``: no category filter. Non-empty *category*: filter rows whose
     stored category equals that string. Empty or whitespace-only *category* raises
@@ -204,8 +261,8 @@ def list_series(
     match on ``name``, ``series_rel_path``, or ``category``. Empty or whitespace-only
     *search* raises ``ValueError``.
     """
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
-    qs = Series.objects.filter(library_root=root_norm).order_by("name", "series_rel_path")
+    lib = get_manga_library(library_id=library_id)
+    qs = Series.objects.filter(library_id=lib.pk).order_by("name", "series_rel_path")
     if category is not None:
         cat = category.strip()
         if not cat:
@@ -224,11 +281,11 @@ def list_series(
     return list(qs.select_related("series_info")[offset : offset + limit])
 
 
-def list_distinct_series_categories(*, manga_root: str) -> list[str]:
-    """Non-empty distinct ``Series.category`` values for *manga_root*, sorted ascending."""
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+def list_distinct_series_categories(*, library_id: int) -> list[str]:
+    """Non-empty distinct ``Series.category`` values for *library_id*, sorted ascending."""
+    lib = get_manga_library(library_id=library_id)
     return list(
-        Series.objects.filter(library_root=root_norm)
+        Series.objects.filter(library_id=lib.pk)
         .exclude(category="")
         .values_list("category", flat=True)
         .distinct()
@@ -238,16 +295,16 @@ def list_distinct_series_categories(*, manga_root: str) -> list[str]:
 
 def list_series_items(
     *,
-    manga_root: str,
+    library_id: int,
     series_id: int,
     limit: int = 100,
     offset: int = 0,
     is_converted: bool | None = None,
 ) -> list[SeriesItem]:
-    """Query ``SeriesItem`` for ``series_id`` under ``manga_root`` (natural order by ``filename``)."""
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    """Query ``SeriesItem`` for ``series_id`` in *library_id* (natural order by ``filename``)."""
+    lib = get_manga_library(library_id=library_id)
     try:
-        series = Series.objects.get(pk=series_id, library_root=root_norm)
+        series = Series.objects.get(pk=series_id, library_id=lib.pk)
     except Series.DoesNotExist as exc:
         raise ValueError("Series not found") from exc
     qs = series.items.all()
@@ -258,12 +315,12 @@ def list_series_items(
     return rows[offset : offset + limit]
 
 
-def get_series(*, manga_root: str, series_id: int) -> Series:
-    """Load single ``Series`` for ``series_id`` under ``manga_root`` (normalized)."""
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+def get_series(*, library_id: int, series_id: int) -> Series:
+    """Load single ``Series`` for ``series_id`` in *library_id*."""
+    lib = get_manga_library(library_id=library_id)
     try:
         return _series_queryset_with_fully_backed_up(
-            Series.objects.filter(pk=series_id, library_root=root_norm)
+            Series.objects.filter(pk=series_id, library_id=lib.pk)
         ).select_related("series_info").get()
     except Series.DoesNotExist as exc:
         raise ValueError("Series not found") from exc
@@ -334,7 +391,7 @@ def clean_series_item_filename_on_disk(*, item_id: int) -> SeriesItem:
     except SeriesItem.DoesNotExist as exc:
         raise ValueError("Item not found") from exc
 
-    manga_root = item.series.library_root
+    manga_root = item.series.library.filesystem_path
     old_base = os.path.basename(item.rel_path)
     new_base = clean_cbz_display_name(old_base)
     if new_base is None or new_base == old_base:
@@ -370,13 +427,13 @@ def clean_series_item_filename_on_disk(*, item_id: int) -> SeriesItem:
     return SeriesItem.objects.get(pk=item.pk)
 
 
-def _series_item_for_manga_root(*, manga_root: str, item_id: int) -> SeriesItem:
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+def _series_item_for_library(*, library_id: int, item_id: int) -> SeriesItem:
+    lib = get_manga_library(library_id=library_id)
     try:
         item = SeriesItem.objects.select_related("series").get(pk=item_id)
     except SeriesItem.DoesNotExist:
         raise ValueError("Item not found") from None
-    if item.series.library_root != root_norm:
+    if item.series.library_id != lib.pk:
         raise ValueError("Item not found") from None
     return item
 
@@ -414,11 +471,12 @@ def _evict_series_item_from_dropbox(*, item: SeriesItem) -> None:
 
 def _ensure_dropbox_space_for_upload(
     *,
-    manga_root: str,
+    library_id: int,
     reserve_item_id: int,
     upload_bytes: int,
 ) -> None:
     """Delete oldest-in-Dropbox CBZs until quota allows upload + 250% headroom (free >= 3.5× upload size)."""
+    lib = get_manga_library(library_id=library_id)
     while True:
         used, allocated = get_dropbox_space_bytes()
         if allocated is None:
@@ -430,7 +488,7 @@ def _ensure_dropbox_space_for_upload(
             SeriesItem.objects.filter(
                 is_converted=True,
                 dropbox_uploaded_at__isnull=False,
-                series__library_root=os.path.abspath(os.path.expanduser(manga_root)),
+                series__library_id=lib.pk,
             )
             .exclude(pk=reserve_item_id)
             .order_by("dropbox_uploaded_at", "pk")
@@ -449,13 +507,14 @@ def _ensure_dropbox_space_for_upload(
         _evict_series_item_from_dropbox(item=victim)
 
 
-def resolve_cbz_download(*, manga_root: str, item_id: int) -> CbzDownload:
-    """Resolve cached ``SeriesItem`` to a readable ``.cbz`` under ``manga_root``."""
-    item = _series_item_for_manga_root(manga_root=manga_root, item_id=item_id)
+def resolve_cbz_download(*, library_id: int, item_id: int) -> CbzDownload:
+    """Resolve cached ``SeriesItem`` to a readable ``.cbz`` under library filesystem path."""
+    item = _series_item_for_library(library_id=library_id, item_id=item_id)
     path = item.rel_path
     filename = os.path.basename(path)
     if not filename.lower().endswith(".cbz"):
         raise ValueError("Not a CBZ file")
+    manga_root = item.series.library.filesystem_path
     abs_path = _path_under_manga_root(manga_root=manga_root, rel_path=path)
     if not os.path.isfile(abs_path):
         raise ValueError("CBZ not found")
@@ -546,10 +605,11 @@ def first_cbz_page_as_base64(abs_cbz_path: str) -> tuple[str | None, str | None]
     return None, None
 
 
-def _refresh_series_item_cover_if_missing(*, manga_root: str, item: SeriesItem) -> None:
+def _refresh_series_item_cover_if_missing(*, series: Series, item: SeriesItem) -> None:
     """Set ``cover_image_*`` from first archive image of this CBZ when still unset."""
     if (item.cover_image_base64 or "").strip():
         return
+    manga_root = series.library.filesystem_path
     abs_cbz = _path_under_manga_root(manga_root=manga_root, rel_path=item.rel_path)
     if not os.path.isfile(abs_cbz):
         return
@@ -559,8 +619,9 @@ def _refresh_series_item_cover_if_missing(*, manga_root: str, item: SeriesItem) 
     item.save(update_fields=["cover_image_base64", "cover_image_mime_type"])
 
 
-def _refresh_series_cover_from_first_cbz(*, manga_root: str, series: Series) -> None:
+def _refresh_series_cover_from_first_cbz(*, series: Series) -> None:
     """Set ``cover_image_*`` from first page of lexically first ``.cbz`` in series."""
+    manga_root = series.library.filesystem_path
     rows = list(series.items.all())
     if not rows:
         series.cover_image_base64 = None
@@ -582,13 +643,13 @@ def _refresh_series_cover_from_first_cbz(*, manga_root: str, series: Series) -> 
 
 def build_cbz_page_slice(
     *,
-    manga_root: str,
+    library_id: int,
     item_id: int,
     offset: int,
     limit: int,
 ) -> CbzPagesDownload:
     """Build a CBZ containing ``limit`` image members starting at ``offset`` (sorted order)."""
-    resolved = resolve_cbz_download(manga_root=manga_root, item_id=item_id)
+    resolved = resolve_cbz_download(library_id=library_id, item_id=item_id)
     members = _sorted_image_names_in_cbz(resolved.absolute_path)
     if not members:
         raise ValueError("No image pages in CBZ")
@@ -799,7 +860,6 @@ def _iter_series_rel_paths_with_direct_cbz(
 
 def _replace_series_items_from_cbz_listing(
     *,
-    manga_root: str,
     series: Series,
     items: list[MangaListItem],
 ) -> None:
@@ -824,21 +884,22 @@ def _replace_series_items_from_cbz_listing(
         elif not item.is_converted and row.dropbox_uploaded_at is not None:
             row.dropbox_uploaded_at = None
             row.save(update_fields=["dropbox_uploaded_at"])
-        _refresh_series_item_cover_if_missing(manga_root=manga_root, item=row)
+        _refresh_series_item_cover_if_missing(series=series, item=row)
 
-    _refresh_series_cover_from_first_cbz(manga_root=manga_root, series=series)
+    _refresh_series_cover_from_first_cbz(series=series)
     series.item_count = series.items.count()
     series.save(update_fields=["item_count"])
     _refresh_series_items_google_drive_backed_up(series=series)
 
 
-def _sync_manga_library_cache_impl(*, manga_root: str) -> tuple[int, int]:
+def _sync_manga_library_cache_impl(*, library: MangaLibrary) -> tuple[int, int]:
     hidden = _manga_hidden_rel_paths()
+    manga_root = library.filesystem_path
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
     wanted_paths = set(_iter_series_rel_paths_with_direct_cbz(manga_root=manga_root, hidden=hidden))
 
     with transaction.atomic():
-        stale_qs = Series.objects.filter(library_root=root_norm).exclude(
+        stale_qs = Series.objects.filter(library_id=library.pk).exclude(
             series_rel_path__in=wanted_paths,
         )
         stale_ids = list(stale_qs.values_list("pk", flat=True))
@@ -851,26 +912,25 @@ def _sync_manga_library_cache_impl(*, manga_root: str) -> tuple[int, int]:
         with transaction.atomic():
             display_name = Path(rel_path).name if rel_path else Path(root_norm).name
             series, _created = Series.objects.update_or_create(
-                library_root=root_norm,
+                library_id=library.pk,
                 series_rel_path=rel_path,
                 defaults={"name": display_name},
             )
 
             items = list_manga_cbz_files(manga_root=manga_root, path=rel_path)
             _replace_series_items_from_cbz_listing(
-                manga_root=manga_root,
                 series=series,
                 items=items,
             )
 
-    series_count = Series.objects.filter(library_root=root_norm).count()
-    chapter_total = SeriesItem.objects.filter(series__library_root=root_norm).count()
+    series_count = Series.objects.filter(library_id=library.pk).count()
+    chapter_total = SeriesItem.objects.filter(series__library_id=library.pk).count()
 
     return series_count, chapter_total
 
 
-def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
-    """Walk filesystem; upsert ``Series`` / ``SeriesItem`` rows (drops vanished).
+def sync_manga_library_cache(*, library_id: int) -> tuple[int, int]:
+    """Walk filesystem for ``MangaLibrary`` *library_id*; upsert ``Series`` / ``SeriesItem`` rows (drops vanished).
 
     Series = directory with ≥1 ``.cbz`` directly inside (same rule as user-facing ``list_manga_cbz_files`` scope).
 
@@ -881,26 +941,28 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
 
     Returns ``(series_count, chapter_count)`` after sync.
     """
+    lib = MangaLibrary.objects.get(pk=library_id)
     with _library_sync_global_lock():
-        return _sync_manga_library_cache_impl(manga_root=manga_root)
+        return _sync_manga_library_cache_impl(library=lib)
 
 
-def sync_library(*, manga_root: str) -> None:
+def sync_library(*, library_id: int) -> None:
     """Enqueue full-library cache sync on django-q (RPC ``SyncLibrary``).
 
-    Worker runs ``run_manga_library_cache_refresh`` (same as cron); lock ensures one
-    concurrent sync.
+    Worker runs ``run_manga_library_cache_refresh`` for this library; lock ensures one
+    concurrent full-library sync at a time.
 
-    Raises ``ValueError`` if ``manga_root`` does not match ``settings.MANGA_ROOT``.
+    Raises ``ValueError`` when *library_id* missing.
     """
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
-    configured = os.path.abspath(os.path.expanduser(settings.MANGA_ROOT))
-    if root_norm != configured:
-        raise ValueError("manga_root does not match configured MANGA_ROOT")
-    async_task("manga.scheduled_tasks.run_manga_library_cache_refresh")
+    get_manga_library(library_id=library_id)
+    async_task(
+        "manga.scheduled_tasks.run_manga_library_cache_refresh",
+        library_id,
+        task_name=f"manga_library_cache_refresh:{library_id}",
+    )
 
 
-def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> None:
+def sync_series_items_for_cbz_path(*, library_id: int, cbz_rel_path: str) -> None:
     """Upsert ``Series`` / ``SeriesItem`` for directory containing ``cbz_rel_path`` (Dropbox flags via listing)."""
     rel = normalize_manga_hidden_rel_path(cbz_rel_path)
     series_rel = posixpath.dirname(rel)
@@ -908,28 +970,30 @@ def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> Non
     if series_rel and _directory_hidden_by_config(series_rel, hidden):
         return
 
+    lib = MangaLibrary.objects.get(pk=library_id)
+    manga_root = lib.filesystem_path
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
     items = list_manga_cbz_files(manga_root=manga_root, path=series_rel)
     display_name = Path(series_rel).name if series_rel else Path(root_norm).name
 
     with transaction.atomic():
         series, _created = Series.objects.update_or_create(
-            library_root=root_norm,
+            library_id=lib.pk,
             series_rel_path=series_rel,
             defaults={"name": display_name},
         )
         _replace_series_items_from_cbz_listing(
-            manga_root=manga_root,
             series=series,
             items=items,
         )
 
 
-def sync_series_items_for_series(*, manga_root: str, series_id: int) -> Series:
+def sync_series_items_for_series(*, library_id: int, series_id: int) -> Series:
     """Re-scan one series directory on disk; upsert missing ``SeriesItem`` rows (and prune removed files)."""
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    lib = get_manga_library(library_id=library_id)
+    manga_root = lib.filesystem_path
     try:
-        existing = Series.objects.get(pk=series_id, library_root=root_norm)
+        existing = Series.objects.get(pk=series_id, library_id=lib.pk)
     except Series.DoesNotExist as exc:
         raise ValueError("Series not found") from exc
     hidden = _manga_hidden_rel_paths()
@@ -937,15 +1001,15 @@ def sync_series_items_for_series(*, manga_root: str, series_id: int) -> Series:
     if srp and _directory_hidden_by_config(srp, hidden):
         raise ValueError("Series path is hidden")
     items = list_manga_cbz_files(manga_root=manga_root, path=srp)
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
     display_name = Path(srp).name if srp else Path(root_norm).name
     with transaction.atomic():
         series, _created = Series.objects.update_or_create(
-            library_root=root_norm,
+            library_id=lib.pk,
             series_rel_path=srp,
             defaults={"name": display_name},
         )
         _replace_series_items_from_cbz_listing(
-            manga_root=manga_root,
             series=series,
             items=items,
         )
@@ -956,12 +1020,19 @@ def sync_series_items_for_series(*, manga_root: str, series_id: int) -> Series:
 
 def convert_cbz(
     *,
-    manga_root: str,
+    library_id: int,
     item_id: int,
     kind: Literal["manga", "manhwa"],
 ) -> None:
     """Synchronous CBZ conversion + Dropbox upload (also used by background job)."""
-    item = _series_item_for_manga_root(manga_root=manga_root, item_id=item_id)
+    get_manga_library(library_id=library_id)
+    try:
+        item = SeriesItem.objects.select_related("series__library").get(pk=item_id)
+    except SeriesItem.DoesNotExist:
+        raise ValueError("Item not found") from None
+    if item.series.library_id != library_id:
+        raise ValueError("Item not found") from None
+    manga_root = item.series.library.filesystem_path
     path = item.rel_path
     filename = os.path.basename(path)
 
@@ -985,7 +1056,7 @@ def convert_cbz(
         with transaction.atomic():
             _dropbox_advisory_lock_xact()
             _ensure_dropbox_space_for_upload(
-                manga_root=manga_root,
+                library_id=library_id,
                 reserve_item_id=item.pk,
                 upload_bytes=upload_bytes,
             )
@@ -1001,16 +1072,17 @@ def convert_cbz(
 
 def create_cbz_convert_job(
     *,
-    manga_root: str,
+    library_id: int,
     item_id: int,
     kind: Literal["manga", "manhwa"],
     user_id: int,
 ) -> int:
     """Create pending ``CbzConvertJob`` and enqueue worker; returns primary key."""
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
-    item = _series_item_for_manga_root(manga_root=manga_root, item_id=item_id)
+    item = _series_item_for_library(library_id=library_id, item_id=item_id)
+    root_norm = os.path.abspath(os.path.expanduser(item.series.library.filesystem_path))
     row = CbzConvertJob.objects.create(
         user_id=user_id,
+        library_id=library_id,
         manga_root=root_norm,
         series_id=item.series_id,
         series_item_id=item_id,
@@ -1026,7 +1098,7 @@ def create_cbz_convert_job(
 
 def create_google_drive_backup_job(
     *,
-    manga_root: str,
+    library_id: int,
     series_id: int,
     user_id: int,
 ) -> list[int]:
@@ -1034,9 +1106,10 @@ def create_google_drive_backup_job(
 
     Returns primary keys (newest-enqueued last in list; order follows natural ``filename`` sort).
     """
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    lib = get_manga_library(library_id=library_id)
+    root_norm = os.path.abspath(os.path.expanduser(lib.filesystem_path))
     try:
-        series = Series.objects.get(pk=series_id, library_root=root_norm)
+        series = Series.objects.get(pk=series_id, library_id=lib.pk)
     except Series.DoesNotExist as exc:
         raise ValueError("Series not found") from exc
     rows = list(series.items.all())
@@ -1047,6 +1120,7 @@ def create_google_drive_backup_job(
     for item in rows:
         row = GoogleDriveBackupJob.objects.create(
             user_id=user_id,
+            library_id=lib.pk,
             manga_root=root_norm,
             series_id=series.pk,
             series_item_id=item.pk,
@@ -1062,20 +1136,21 @@ def create_google_drive_backup_job(
 
 def list_google_drive_backup_jobs(
     *,
-    manga_root: str,
+    library_id: int,
     series_id: int | None,
     user_id: int,
     status: str | None = None,
 ) -> list[GoogleDriveBackupJob]:
     if status is not None and status not in GoogleDriveBackupJobStatus:
         raise ValueError("Invalid status filter.")
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
-    qs = GoogleDriveBackupJob.objects.filter(user_id=user_id, manga_root=root_norm)
+    lib = get_manga_library(library_id=library_id)
+    root_norm = os.path.abspath(os.path.expanduser(lib.filesystem_path))
+    qs = GoogleDriveBackupJob.objects.filter(user_id=user_id, library_id=lib.pk, manga_root=root_norm)
     if series_id is None:
-        qs = qs.filter(series__library_root=root_norm)
+        qs = qs.filter(series__library_id=lib.pk)
     else:
         try:
-            series = Series.objects.get(pk=series_id, library_root=root_norm)
+            series = Series.objects.get(pk=series_id, library_id=lib.pk)
         except Series.DoesNotExist as exc:
             raise ValueError("Series not found") from exc
         qs = qs.filter(series_id=series.pk)
@@ -1110,12 +1185,13 @@ def _normalize_restore_series_segment(series_name: str) -> str:
 
 def _restore_series_rel_path(
     *,
-    manga_root: str,
+    library_id: int,
     category: str,
     series_name: str,
 ) -> str:
     """Relative path ``category/series_name`` or ``series_name`` when *category* empty."""
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    lib = MangaLibrary.objects.get(pk=library_id)
+    manga_root = lib.filesystem_path
     cat = _normalize_restore_category(category)
     seg = _normalize_restore_series_segment(series_name)
     if cat:
@@ -1128,7 +1204,7 @@ def _restore_series_rel_path(
         raise ValueError("Invalid restore path") from exc
     existing = (
         Series.objects.filter(
-            library_root=root_norm,
+            library_id=library_id,
             name=seg,
             series_rel_path=srp,
         )
@@ -1153,13 +1229,15 @@ def _local_file_matches_drive_size(*, abs_path: str, drive_size: int) -> bool:
 
 def _local_cbz_matches_any_series_with_name(
     *,
-    root_norm: str,
+    library_id: int,
     series_name: str,
     filename: str,
     drive_size: int,
 ) -> bool:
-    """True if any ``Series`` with *series_name* under *root_norm* has *filename* at expected size on disk."""
-    qs = Series.objects.filter(library_root=root_norm, name=series_name).only("series_rel_path")
+    """True if any ``Series`` with *series_name* in library has *filename* at expected size on disk."""
+    lib = MangaLibrary.objects.get(pk=library_id)
+    root_norm = os.path.abspath(os.path.expanduser(lib.filesystem_path))
+    qs = Series.objects.filter(library_id=library_id, name=series_name).only("series_rel_path")
     for ser in qs:
         rel = posixpath.join(ser.series_rel_path, filename) if ser.series_rel_path else filename
         abs_p = os.path.join(root_norm, rel.replace("/", os.sep))
@@ -1168,13 +1246,13 @@ def _local_cbz_matches_any_series_with_name(
     return False
 
 
-def list_google_drive_restore_candidates(*, manga_root: str) -> list[dict[str, Any]]:
+def list_google_drive_restore_candidates(*, library_id: int) -> list[dict[str, Any]]:
     """Drive ``Manga/<series>/`` folders vs local CBZs by **series name** (any ``Series`` row path).
 
     Gaps ignore category: if any cached ``Series`` named like the Drive folder has the file at the right size,
     that chapter counts as present.
     """
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    lib = get_manga_library(library_id=library_id)
     manga_folder_id = get_manga_root_drive_folder_id_optional()
     if not manga_folder_id:
         return []
@@ -1194,13 +1272,13 @@ def list_google_drive_restore_candidates(*, manga_root: str) -> list[dict[str, A
                 },
             )
             continue
-        exists = Series.objects.filter(library_root=root_norm, name=seg).exists()
+        exists = Series.objects.filter(library_id=lib.pk, name=seg).exists()
         missing = 0
         for ent in drive_cbzs:
             name = ent["name"]
             sz = int(ent.get("size") or 0)
             if _local_cbz_matches_any_series_with_name(
-                root_norm=root_norm,
+                library_id=lib.pk,
                 series_name=seg,
                 filename=name,
                 drive_size=sz,
@@ -1221,15 +1299,16 @@ def list_google_drive_restore_candidates(*, manga_root: str) -> list[dict[str, A
 
 def create_google_drive_restore_job(
     *,
-    manga_root: str,
+    library_id: int,
     series_name: str,
     category: str,
     user_id: int,
 ) -> int:
     """Enqueue full-series restore from Drive backup folder name; returns ``GoogleDriveRestoreJob`` pk.
 
-    Files are written to ``<manga_root>/<category>/<series_name>/*.cbz``.
+    Files are written to ``<library_path>/<category>/<series_name>/*.cbz``.
     """
+    lib = get_manga_library(library_id=library_id)
     name = (series_name or "").strip()
     if not name:
         raise ValueError("series_name must be non-empty")
@@ -1239,19 +1318,20 @@ def create_google_drive_restore_job(
     cat_norm = _normalize_restore_category(cat_in)
     if not cat_norm:
         raise ValueError("category must be non-empty")
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    root_norm = os.path.abspath(os.path.expanduser(lib.filesystem_path))
     folder_id = get_series_drive_folder_id_optional(series_name=name)
     if not folder_id:
         raise ValueError("Series not found on Google Drive")
     if not list_drive_cbz_files_in_folder(parent_folder_id=folder_id):
         raise ValueError("No CBZ files in Drive folder for this series")
     try:
-        _restore_series_rel_path(manga_root=manga_root, category=cat_norm, series_name=name)
+        _restore_series_rel_path(library_id=lib.pk, category=cat_norm, series_name=name)
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
 
     row = GoogleDriveRestoreJob.objects.create(
         user_id=user_id,
+        library_id=lib.pk,
         manga_root=root_norm,
         series_name=name,
         category=cat_norm,
@@ -1271,7 +1351,7 @@ def get_google_drive_restore_job(job_id: int, *, user_id: int) -> GoogleDriveRes
 def run_google_drive_restore_job(*, job_id: int) -> None:
     """Background worker: download Drive CBZs into library and rescan ``Series`` / ``SeriesItem``."""
     try:
-        job = GoogleDriveRestoreJob.objects.get(pk=job_id)
+        job = GoogleDriveRestoreJob.objects.select_related("library").get(pk=job_id)
     except GoogleDriveRestoreJob.DoesNotExist:
         logger.warning("run_google_drive_restore_job: missing GoogleDriveRestoreJob id=%s", job_id)
         return
@@ -1287,7 +1367,7 @@ def run_google_drive_restore_job(*, job_id: int) -> None:
             raise ValueError("No CBZ files in Drive folder")
 
         series_rel = _restore_series_rel_path(
-            manga_root=root_norm,
+            library_id=job.library_id,
             category=category_label,
             series_name=series_label,
         )
@@ -1316,11 +1396,14 @@ def run_google_drive_restore_job(*, job_id: int) -> None:
 
         with transaction.atomic():
             series, _created = Series.objects.update_or_create(
-                library_root=root_norm,
+                library_id=job.library_id,
                 series_rel_path=series_rel,
                 defaults={"name": _normalize_restore_series_segment(series_label)},
             )
-        sync_series_items_for_series(manga_root=root_norm, series_id=series.pk)
+        sync_series_items_for_series(
+            library_id=job.library_id,
+            series_id=series.pk,
+        )
 
         job.status = GoogleDriveRestoreJobStatus.COMPLETED
         job.completed_at = timezone.now()
@@ -1336,15 +1419,15 @@ def run_google_drive_restore_job(*, job_id: int) -> None:
 
 def list_cbz_convert_jobs(
     *,
-    manga_root: str,
+    library_id: int,
     series_id: int | None,
     user_id: int,
     status: str | None = None,
 ) -> list[CbzConvertJob]:
-    """Convert jobs for *user_id* under *manga_root*.
+    """Convert jobs for *user_id* in library *library_id*.
 
     *series_id* set: jobs for that series (must exist in library).
-    *series_id* null: jobs in library (``series.library_root`` matches *manga_root*).
+    *series_id* null: jobs in library (``series.library_id`` matches *library_id*).
 
     Newest first. Optional *status* limits to that job status value.
     Raises ``ValueError("Series not found")`` when *series_id* set and series missing or wrong library.
@@ -1352,13 +1435,14 @@ def list_cbz_convert_jobs(
     """
     if status is not None and status not in CbzConvertJobStatus:
         raise ValueError("Invalid status filter.")
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
-    qs = CbzConvertJob.objects.filter(user_id=user_id, manga_root=root_norm)
+    lib = get_manga_library(library_id=library_id)
+    root_norm = os.path.abspath(os.path.expanduser(lib.filesystem_path))
+    qs = CbzConvertJob.objects.filter(user_id=user_id, library_id=lib.pk, manga_root=root_norm)
     if series_id is None:
-        qs = qs.filter(series__library_root=root_norm)
+        qs = qs.filter(series__library_id=lib.pk)
     else:
         try:
-            series = Series.objects.get(pk=series_id, library_root=root_norm)
+            series = Series.objects.get(pk=series_id, library_id=lib.pk)
         except Series.DoesNotExist as exc:
             raise ValueError("Series not found") from exc
         qs = qs.filter(series_id=series.pk)
@@ -1498,17 +1582,17 @@ def _apply_mangabaka_detail_to_series_info(*, info: SeriesInfo, detail: dict) ->
 
 def set_series_mangabaka_series_id(
     *,
-    manga_root: str,
+    library_id: int,
     series_id: int,
     mangabaka_series_id: int,
 ) -> Series:
     """Set ``SeriesInfo.mangabaka_series_id`` from user input and fill metadata from MangaBaka detail API."""
-    get_series(manga_root=manga_root, series_id=series_id)
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    get_series(library_id=library_id, series_id=series_id)
+    lib = get_manga_library(library_id=library_id)
     detail = fetch_series_detail(series_id=mangabaka_series_id)
 
     with transaction.atomic():
-        locked = Series.objects.select_for_update().get(pk=series_id, library_root=root_norm)
+        locked = Series.objects.select_for_update().get(pk=series_id, library_id=lib.pk)
         try:
             info = SeriesInfo.objects.select_for_update(of=("self",)).get(series_id=locked.pk)
         except SeriesInfo.DoesNotExist:
@@ -1530,17 +1614,17 @@ def set_series_mangabaka_series_id(
             locked.save(update_fields=["mangabaka_search_snoozed_until"])
 
     return _series_queryset_with_fully_backed_up(
-        Series.objects.filter(pk=series_id, library_root=root_norm)
+        Series.objects.filter(pk=series_id, library_id=lib.pk)
     ).select_related("series_info").get()
 
 
-def refresh_series_info_from_mangabaka(*, manga_root: str, series_id: int) -> Series:
+def refresh_series_info_from_mangabaka(*, library_id: int, series_id: int) -> Series:
     """Re-fetch MangaBaka detail for *series_id* when ``SeriesInfo.mangabaka_series_id`` already set.
 
     Does not run title search (unlike scheduled sync). Raises ``ValueError`` when no linked id.
     """
-    root_norm = os.path.abspath(os.path.expanduser(manga_root))
-    get_series(manga_root=manga_root, series_id=series_id)
+    lib = get_manga_library(library_id=library_id)
+    get_series(library_id=library_id, series_id=series_id)
     while True:
         try:
             probe = SeriesInfo.objects.get(series_id=series_id)
@@ -1551,7 +1635,7 @@ def refresh_series_info_from_mangabaka(*, manga_root: str, series_id: int) -> Se
         mb_id = probe.mangabaka_series_id
         detail = fetch_series_detail(series_id=mb_id)
         with transaction.atomic():
-            locked = Series.objects.select_for_update().get(pk=series_id, library_root=root_norm)
+            locked = Series.objects.select_for_update().get(pk=series_id, library_id=lib.pk)
             try:
                 info = SeriesInfo.objects.select_for_update(of=("self",)).get(series_id=locked.pk)
             except SeriesInfo.DoesNotExist as exc:
@@ -1563,7 +1647,7 @@ def refresh_series_info_from_mangabaka(*, manga_root: str, series_id: int) -> Se
             _apply_mangabaka_detail_to_series_info(info=info, detail=detail)
             break
     return _series_queryset_with_fully_backed_up(
-        Series.objects.filter(pk=series_id, library_root=root_norm)
+        Series.objects.filter(pk=series_id, library_id=lib.pk)
     ).select_related("series_info").get()
 
 
@@ -1590,7 +1674,7 @@ def sync_manga_series_info_from_mangabaka() -> int:
             Q(mangabaka_search_snoozed_until__isnull=True)
             | Q(mangabaka_search_snoozed_until__lte=now),
         )
-        .order_by("library_root", "name", "series_rel_path", "pk")[:batch]
+        .order_by("library_id", "name", "series_rel_path", "pk")[:batch]
     )
     processed = 0
     for series in candidates:
@@ -1670,7 +1754,7 @@ def _sync_single_series_info_from_mangabaka(*, series: Series, search_limit: int
 
 
 def run_cbz_convert_job(*, job_id: int) -> None:
-    """Background worker: ``convert_cbz`` using stored ``manga_root`` / ``series_item_id``."""
+    """Background worker: ``convert_cbz`` using stored ``library_id`` / ``series_item_id``."""
     try:
         job = CbzConvertJob.objects.get(pk=job_id)
     except CbzConvertJob.DoesNotExist:
@@ -1681,7 +1765,7 @@ def run_cbz_convert_job(*, job_id: int) -> None:
     )
     try:
         convert_cbz(
-            manga_root=job.manga_root,
+            library_id=job.library_id,
             item_id=job.series_item_id,
             kind=kind,
         )
@@ -1713,7 +1797,10 @@ def run_google_drive_backup_job(*, job_id: int) -> None:
         job.save(update_fields=["status", "completed_at", "failure_message"])
         return
     try:
-        resolved = resolve_cbz_download(manga_root=job.manga_root, item_id=item.pk)
+        resolved = resolve_cbz_download(
+            library_id=job.library_id,
+            item_id=item.pk,
+        )
         folder_id = ensure_series_drive_folder(series_name=job.series.name)
         try:
             local_size = os.path.getsize(resolved.absolute_path)

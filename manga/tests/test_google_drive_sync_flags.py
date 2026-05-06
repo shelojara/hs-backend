@@ -3,7 +3,7 @@
 import pytest
 
 import manga.services as manga_services
-from manga.models import SeriesItem
+from manga.models import MangaLibrary, SeriesItem
 from manga.services import sync_manga_library_cache, sync_series_items_for_cbz_path
 
 
@@ -26,7 +26,8 @@ def test_sync_series_items_sets_is_backed_up_when_filename_in_drive(tmp_path, mo
         lambda **_: frozenset({"ch.cbz"}),
     )
 
-    sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
+    lib = MangaLibrary.objects.create(name="lib", filesystem_path=str(root.resolve()))
+    sync_series_items_for_cbz_path(library_id=lib.pk, cbz_rel_path="MySeries/ch.cbz")
     row = SeriesItem.objects.get(series__series_rel_path="MySeries", rel_path="MySeries/ch.cbz")
     assert row.is_backed_up is True
 
@@ -50,10 +51,11 @@ def test_sync_series_items_clears_is_backed_up_when_not_in_drive(tmp_path, monke
         lambda **_: frozenset({"other.cbz"}),
     )
 
-    sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
+    lib = MangaLibrary.objects.create(name="lib", filesystem_path=str(root.resolve()))
+    sync_series_items_for_cbz_path(library_id=lib.pk, cbz_rel_path="MySeries/ch.cbz")
     row = SeriesItem.objects.get(series__series_rel_path="MySeries", rel_path="MySeries/ch.cbz")
     SeriesItem.objects.filter(pk=row.pk).update(is_backed_up=True)
-    sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
+    sync_series_items_for_cbz_path(library_id=lib.pk, cbz_rel_path="MySeries/ch.cbz")
     row.refresh_from_db()
     assert row.is_backed_up is False
 
@@ -79,10 +81,11 @@ def test_sync_series_items_clears_is_backed_up_when_no_drive_series_folder(tmp_p
 
     monkeypatch.setattr(manga_services, "list_drive_file_names_in_folder", _no_list)
 
-    sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
+    lib = MangaLibrary.objects.create(name="lib", filesystem_path=str(root.resolve()))
+    sync_series_items_for_cbz_path(library_id=lib.pk, cbz_rel_path="MySeries/ch.cbz")
     row = SeriesItem.objects.get(series__series_rel_path="MySeries", rel_path="MySeries/ch.cbz")
     SeriesItem.objects.filter(pk=row.pk).update(is_backed_up=True)
-    sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
+    sync_series_items_for_cbz_path(library_id=lib.pk, cbz_rel_path="MySeries/ch.cbz")
     row.refresh_from_db()
     assert row.is_backed_up is False
     assert called["n"] == 0
@@ -107,7 +110,8 @@ def test_sync_manga_library_cache_refreshes_drive_flags(tmp_path, monkeypatch):
         lambda **_: frozenset({"a.cbz"}),
     )
 
-    sync_manga_library_cache(manga_root=str(root))
+    lib = MangaLibrary.objects.create(name="lib", filesystem_path=str(root.resolve()))
+    sync_manga_library_cache(library_id=lib.pk)
     row = SeriesItem.objects.get(rel_path="S/a.cbz")
     assert row.is_backed_up is True
 
@@ -133,7 +137,8 @@ def test_sync_skips_drive_refresh_when_get_folder_raises(tmp_path, monkeypatch):
 
     monkeypatch.setattr(manga_services, "list_drive_file_names_in_folder", _count_list)
 
-    sync_manga_library_cache(manga_root=str(root))
+    lib = MangaLibrary.objects.create(name="lib", filesystem_path=str(root.resolve()))
+    sync_manga_library_cache(library_id=lib.pk)
     assert listed["n"] == 0
     row = SeriesItem.objects.get(rel_path="S/a.cbz")
     assert row.is_backed_up is False

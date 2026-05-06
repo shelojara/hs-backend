@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import manga.services as manga_services
-from manga.models import Series, SeriesItem
+from manga.models import MangaLibrary, Series, SeriesItem
 from manga.services import convert_cbz
 
 
@@ -17,7 +17,8 @@ def test_convert_cbz_removes_temp_work_dir_after_success(tmp_path, monkeypatch):
     cbz.parent.mkdir(parents=True)
     cbz.write_bytes(b"PK\x03\x04")
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="series", name="series")
+    lib = MangaLibrary.objects.create(name="m", filesystem_path=abs_root)
+    s = Series.objects.create(library=lib, library_root=abs_root, series_rel_path="series", name="series")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="series/ch.cbz",
@@ -37,7 +38,7 @@ def test_convert_cbz_removes_temp_work_dir_after_success(tmp_path, monkeypatch):
     monkeypatch.setattr(manga_services, "upload_to_dropbox", lambda *_a, **_k: None)
     monkeypatch.setattr(manga_services, "get_dropbox_space_bytes", lambda: (0, 10**12))
 
-    convert_cbz(manga_root=str(root), item_id=row.pk, kind="manga")
+    convert_cbz(library_id=lib.pk, item_id=row.pk, kind="manga")
 
     assert len(work_dirs) == 1
     assert not Path(work_dirs[0]).exists()

@@ -3,7 +3,57 @@ from __future__ import annotations
 import posixpath
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
+
+
+def normalize_manga_library_filesystem_path(raw: str) -> str:
+    """Absolute expanded path for on-disk manga root (no trailing slash normalization)."""
+    import os
+
+    s = (raw or "").strip()
+    if not s:
+        return ""
+    return os.path.abspath(os.path.expanduser(s))
+
+
+class MangaLibrary(models.Model):
+    """Configured manga root: display name + filesystem path (shared across users)."""
+
+    name = models.CharField(max_length=256)
+    filesystem_path = models.CharField(
+        max_length=4096,
+        help_text="Absolute path on server where .cbz library lives.",
+    )
+
+    class Meta:
+        ordering = ("name", "pk")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("filesystem_path",),
+                name="manga_mangalibrary_filesystem_path_uniq",
+            ),
+        ]
+        verbose_name = "manga library"
+        verbose_name_plural = "manga libraries"
+
+    def clean(self) -> None:
+        n = normalize_manga_library_filesystem_path(self.filesystem_path)
+        if not n:
+            raise ValidationError({"filesystem_path": "Enter a non-empty filesystem path."})
+        self.filesystem_path = n
+        name = (self.name or "").strip()
+        if not name:
+            raise ValidationError({"name": "Enter a non-empty name."})
+        self.name = name
+
+    def save(self, *args, **kwargs) -> None:
+        self.filesystem_path = normalize_manga_library_filesystem_path(self.filesystem_path)
+        self.name = (self.name or "").strip()
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.filesystem_path})"
 
 
 def series_category_for_rel_path(series_rel_path: str) -> str:
@@ -87,6 +137,12 @@ class GoogleDriveBackupJob(models.Model):
         on_delete=models.CASCADE,
         related_name="manga_google_drive_backup_jobs",
     )
+    library = models.ForeignKey(
+        "MangaLibrary",
+        on_delete=models.CASCADE,
+        related_name="+",
+        help_text="Manga library this backup targets.",
+    )
     manga_root = models.CharField(
         max_length=4096,
         help_text="Normalized absolute manga library root when job was created.",
@@ -143,6 +199,12 @@ class GoogleDriveRestoreJob(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="manga_google_drive_restore_jobs",
+    )
+    library = models.ForeignKey(
+        "MangaLibrary",
+        on_delete=models.CASCADE,
+        related_name="+",
+        help_text="Manga library files are restored into.",
     )
     manga_root = models.CharField(
         max_length=4096,
@@ -248,6 +310,12 @@ class CbzConvertJob(models.Model):
         on_delete=models.CASCADE,
         related_name="manga_cbz_convert_jobs",
     )
+    library = models.ForeignKey(
+        "MangaLibrary",
+        on_delete=models.CASCADE,
+        related_name="+",
+        help_text="Manga library this convert job targets.",
+    )
     manga_root = models.CharField(
         max_length=4096,
         help_text="Normalized absolute manga library root when job was created.",
@@ -293,11 +361,16 @@ class CbzConvertJob(models.Model):
 
 
 class Series(models.Model):
-    """Cached manga series: directory under ``library_root`` that directly contains ≥1 ``.cbz`` file."""
+    """Cached manga series: directory under library filesystem root that directly contains ≥1 ``.cbz``."""
 
+    library = models.ForeignKey(
+        MangaLibrary,
+        on_delete=models.CASCADE,
+        related_name="series_set",
+    )
     library_root = models.CharField(
         max_length=4096,
-        help_text="Normalized absolute path to manga library root when this row was written.",
+        help_text="Denormalized copy of library filesystem path when row was written (legacy / jobs).",
     )
     series_rel_path = models.CharField(
         max_length=1024,
@@ -340,23 +413,25 @@ class Series(models.Model):
     scanned_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ("library_root", "name", "series_rel_path")
+        ordering = ("library_id", "name", "series_rel_path")
         verbose_name = "manga series (cached)"
         verbose_name_plural = "manga series (cached)"
         constraints = [
             models.UniqueConstraint(
-                fields=("library_root", "series_rel_path"),
-                name="manga_mangalibraryseries_unique_root_path",
+                fields=("library", "series_rel_path"),
+                name="manga_series_unique_library_seriespath",
             ),
         ]
         indexes = [
             models.Index(
-                fields=["library_root", "category"],
-                name="manga_series_root_category",
+                fields=["library", "category"],
+                name="manga_series_library_category",
             ),
         ]
 
     def save(self, *args, **kwargs) -> None:
+        if self.library_id:
+            self.library_root = self.library.filesystem_path
         self.category = series_category_for_rel_path(self.series_rel_path)
         super().save(*args, **kwargs)
 

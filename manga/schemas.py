@@ -22,6 +22,43 @@ class SeriesInfoSchema(Schema):
         return f"https://mangabaka.org/{self.mangabaka_series_id}"
 
 
+class MangaLibrarySchema(Schema):
+    library_id: int
+    name: str
+    filesystem_path: str
+
+
+class ListMangaLibrariesResponse(Schema):
+    libraries: list[MangaLibrarySchema]
+
+
+class CreateMangaLibraryRequest(Schema):
+    name: str = Field(min_length=1, max_length=256)
+    filesystem_path: str = Field(min_length=1, max_length=4096)
+
+
+class CreateMangaLibraryResponse(Schema):
+    library: MangaLibrarySchema
+
+
+class UpdateMangaLibraryRequest(Schema):
+    library_id: int = Field(ge=1)
+    name: str | None = Field(default=None, min_length=1, max_length=256)
+    filesystem_path: str | None = Field(default=None, min_length=1, max_length=4096)
+
+
+class UpdateMangaLibraryResponse(Schema):
+    library: MangaLibrarySchema
+
+
+class DeleteMangaLibraryRequest(Schema):
+    library_id: int = Field(ge=1)
+
+
+class DeleteMangaLibraryResponse(Schema):
+    pass
+
+
 class SeriesSchema(Schema):
     id: int
     name: str
@@ -34,6 +71,7 @@ class SeriesSchema(Schema):
 
 
 class ListSeriesRequest(Schema):
+    library_id: int = Field(ge=1)
     limit: int = Field(default=100, ge=1, le=500)
     offset: int = Field(default=0, ge=0)
     category: str | None = Field(
@@ -78,6 +116,7 @@ class ListSeriesResponse(Schema):
 
 
 class GetSeriesRequest(Schema):
+    library_id: int = Field(ge=1)
     series_id: int = Field(ge=1)
 
 
@@ -86,6 +125,7 @@ class GetSeriesResponse(Schema):
 
 
 class SetSeriesMangabakaRequest(Schema):
+    library_id: int = Field(ge=1)
     series_id: int = Field(ge=1)
     mangabaka_series_id: int = Field(ge=1)
 
@@ -95,6 +135,7 @@ class SetSeriesMangabakaResponse(Schema):
 
 
 class RefreshSeriesInfoRequest(Schema):
+    library_id: int = Field(ge=1)
     series_id: int = Field(ge=1)
 
 
@@ -103,6 +144,7 @@ class RefreshSeriesInfoResponse(Schema):
 
 
 class SyncSeriesItemsRequest(Schema):
+    library_id: int = Field(ge=1)
     series_id: int = Field(ge=1)
 
 
@@ -110,8 +152,16 @@ class SyncSeriesItemsResponse(Schema):
     series_id: int
 
 
+class SyncLibraryRequest(Schema):
+    library_id: int = Field(ge=1)
+
+
 class SyncLibraryResponse(Schema):
     pass
+
+
+class ListSeriesCategoriesRequest(Schema):
+    library_id: int = Field(ge=1)
 
 
 class SearchMangabakaSeriesRequest(Schema):
@@ -153,6 +203,7 @@ class SeriesItemSchema(Schema):
 
 
 class ListSeriesItemsRequest(Schema):
+    library_id: int = Field(ge=1)
     series_id: int = Field(ge=1)
     limit: int = Field(default=100, ge=1, le=500)
     offset: int = Field(default=0, ge=0)
@@ -164,6 +215,7 @@ class ListSeriesItemsResponse(Schema):
 
 
 class ConvertCbzRequest(Schema):
+    library_id: int = Field(ge=1)
     item_id: int
     kind: Literal["manga", "manhwa"] = "manga"
 
@@ -173,6 +225,7 @@ class ConvertCbzResponse(Schema):
 
 
 class CreateCbzConvertJobRequest(Schema):
+    library_id: int = Field(ge=1)
     item_id: int = Field(ge=1)
     kind: Literal["manga", "manhwa"] = "manga"
 
@@ -184,6 +237,7 @@ class CreateCbzConvertJobResponse(Schema):
 class ListCbzConvertJobsRequest(Schema):
     """``series_id`` null/omitted: all jobs for user in library (any series)."""
 
+    library_id: int = Field(ge=1)
     series_id: int | None = Field(default=None, ge=1)
     status: Literal["pending", "completed", "failed"] | None = None
 
@@ -211,6 +265,7 @@ class GetCbzConvertJobResponse(Schema):
 
 
 class CreateGoogleDriveBackupJobRequest(Schema):
+    library_id: int = Field(ge=1)
     series_id: int = Field(ge=1)
 
 
@@ -221,6 +276,7 @@ class CreateGoogleDriveBackupJobResponse(Schema):
 class ListGoogleDriveBackupJobsRequest(Schema):
     """``series_id`` null/omitted: all backup jobs for user in library (any series)."""
 
+    library_id: int = Field(ge=1)
     series_id: int | None = Field(default=None, ge=1)
     status: Literal["pending", "completed", "failed"] | None = None
 
@@ -258,7 +314,12 @@ class ListGoogleDriveRestoreCandidatesResponse(Schema):
     items: list[GoogleDriveRestoreCandidateSchema]
 
 
+class ListGoogleDriveRestoreCandidatesRequest(Schema):
+    library_id: int = Field(ge=1)
+
+
 class CreateGoogleDriveRestoreJobRequest(Schema):
+    library_id: int = Field(ge=1)
     series_name: str = Field(min_length=1, max_length=1024)
     category: str = Field(min_length=1, max_length=1024)
 
@@ -286,10 +347,12 @@ class GetGoogleDriveRestoreJobResponse(Schema):
 
 
 class DownloadCbzRequest(Schema):
+    library_id: int = Field(ge=1)
     item_id: int
 
 
 class DownloadCbzPagesRequest(Schema):
+    library_id: int = Field(ge=1)
     item_id: int
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=25, ge=1, le=500)

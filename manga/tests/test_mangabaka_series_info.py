@@ -6,13 +6,19 @@ from unittest.mock import patch
 import pytest
 from django.utils import timezone as django_timezone
 
-from manga.models import Series, SeriesInfo
+from manga.models import MangaLibrary, Series, SeriesInfo
 from manga.services import (
     _pick_mangabaka_series_id_from_search_hits,
     refresh_series_info_from_mangabaka,
     set_series_mangabaka_series_id,
     sync_manga_series_info_from_mangabaka,
 )
+
+_LIB_TMP = "/tmp/lib"
+
+
+def _library_tmp() -> MangaLibrary:
+    return MangaLibrary.objects.create(name="tmp-lib", filesystem_path=_LIB_TMP)
 
 
 @pytest.mark.django_db
@@ -34,8 +40,9 @@ def test_sync_manga_series_info_creates_seriesinfo_from_search_and_detail(settin
     settings.MANGABAKA_HTTP_DELAY_SECONDS = 0
     settings.MANGABAKA_TITLE_MATCH_THRESHOLD = 80
     settings.MANGABAKA_SEARCH_LIMIT = 10
+    lib = _library_tmp()
     s = Series.objects.create(
-        library_root="/tmp/lib",
+        library=lib,
         series_rel_path="X",
         name="Test Series",
         item_count=0,
@@ -65,8 +72,9 @@ def test_sync_seriesinfo_type_empty_when_detail_omits_type(settings):
     settings.MANGABAKA_INFO_SYNC_BATCH_SIZE = 5
     settings.MANGABAKA_HTTP_DELAY_SECONDS = 0
     settings.MANGABAKA_TITLE_MATCH_THRESHOLD = 80
+    lib = _library_tmp()
     s = Series.objects.create(
-        library_root="/tmp/lib",
+        library=lib,
         series_rel_path="Y",
         name="No Type Field",
         item_count=0,
@@ -91,8 +99,9 @@ def test_sync_seriesinfo_type_empty_when_detail_omits_type(settings):
 def test_sync_skips_series_with_complete_seriesinfo(settings):
     settings.MANGABAKA_INFO_SYNC_BATCH_SIZE = 5
     settings.MANGABAKA_HTTP_DELAY_SECONDS = 0
+    lib = _library_tmp()
     s = Series.objects.create(
-        library_root="/tmp/lib",
+        library=lib,
         series_rel_path="A",
         name="Done",
         item_count=0,
@@ -122,8 +131,9 @@ def test_sync_snoozes_search_when_no_title_match(settings):
     settings.MANGABAKA_TITLE_MATCH_THRESHOLD = 99
     settings.MANGABAKA_NO_MATCH_SNOOZE_HOURS = 24
     t0 = django_timezone.now()
+    lib = _library_tmp()
     s = Series.objects.create(
-        library_root="/tmp/lib",
+        library=lib,
         series_rel_path="B",
         name="Local Only",
         item_count=0,
@@ -144,8 +154,9 @@ def test_sync_skips_series_while_search_snoozed(settings):
     settings.MANGABAKA_INFO_SYNC_BATCH_SIZE = 5
     settings.MANGABAKA_HTTP_DELAY_SECONDS = 0
     t0 = django_timezone.now()
+    lib = _library_tmp()
     Series.objects.create(
-        library_root="/tmp/lib",
+        library=lib,
         series_rel_path="Z",
         name="Snoozed",
         item_count=0,
@@ -163,8 +174,9 @@ def test_sync_retries_search_after_snooze_expires(settings):
     settings.MANGABAKA_HTTP_DELAY_SECONDS = 0
     settings.MANGABAKA_TITLE_MATCH_THRESHOLD = 80
     t0 = django_timezone.now()
+    lib = _library_tmp()
     s = Series.objects.create(
-        library_root="/tmp/lib",
+        library=lib,
         series_rel_path="R",
         name="Later Match",
         item_count=0,
@@ -193,8 +205,9 @@ def test_sync_detail_api_error_leaves_incomplete_for_retry(settings):
     settings.MANGABAKA_INFO_SYNC_BATCH_SIZE = 5
     settings.MANGABAKA_HTTP_DELAY_SECONDS = 0
     settings.MANGABAKA_TITLE_MATCH_THRESHOLD = 80
+    lib = _library_tmp()
     s = Series.objects.create(
-        library_root="/tmp/lib",
+        library=lib,
         series_rel_path="C",
         name="Retry Me",
         item_count=0,
@@ -220,10 +233,10 @@ def test_sync_detail_api_error_leaves_incomplete_for_retry(settings):
 
 @pytest.mark.django_db
 def test_set_series_mangabaka_creates_info_and_clears_snooze(settings):
-    settings.MANGA_ROOT = "/tmp/lib"
     t0 = django_timezone.now()
+    lib = _library_tmp()
     s = Series.objects.create(
-        library_root="/tmp/lib",
+        library=lib,
         series_rel_path="M",
         name="Manual",
         item_count=0,
@@ -234,7 +247,7 @@ def test_set_series_mangabaka_creates_info_and_clears_snooze(settings):
         return_value={"description": "d", "rating": 9, "type": "manga"},
     ):
         out = set_series_mangabaka_series_id(
-            manga_root="/tmp/lib",
+            library_id=lib.pk,
             series_id=s.pk,
             mangabaka_series_id=333,
         )
@@ -251,9 +264,9 @@ def test_set_series_mangabaka_creates_info_and_clears_snooze(settings):
 
 @pytest.mark.django_db
 def test_set_series_mangabaka_updates_existing_info(settings):
-    settings.MANGA_ROOT = "/tmp/lib"
+    lib = _library_tmp()
     s = Series.objects.create(
-        library_root="/tmp/lib",
+        library=lib,
         series_rel_path="N",
         name="Has Info",
         item_count=0,
@@ -271,7 +284,7 @@ def test_set_series_mangabaka_updates_existing_info(settings):
         return_value={"description": "new", "rating": 2},
     ):
         set_series_mangabaka_series_id(
-            manga_root="/tmp/lib",
+            library_id=lib.pk,
             series_id=s.pk,
             mangabaka_series_id=999,
         )
@@ -282,16 +295,18 @@ def test_set_series_mangabaka_updates_existing_info(settings):
 
 
 @pytest.mark.django_db
-def test_set_series_mangabaka_wrong_root_raises():
+def test_set_series_mangabaka_wrong_library_raises():
+    lib_a = _library_tmp()
+    lib_b = MangaLibrary.objects.create(name="other", filesystem_path="/other/root")
     s = Series.objects.create(
-        library_root="/tmp/lib",
+        library=lib_a,
         series_rel_path="Q",
         name="X",
         item_count=0,
     )
     with pytest.raises(ValueError, match="Series not found"):
         set_series_mangabaka_series_id(
-            manga_root="/other/root",
+            library_id=lib_b.pk,
             series_id=s.pk,
             mangabaka_series_id=1,
         )
@@ -299,9 +314,9 @@ def test_set_series_mangabaka_wrong_root_raises():
 
 @pytest.mark.django_db
 def test_refresh_series_info_updates_detail_when_mangabaka_id_set(settings):
-    settings.MANGA_ROOT = "/tmp/lib"
+    lib = _library_tmp()
     s = Series.objects.create(
-        library_root="/tmp/lib",
+        library=lib,
         series_rel_path="R",
         name="Ref",
         item_count=0,
@@ -318,7 +333,7 @@ def test_refresh_series_info_updates_detail_when_mangabaka_id_set(settings):
         "manga.services.fetch_series_detail",
         return_value={"description": "fresh", "rating": 10, "type": "manga"},
     ):
-        refresh_series_info_from_mangabaka(manga_root="/tmp/lib", series_id=s.pk)
+        refresh_series_info_from_mangabaka(library_id=lib.pk, series_id=s.pk)
     info = SeriesInfo.objects.get(series=s)
     assert info.description == "fresh"
     assert info.rating == 10
@@ -328,22 +343,22 @@ def test_refresh_series_info_updates_detail_when_mangabaka_id_set(settings):
 
 @pytest.mark.django_db
 def test_refresh_series_info_raises_without_mangabaka_link(settings):
-    settings.MANGA_ROOT = "/tmp/lib"
+    lib = _library_tmp()
     s = Series.objects.create(
-        library_root="/tmp/lib",
+        library=lib,
         series_rel_path="S",
         name="No link",
         item_count=0,
     )
     with pytest.raises(ValueError, match="no MangaBaka link"):
-        refresh_series_info_from_mangabaka(manga_root="/tmp/lib", series_id=s.pk)
+        refresh_series_info_from_mangabaka(library_id=lib.pk, series_id=s.pk)
 
 
 @pytest.mark.django_db
 def test_refresh_series_info_raises_when_seriesinfo_has_null_mangabaka_id(settings):
-    settings.MANGA_ROOT = "/tmp/lib"
+    lib = _library_tmp()
     s = Series.objects.create(
-        library_root="/tmp/lib",
+        library=lib,
         series_rel_path="T",
         name="Null id",
         item_count=0,
@@ -356,4 +371,4 @@ def test_refresh_series_info_raises_when_seriesinfo_has_null_mangabaka_id(settin
         is_complete=False,
     )
     with pytest.raises(ValueError, match="no MangaBaka link"):
-        refresh_series_info_from_mangabaka(manga_root="/tmp/lib", series_id=s.pk)
+        refresh_series_info_from_mangabaka(library_id=lib.pk, series_id=s.pk)

@@ -1,11 +1,11 @@
-"""Async CBZ convert jobs (groceries Search pattern: django-q2 + row status)."""
+"""Async CBZ convert jobs (django-q2 + row status)."""
 
 from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
 
-from manga.models import CbzConvertJob, CbzConvertJobStatus, Series, SeriesItem
+from manga.models import CbzConvertJob, CbzConvertJobStatus, MangaLibrary, Series, SeriesItem
 from manga.services import (
     create_cbz_convert_job,
     get_cbz_convert_job,
@@ -16,13 +16,19 @@ from manga.services import (
 User = get_user_model()
 
 
+def _library_and_series(tmp_path, name: str = "lib") -> tuple[MangaLibrary, Series, str]:
+    root = tmp_path / name
+    root.mkdir()
+    abs_root = str(root.resolve())
+    lib = MangaLibrary.objects.create(name=name, filesystem_path=abs_root)
+    s = Series.objects.create(library=lib, library_root=abs_root, series_rel_path="s", name="s")
+    return lib, s, abs_root
+
+
 @pytest.mark.django_db
 @patch("manga.services.async_task")
 def test_create_cbz_convert_job_persists_pending_and_enqueues_worker(mock_async, tmp_path):
-    root = tmp_path / "lib"
-    root.mkdir()
-    abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    lib, s, abs_root = _library_and_series(tmp_path)
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -32,13 +38,14 @@ def test_create_cbz_convert_job_persists_pending_and_enqueues_worker(mock_async,
     u = User.objects.create_user(username="u1", password="pw")
 
     jid = create_cbz_convert_job(
-        manga_root=str(root),
+        library_id=lib.pk,
         item_id=row.pk,
         kind="manga",
         user_id=u.pk,
     )
     job = CbzConvertJob.objects.get(pk=jid)
     assert job.user_id == u.pk
+    assert job.library_id == lib.pk
     assert job.manga_root == abs_root
     assert job.series_id == s.pk
     assert job.series_item_id == row.pk
@@ -54,10 +61,7 @@ def test_create_cbz_convert_job_persists_pending_and_enqueues_worker(mock_async,
 @pytest.mark.django_db
 @patch("manga.services.convert_cbz")
 def test_run_cbz_convert_job_marks_completed(mock_convert, tmp_path):
-    root = tmp_path / "lib"
-    root.mkdir()
-    abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    lib, s, abs_root = _library_and_series(tmp_path)
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -67,6 +71,7 @@ def test_run_cbz_convert_job_marks_completed(mock_convert, tmp_path):
     u = User.objects.create_user(username="u2", password="pw")
     job = CbzConvertJob.objects.create(
         user=u,
+        library_id=lib.pk,
         manga_root=abs_root,
         series=s,
         series_item_id=row.pk,
@@ -76,7 +81,7 @@ def test_run_cbz_convert_job_marks_completed(mock_convert, tmp_path):
     run_cbz_convert_job(job_id=job.pk)
 
     mock_convert.assert_called_once_with(
-        manga_root=abs_root,
+        library_id=lib.pk,
         item_id=row.pk,
         kind="manga",
     )
@@ -89,10 +94,7 @@ def test_run_cbz_convert_job_marks_completed(mock_convert, tmp_path):
 @pytest.mark.django_db
 @patch("manga.services.convert_cbz", side_effect=RuntimeError("boom"))
 def test_run_cbz_convert_job_marks_failed_with_message(_mock_convert, tmp_path):
-    root = tmp_path / "lib"
-    root.mkdir()
-    abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    lib, s, abs_root = _library_and_series(tmp_path)
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -102,6 +104,7 @@ def test_run_cbz_convert_job_marks_failed_with_message(_mock_convert, tmp_path):
     u = User.objects.create_user(username="u3", password="pw")
     job = CbzConvertJob.objects.create(
         user=u,
+        library_id=lib.pk,
         manga_root=abs_root,
         series=s,
         series_item_id=row.pk,
@@ -118,10 +121,7 @@ def test_run_cbz_convert_job_marks_failed_with_message(_mock_convert, tmp_path):
 
 @pytest.mark.django_db
 def test_get_cbz_convert_job_returns_row_for_owner(tmp_path):
-    root = tmp_path / "lib"
-    root.mkdir()
-    abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    lib, s, abs_root = _library_and_series(tmp_path)
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -131,6 +131,7 @@ def test_get_cbz_convert_job_returns_row_for_owner(tmp_path):
     u = User.objects.create_user(username="u5", password="pw")
     job = CbzConvertJob.objects.create(
         user=u,
+        library_id=lib.pk,
         manga_root=abs_root,
         series=s,
         series_item_id=row.pk,
@@ -142,10 +143,7 @@ def test_get_cbz_convert_job_returns_row_for_owner(tmp_path):
 
 @pytest.mark.django_db
 def test_get_cbz_convert_job_wrong_user_raises(tmp_path):
-    root = tmp_path / "lib"
-    root.mkdir()
-    abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    lib, s, abs_root = _library_and_series(tmp_path)
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -156,6 +154,7 @@ def test_get_cbz_convert_job_wrong_user_raises(tmp_path):
     other = User.objects.create_user(username="u7", password="pw")
     job = CbzConvertJob.objects.create(
         user=u,
+        library_id=lib.pk,
         manga_root=abs_root,
         series=s,
         series_item_id=row.pk,
@@ -167,10 +166,7 @@ def test_get_cbz_convert_job_wrong_user_raises(tmp_path):
 
 @pytest.mark.django_db
 def test_list_cbz_convert_jobs_returns_all_for_series_newest_first(tmp_path):
-    root = tmp_path / "lib"
-    root.mkdir()
-    abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    lib, s, abs_root = _library_and_series(tmp_path)
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -182,6 +178,7 @@ def test_list_cbz_convert_jobs_returns_all_for_series_newest_first(tmp_path):
     for _ in range(12):
         j = CbzConvertJob.objects.create(
             user=u,
+            library_id=lib.pk,
             manga_root=abs_root,
             series=s,
             series_item_id=row.pk,
@@ -189,7 +186,7 @@ def test_list_cbz_convert_jobs_returns_all_for_series_newest_first(tmp_path):
         )
         ids.append(j.pk)
     rows = list_cbz_convert_jobs(
-        manga_root=str(root),
+        library_id=lib.pk,
         series_id=s.pk,
         user_id=u.pk,
     )
@@ -199,11 +196,9 @@ def test_list_cbz_convert_jobs_returns_all_for_series_newest_first(tmp_path):
 
 @pytest.mark.django_db
 def test_list_cbz_convert_jobs_scoped_to_series_items(tmp_path):
-    root = tmp_path / "lib"
-    root.mkdir()
-    abs_root = str(root.resolve())
-    s_a = Series.objects.create(library_root=abs_root, series_rel_path="a", name="a")
-    s_b = Series.objects.create(library_root=abs_root, series_rel_path="b", name="b")
+    lib, _, abs_root = _library_and_series(tmp_path)
+    s_a = Series.objects.create(library=lib, library_root=abs_root, series_rel_path="a", name="a")
+    s_b = Series.objects.create(library=lib, library_root=abs_root, series_rel_path="b", name="b")
     item_a = SeriesItem.objects.create(
         series=s_a,
         rel_path="a/1.cbz",
@@ -219,6 +214,7 @@ def test_list_cbz_convert_jobs_scoped_to_series_items(tmp_path):
     u = User.objects.create_user(username="u10", password="pw")
     ja = CbzConvertJob.objects.create(
         user=u,
+        library_id=lib.pk,
         manga_root=abs_root,
         series=s_a,
         series_item_id=item_a.pk,
@@ -226,13 +222,14 @@ def test_list_cbz_convert_jobs_scoped_to_series_items(tmp_path):
     )
     CbzConvertJob.objects.create(
         user=u,
+        library_id=lib.pk,
         manga_root=abs_root,
         series=s_b,
         series_item_id=item_b.pk,
         kind="manga",
     )
     rows = list_cbz_convert_jobs(
-        manga_root=str(root),
+        library_id=lib.pk,
         series_id=s_a.pk,
         user_id=u.pk,
     )
@@ -241,11 +238,9 @@ def test_list_cbz_convert_jobs_scoped_to_series_items(tmp_path):
 
 @pytest.mark.django_db
 def test_list_cbz_convert_jobs_null_series_id_all_series_in_library(tmp_path):
-    root = tmp_path / "lib"
-    root.mkdir()
-    abs_root = str(root.resolve())
-    s_a = Series.objects.create(library_root=abs_root, series_rel_path="a", name="a")
-    s_b = Series.objects.create(library_root=abs_root, series_rel_path="b", name="b")
+    lib, _, abs_root = _library_and_series(tmp_path)
+    s_a = Series.objects.create(library=lib, library_root=abs_root, series_rel_path="a", name="a")
+    s_b = Series.objects.create(library=lib, library_root=abs_root, series_rel_path="b", name="b")
     item_a = SeriesItem.objects.create(
         series=s_a,
         rel_path="a/1.cbz",
@@ -261,6 +256,7 @@ def test_list_cbz_convert_jobs_null_series_id_all_series_in_library(tmp_path):
     u = User.objects.create_user(username="u_all_series", password="pw")
     ja = CbzConvertJob.objects.create(
         user=u,
+        library_id=lib.pk,
         manga_root=abs_root,
         series=s_a,
         series_item_id=item_a.pk,
@@ -268,13 +264,14 @@ def test_list_cbz_convert_jobs_null_series_id_all_series_in_library(tmp_path):
     )
     jb = CbzConvertJob.objects.create(
         user=u,
+        library_id=lib.pk,
         manga_root=abs_root,
         series=s_b,
         series_item_id=item_b.pk,
         kind="manga",
     )
     rows = list_cbz_convert_jobs(
-        manga_root=str(root),
+        library_id=lib.pk,
         series_id=None,
         user_id=u.pk,
     )
@@ -283,10 +280,7 @@ def test_list_cbz_convert_jobs_null_series_id_all_series_in_library(tmp_path):
 
 @pytest.mark.django_db
 def test_list_cbz_convert_jobs_filters_by_status(tmp_path):
-    root = tmp_path / "lib"
-    root.mkdir()
-    abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    lib, s, abs_root = _library_and_series(tmp_path)
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -296,6 +290,7 @@ def test_list_cbz_convert_jobs_filters_by_status(tmp_path):
     u = User.objects.create_user(username="u13", password="pw")
     j_pending = CbzConvertJob.objects.create(
         user=u,
+        library_id=lib.pk,
         manga_root=abs_root,
         series=s,
         series_item_id=row.pk,
@@ -304,6 +299,7 @@ def test_list_cbz_convert_jobs_filters_by_status(tmp_path):
     )
     j_done = CbzConvertJob.objects.create(
         user=u,
+        library_id=lib.pk,
         manga_root=abs_root,
         series=s,
         series_item_id=row.pk,
@@ -312,6 +308,7 @@ def test_list_cbz_convert_jobs_filters_by_status(tmp_path):
     )
     CbzConvertJob.objects.create(
         user=u,
+        library_id=lib.pk,
         manga_root=abs_root,
         series=s,
         series_item_id=row.pk,
@@ -319,7 +316,7 @@ def test_list_cbz_convert_jobs_filters_by_status(tmp_path):
         status=CbzConvertJobStatus.FAILED,
     )
     only_pending = list_cbz_convert_jobs(
-        manga_root=str(root),
+        library_id=lib.pk,
         series_id=s.pk,
         user_id=u.pk,
         status=CbzConvertJobStatus.PENDING,
@@ -327,7 +324,7 @@ def test_list_cbz_convert_jobs_filters_by_status(tmp_path):
     assert [r.pk for r in only_pending] == [j_pending.pk]
 
     only_completed = list_cbz_convert_jobs(
-        manga_root=str(root),
+        library_id=lib.pk,
         series_id=s.pk,
         user_id=u.pk,
         status=CbzConvertJobStatus.COMPLETED,
@@ -339,10 +336,11 @@ def test_list_cbz_convert_jobs_filters_by_status(tmp_path):
 def test_list_cbz_convert_jobs_invalid_status_raises(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
+    lib = MangaLibrary.objects.create(name="lib", filesystem_path=str(root.resolve()))
     u = User.objects.create_user(username="u14", password="pw")
     with pytest.raises(ValueError, match="Invalid status filter"):
         list_cbz_convert_jobs(
-            manga_root=str(root),
+            library_id=lib.pk,
             series_id=1,
             user_id=u.pk,
             status="bogus",
@@ -351,12 +349,11 @@ def test_list_cbz_convert_jobs_invalid_status_raises(tmp_path):
 
 @pytest.mark.django_db
 def test_list_cbz_convert_jobs_unknown_series_raises(tmp_path):
-    root = tmp_path / "lib"
-    root.mkdir()
+    lib, _, _ = _library_and_series(tmp_path)
     u = User.objects.create_user(username="u11", password="pw")
     with pytest.raises(ValueError, match="Series not found"):
         list_cbz_convert_jobs(
-            manga_root=str(root),
+            library_id=lib.pk,
             series_id=999,
             user_id=u.pk,
         )
@@ -364,12 +361,10 @@ def test_list_cbz_convert_jobs_unknown_series_raises(tmp_path):
 
 @pytest.mark.django_db
 def test_list_cbz_convert_jobs_wrong_library_raises(tmp_path):
-    root_a = tmp_path / "a"
+    lib_a, s, abs_a = _library_and_series(tmp_path, "a")
     root_b = tmp_path / "b"
-    root_a.mkdir()
     root_b.mkdir()
-    abs_a = str(root_a.resolve())
-    s = Series.objects.create(library_root=abs_a, series_rel_path="s", name="s")
+    lib_b = MangaLibrary.objects.create(name="b", filesystem_path=str(root_b.resolve()))
     SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -379,7 +374,7 @@ def test_list_cbz_convert_jobs_wrong_library_raises(tmp_path):
     u = User.objects.create_user(username="u12", password="pw")
     with pytest.raises(ValueError, match="Series not found"):
         list_cbz_convert_jobs(
-            manga_root=str(root_b),
+            library_id=lib_b.pk,
             series_id=s.pk,
             user_id=u.pk,
         )
