@@ -10,6 +10,7 @@ from manga.models import (
     GoogleDriveBackupJob,
     GoogleDriveRestoreJob,
     MangaHiddenDirectory,
+    MangaLibrary,
     Series,
     SeriesInfo,
     SeriesItem,
@@ -201,6 +202,12 @@ class SeriesInfoAdmin(admin.ModelAdmin):
 class MangaHiddenDirectoryAdmin(admin.ModelAdmin):
     list_display = ("rel_path",)
     search_fields = ("rel_path",)
+
+
+@admin.register(MangaLibrary)
+class MangaLibraryAdmin(admin.ModelAdmin):
+    list_display = ("name", "fs_path")
+    search_fields = ("name", "fs_path")
 
 
 class SeriesItemInline(admin.TabularInline):
