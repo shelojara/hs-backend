@@ -59,6 +59,25 @@ class MangaHiddenDirectory(models.Model):
         return self.rel_path
 
 
+class MangaLibrary(models.Model):
+    """Global manga filesystem library (one row per root path on disk)."""
+
+    name = models.CharField(max_length=256)
+    fs_path = models.CharField(
+        max_length=4096,
+        unique=True,
+        help_text="Absolute path on server (expanduser applied when syncing).",
+    )
+
+    class Meta:
+        ordering = ("name", "pk")
+        verbose_name = "manga library"
+        verbose_name_plural = "manga libraries"
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class CbzConvertJobStatus(models.TextChoices):
     PENDING = "pending", "Pending"
     COMPLETED = "completed", "Completed"
