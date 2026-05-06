@@ -32,6 +32,7 @@ from savings.services import (
     simulate_rush_asset,
     update_asset,
     update_distribution_notes,
+    withdraw_asset,
 )
 
 User = get_user_model()
@@ -1169,6 +1170,145 @@ def test_delete_asset_skips_completed_peers_for_balance_redistribution():
     redist = Distribution.objects.get(notes__startswith="Redistributed balance from deleted")
     assert redist.budget_amount == Decimal("25")
     assert DistributionLine.objects.filter(distribution_id=redist.pk).count() == 1
+
+
+@pytest.mark.django_db
+def test_withdraw_asset_requires_paused():
+    user = _user()
+    aid = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Active pot",
+        weight=Decimal("1"),
+        current_amount=Decimal("10"),
+        target_amount=None,
+        currency="CLP",
+    )
+    with pytest.raises(AssetMutationError) as ei:
+        withdraw_asset(user_id=user.pk, asset_id=aid)
+    assert ei.value.status_code == 400
+    assert "paused" in str(ei.value).lower()
+    assert Asset.objects.get(pk=aid).current_amount == Decimal("10")
+
+
+@pytest.mark.django_db
+def test_withdraw_asset_redistributes_then_zeros_balance_keeps_row():
+    user = _user()
+    heavy = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Heavy",
+        weight=Decimal("3"),
+        current_amount=Decimal("100"),
+        target_amount=None,
+        currency="CLP",
+    )
+    light = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Light",
+        weight=Decimal("1"),
+        current_amount=Decimal("50"),
+        target_amount=None,
+        currency="CLP",
+    )
+    paused = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Paused jar",
+        weight=Decimal("1"),
+        current_amount=Decimal("40"),
+        target_amount=None,
+        currency="CLP",
+        state=AssetState.PAUSED,
+    )
+    withdraw_asset(user_id=user.pk, asset_id=paused)
+    row = Asset.objects.get(pk=paused)
+    assert row.current_amount == Decimal("0")
+    assert row.state == AssetState.PAUSED
+    assert Asset.objects.get(pk=heavy).current_amount == Decimal("130")
+    assert Asset.objects.get(pk=light).current_amount == Decimal("60")
+    redist = Distribution.objects.get(
+        notes__startswith="Redistributed balance from withdrawn paused"
+    )
+    assert redist.budget_amount == Decimal("40")
+    lines = list(
+        DistributionLine.objects.filter(distribution_id=redist.pk).order_by("asset_id")
+    )
+    assert {ln.asset_id: ln.allocated_amount for ln in lines} == {
+        heavy: Decimal("30"),
+        light: Decimal("10"),
+    }
+
+
+@pytest.mark.django_db
+def test_withdraw_asset_nonzero_balance_no_active_peers_errors():
+    user = _user()
+    only_paused = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Only",
+        weight=Decimal("1"),
+        current_amount=Decimal("15"),
+        target_amount=None,
+        currency="CLP",
+        state=AssetState.PAUSED,
+    )
+    with pytest.raises(AssetMutationError) as ei:
+        withdraw_asset(user_id=user.pk, asset_id=only_paused)
+    assert ei.value.status_code == 400
+    assert "peer" in str(ei.value).lower()
+    assert Asset.objects.get(pk=only_paused).current_amount == Decimal("15")
+
+
+@pytest.mark.django_db
+def test_withdraw_asset_reconciles_distribution_lines_like_delete():
+    user = _user()
+    paused = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Paused",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+        state=AssetState.PAUSED,
+    )
+    keep_me = create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Keep",
+        weight=Decimal("1"),
+        current_amount=Decimal("0"),
+        target_amount=None,
+        currency="CLP",
+    )
+    dist = Distribution.objects.create(
+        owner_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        family=None,
+        budget_amount=Decimal("30"),
+        currency="CLP",
+    )
+    DistributionLine.objects.create(
+        distribution=dist,
+        asset_id=paused,
+        allocated_amount=Decimal("10"),
+    )
+    DistributionLine.objects.create(
+        distribution=dist,
+        asset_id=keep_me,
+        allocated_amount=Decimal("20"),
+    )
+    withdraw_asset(user_id=user.pk, asset_id=paused)
+    assert Asset.objects.filter(pk=paused).exists()
+    assert not DistributionLine.objects.filter(asset_id=paused).exists()
+    dist.refresh_from_db()
+    assert dist.budget_amount == Decimal("20")
+    assert (
+        DistributionLine.objects.filter(distribution_id=dist.pk).count() == 1
+    )
+    assert DistributionLine.objects.get(distribution_id=dist.pk).asset_id == keep_me
 
 
 @pytest.mark.django_db

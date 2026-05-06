@@ -652,6 +652,23 @@ def _list_peer_assets_for_balance_on_delete(
     return list(qs.values_list("pk", flat=True))
 
 
+def _reconcile_distribution_lines_for_removed_asset(*, asset_id: int) -> None:
+    """Drop lines for ``asset_id`` and set each affected ``Distribution.budget_amount`` to remaining sum."""
+    touched_distribution_ids = list(
+        DistributionLine.objects.filter(asset_id=asset_id)
+        .values_list("distribution_id", flat=True)
+        .distinct()
+    )
+    DistributionLine.objects.filter(asset_id=asset_id).delete()
+    for did in touched_distribution_ids:
+        total = DistributionLine.objects.filter(distribution_id=did).aggregate(
+            s=Sum("allocated_amount")
+        )["s"]
+        if total is None:
+            total = Decimal("0")
+        Distribution.objects.filter(pk=did).update(budget_amount=total)
+
+
 def delete_asset(*, user_id: int, asset_id: int) -> None:
     """Delete asset if visible to user.
 
@@ -689,20 +706,62 @@ def delete_asset(*, user_id: int, asset_id: int) -> None:
                 )
             except DistributionMutationError as exc:
                 raise AssetMutationError(str(exc), status_code=exc.status_code) from exc
-        touched_distribution_ids = list(
-            DistributionLine.objects.filter(asset_id=victim_locked.pk)
-            .values_list("distribution_id", flat=True)
-            .distinct()
-        )
-        DistributionLine.objects.filter(asset_id=victim_locked.pk).delete()
-        for did in touched_distribution_ids:
-            total = DistributionLine.objects.filter(distribution_id=did).aggregate(
-                s=Sum("allocated_amount")
-            )["s"]
-            if total is None:
-                total = Decimal("0")
-            Distribution.objects.filter(pk=did).update(budget_amount=total)
+        _reconcile_distribution_lines_for_removed_asset(asset_id=victim_locked.pk)
         victim_locked.delete()
+
+
+def withdraw_asset(*, user_id: int, asset_id: int) -> None:
+    """Redistribute paused asset balance to ACTIVE peers; asset stays, balance → 0.
+
+    Only ``PAUSED`` assets may withdraw. Same peer set and ``create_distribution`` rules
+    as ``delete_asset``. Removes this asset's ``DistributionLine`` rows and fixes parent
+    ``budget_amount`` totals, like delete. Non-zero balance with no ACTIVE peers in same
+    scope/currency: error (delete would discard); user must add a peer or zero the balance first.
+    """
+    row = get_asset_for_user(user_id=user_id, asset_id=asset_id)
+    if row is None:
+        raise AssetMutationError("Asset not found.", status_code=404)
+    peer_ids = _list_peer_assets_for_balance_on_delete(user_id=user_id, victim=row)
+    lock_ids = sorted({row.pk, *peer_ids})
+    with transaction.atomic():
+        locked = {
+            a.pk: a
+            for a in Asset.objects.select_for_update().filter(pk__in=lock_ids).order_by(
+                "pk"
+            )
+        }
+        victim_locked = locked[row.pk]
+        if victim_locked.state != AssetState.PAUSED:
+            raise AssetMutationError(
+                "Only paused assets can withdraw; pause the asset first.",
+                status_code=400,
+            )
+        amount = victim_locked.current_amount
+        if amount != 0 and not peer_ids:
+            raise AssetMutationError(
+                "No active peer assets in this currency to receive the withdrawn balance.",
+                status_code=400,
+            )
+        if amount != 0 and peer_ids:
+            withdraw_notes = (
+                f'Redistributed balance from withdrawn paused asset "{victim_locked.name}" '
+                f"(asset_id={victim_locked.pk})"
+            )
+            try:
+                create_distribution(
+                    user_id=user_id,
+                    scope=victim_locked.scope,
+                    budget_amount=amount,
+                    currency=victim_locked.currency,
+                    asset_ids=sorted(peer_ids),
+                    notes=withdraw_notes,
+                )
+            except DistributionMutationError as exc:
+                raise AssetMutationError(str(exc), status_code=exc.status_code) from exc
+        if amount != 0:
+            victim_locked.current_amount = Decimal("0")
+            victim_locked.save(update_fields=("current_amount", "updated_at"))
+        _reconcile_distribution_lines_for_removed_asset(asset_id=victim_locked.pk)
 
 
 def _resolve_assets_for_distribution(

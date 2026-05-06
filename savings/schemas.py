@@ -383,6 +383,14 @@ class DeleteAssetResponse(Schema):
     ok: bool = True
 
 
+class WithdrawAssetRequest(Schema):
+    asset_id: int
+
+
+class WithdrawAssetResponse(Schema):
+    pass
+
+
 class RushAssetRequest(Schema):
     asset_id: int
 
