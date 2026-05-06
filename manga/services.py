@@ -71,7 +71,7 @@ logger = logging.getLogger(__name__)
 _DROPBOX_UPLOAD_ADVISORY_LOCK_1 = 0x6D616E67
 _DROPBOX_UPLOAD_ADVISORY_LOCK_2 = 0x64726F70
 
-# Serialize full-library cache sync (cron + RushLibrarySync + any caller).
+# Serialize full-library cache sync (cron + SyncLibrary RPC + any caller).
 # Distinct pair from Dropbox advisory locks above.
 _LIBRARY_SYNC_PG_ADVISORY_1 = 0x4D414E47  # ASCII MANG
 _LIBRARY_SYNC_PG_ADVISORY_2 = 0x4C494252  # ASCII LIBR
@@ -87,7 +87,7 @@ def _library_sync_uses_pg_try_advisory_lock() -> bool:
 
 @contextmanager
 def _library_sync_global_lock() -> Any:
-    """One global mutex for ``sync_manga_library_cache`` / ``rush_manga_library_sync``.
+    """One global mutex for ``sync_manga_library_cache`` / ``sync_library``.
 
     PostgreSQL: session ``pg_try_advisory_lock`` (non-blocking). Else: flock file under
     ``BASE_DIR`` (matches pattern in ``manga.google_drive_service`` for SQLite dev).
@@ -877,7 +877,7 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
     Stale series rows removed in one transaction; each series sync commits separately so failure mid-run
     keeps DB updates for series already processed.
 
-    Serialized globally with cron / ``rush_manga_library_sync``: at most one full-library sync at a time.
+    Serialized globally with cron / ``sync_library``: at most one full-library sync at a time.
 
     Returns ``(series_count, chapter_count)`` after sync.
     """
@@ -885,8 +885,8 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
         return _sync_manga_library_cache_impl(manga_root=manga_root)
 
 
-def rush_manga_library_sync(*, manga_root: str) -> tuple[int, int]:
-    """Full-library rescan (RPC ``RushLibrarySync``); alias of ``sync_manga_library_cache``.
+def sync_library(*, manga_root: str) -> tuple[int, int]:
+    """Full-library rescan (RPC ``SyncLibrary``); alias of ``sync_manga_library_cache``.
 
     Raises ``LibrarySyncAlreadyRunningError`` when cron or another caller holds the lock.
     """

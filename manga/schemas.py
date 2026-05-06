@@ -110,7 +110,7 @@ class SyncSeriesItemsResponse(Schema):
     series_id: int
 
 
-class RushLibrarySyncResponse(Schema):
+class SyncLibraryResponse(Schema):
     series_count: int
     chapter_count: int
 

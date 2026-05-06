@@ -30,7 +30,7 @@ from manga.services import (
     resolve_cbz_download,
     series_is_fully_backed_up_value,
     LibrarySyncAlreadyRunningError,
-    rush_manga_library_sync,
+    sync_library,
     sync_manga_library_cache,
     sync_series_items_for_cbz_path,
     sync_series_items_for_series,
@@ -568,7 +568,7 @@ def test_list_manga_cbz_files_missing_subpath_returns_empty(tmp_path, monkeypatc
 
 
 @pytest.mark.django_db
-def test_rush_manga_library_sync_matches_full_sync_counts(tmp_path, monkeypatch):
+def test_sync_library_matches_full_sync_counts(tmp_path, monkeypatch):
     root = tmp_path / "lib"
     root.mkdir()
     (root / "S").mkdir()
@@ -576,7 +576,7 @@ def test_rush_manga_library_sync_matches_full_sync_counts(tmp_path, monkeypatch)
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
 
     a = sync_manga_library_cache(manga_root=str(root))
-    b = rush_manga_library_sync(manga_root=str(root))
+    b = sync_library(manga_root=str(root))
     assert a == b
 
 

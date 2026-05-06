@@ -44,7 +44,7 @@ from manga.schemas import (
     ListSeriesResponse,
     RefreshSeriesInfoRequest,
     RefreshSeriesInfoResponse,
-    RushLibrarySyncResponse,
+    SyncLibraryResponse,
     SearchMangabakaSeriesRequest,
     SearchMangabakaSeriesResponse,
     SetSeriesMangabakaRequest,
@@ -346,13 +346,13 @@ def sync_series_items_rpc(request, payload: SyncSeriesItemsRequest):
     return SyncSeriesItemsResponse(series_id=row.pk)
 
 
-@router.post("/v1.Manga.RushLibrarySync", response=RushLibrarySyncResponse)
-def rush_library_sync_rpc(request):
+@router.post("/v1.Manga.SyncLibrary", response=SyncLibraryResponse)
+def sync_library_rpc(request):
     try:
-        series_count, chapter_count = services.rush_manga_library_sync(manga_root=settings.MANGA_ROOT)
+        series_count, chapter_count = services.sync_library(manga_root=settings.MANGA_ROOT)
     except services.LibrarySyncAlreadyRunningError as exc:
         raise HttpError(409, "Library sync already in progress") from exc
-    return RushLibrarySyncResponse(series_count=series_count, chapter_count=chapter_count)
+    return SyncLibraryResponse(series_count=series_count, chapter_count=chapter_count)
 
 
 @router.post("/v1.Manga.SearchMangabakaSeries", response=SearchMangabakaSeriesResponse)
