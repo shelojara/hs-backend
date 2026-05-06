@@ -349,10 +349,10 @@ def sync_series_items_rpc(request, payload: SyncSeriesItemsRequest):
 @router.post("/v1.Manga.SyncLibrary", response=SyncLibraryResponse)
 def sync_library_rpc(request):
     try:
-        task_id = services.sync_library(manga_root=settings.MANGA_ROOT)
+        services.sync_library(manga_root=settings.MANGA_ROOT)
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    return SyncLibraryResponse(task_id=task_id)
+    return SyncLibraryResponse()
 
 
 @router.post("/v1.Manga.SearchMangabakaSeries", response=SearchMangabakaSeriesResponse)

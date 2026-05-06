@@ -573,8 +573,8 @@ def test_sync_library_enqueues_django_q_task(tmp_path, monkeypatch):
     root = tmp_path / "lib"
     root.mkdir()
     monkeypatch.setattr(manga_services.settings, "MANGA_ROOT", str(root))
-    with patch.object(manga_services, "async_task", return_value="q-task-id") as m_async:
-        assert sync_library(manga_root=str(root)) == "q-task-id"
+    with patch.object(manga_services, "async_task") as m_async:
+        sync_library(manga_root=str(root))
     m_async.assert_called_once_with("manga.scheduled_tasks.run_manga_library_cache_refresh")
 
 

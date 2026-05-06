@@ -885,11 +885,11 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
         return _sync_manga_library_cache_impl(manga_root=manga_root)
 
 
-def sync_library(*, manga_root: str) -> str:
+def sync_library(*, manga_root: str) -> None:
     """Enqueue full-library cache sync on django-q (RPC ``SyncLibrary``).
 
     Worker runs ``run_manga_library_cache_refresh`` (same as cron); lock ensures one
-    concurrent sync. Returns django-q task id string.
+    concurrent sync.
 
     Raises ``ValueError`` if ``manga_root`` does not match ``settings.MANGA_ROOT``.
     """
@@ -897,7 +897,7 @@ def sync_library(*, manga_root: str) -> str:
     configured = os.path.abspath(os.path.expanduser(settings.MANGA_ROOT))
     if root_norm != configured:
         raise ValueError("manga_root does not match configured MANGA_ROOT")
-    return async_task("manga.scheduled_tasks.run_manga_library_cache_refresh")
+    async_task("manga.scheduled_tasks.run_manga_library_cache_refresh")
 
 
 def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> None:
