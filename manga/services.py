@@ -78,7 +78,7 @@ _LIBRARY_SYNC_PG_ADVISORY_2 = 0x4C494252  # ASCII LIBR
 
 
 class LibrarySyncAlreadyRunningError(Exception):
-    """Another full-library sync is in progress (cron or Rush)."""
+    """Another full-library sync is in progress (cron or user-enqueued)."""
 
 
 def _library_sync_uses_pg_try_advisory_lock() -> bool:
@@ -885,12 +885,19 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
         return _sync_manga_library_cache_impl(manga_root=manga_root)
 
 
-def sync_library(*, manga_root: str) -> tuple[int, int]:
-    """Full-library rescan (RPC ``SyncLibrary``); alias of ``sync_manga_library_cache``.
+def sync_library(*, manga_root: str) -> str:
+    """Enqueue full-library cache sync on django-q (RPC ``SyncLibrary``).
 
-    Raises ``LibrarySyncAlreadyRunningError`` when cron or another caller holds the lock.
+    Worker runs ``run_manga_library_cache_refresh`` (same as cron); lock ensures one
+    concurrent sync. Returns django-q task id string.
+
+    Raises ``ValueError`` if ``manga_root`` does not match ``settings.MANGA_ROOT``.
     """
-    return sync_manga_library_cache(manga_root=manga_root)
+    root_norm = os.path.abspath(os.path.expanduser(manga_root))
+    configured = os.path.abspath(os.path.expanduser(settings.MANGA_ROOT))
+    if root_norm != configured:
+        raise ValueError("manga_root does not match configured MANGA_ROOT")
+    return async_task("manga.scheduled_tasks.run_manga_library_cache_refresh")
 
 
 def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> None:

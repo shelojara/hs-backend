@@ -111,8 +111,9 @@ class SyncSeriesItemsResponse(Schema):
 
 
 class SyncLibraryResponse(Schema):
-    series_count: int
-    chapter_count: int
+    """django-q task id for the enqueued full-library cache sync."""
+
+    task_id: str
 
 
 class SearchMangabakaSeriesRequest(Schema):

@@ -349,10 +349,10 @@ def sync_series_items_rpc(request, payload: SyncSeriesItemsRequest):
 @router.post("/v1.Manga.SyncLibrary", response=SyncLibraryResponse)
 def sync_library_rpc(request):
     try:
-        series_count, chapter_count = services.sync_library(manga_root=settings.MANGA_ROOT)
-    except services.LibrarySyncAlreadyRunningError as exc:
-        raise HttpError(409, "Library sync already in progress") from exc
-    return SyncLibraryResponse(series_count=series_count, chapter_count=chapter_count)
+        task_id = services.sync_library(manga_root=settings.MANGA_ROOT)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return SyncLibraryResponse(task_id=task_id)
 
 
 @router.post("/v1.Manga.SearchMangabakaSeries", response=SearchMangabakaSeriesResponse)

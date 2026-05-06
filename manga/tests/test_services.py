@@ -3,6 +3,7 @@ import os
 import shutil
 import zipfile
 from io import BytesIO
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -568,16 +569,22 @@ def test_list_manga_cbz_files_missing_subpath_returns_empty(tmp_path, monkeypatc
 
 
 @pytest.mark.django_db
-def test_sync_library_matches_full_sync_counts(tmp_path, monkeypatch):
+def test_sync_library_enqueues_django_q_task(tmp_path, monkeypatch):
     root = tmp_path / "lib"
     root.mkdir()
-    (root / "S").mkdir()
-    (root / "S" / "a.cbz").write_bytes(b"x")
-    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+    monkeypatch.setattr(manga_services.settings, "MANGA_ROOT", str(root))
+    with patch.object(manga_services, "async_task", return_value="q-task-id") as m_async:
+        assert sync_library(manga_root=str(root)) == "q-task-id"
+    m_async.assert_called_once_with("manga.scheduled_tasks.run_manga_library_cache_refresh")
 
-    a = sync_manga_library_cache(manga_root=str(root))
-    b = sync_library(manga_root=str(root))
-    assert a == b
+
+@pytest.mark.django_db
+def test_sync_library_rejects_wrong_manga_root(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    monkeypatch.setattr(manga_services.settings, "MANGA_ROOT", str(root / "other"))
+    with pytest.raises(ValueError, match="MANGA_ROOT"):
+        sync_library(manga_root=str(root))
 
 
 @pytest.mark.django_db
