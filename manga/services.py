@@ -59,6 +59,7 @@ from manga.models import (
     GoogleDriveBackupJobStatus,
     GoogleDriveRestoreJob,
     GoogleDriveRestoreJobStatus,
+    MangaLibrary,
     Series,
     SeriesInfo,
     SeriesItem,
@@ -79,6 +80,14 @@ _LIBRARY_SYNC_PG_ADVISORY_2 = 0x4C494252  # ASCII LIBR
 
 class LibrarySyncAlreadyRunningError(Exception):
     """Another full-library sync is in progress (cron or user-enqueued)."""
+
+
+def default_manga_library() -> MangaLibrary:
+    """Primary ``MangaLibrary`` row (migration 0035 seeds one); ``fs_path`` is canonical sync root."""
+    lib = MangaLibrary.objects.order_by("pk").first()
+    if lib is None:
+        raise RuntimeError("MangaLibrary row missing; run migrations.")
+    return lib
 
 
 def _library_sync_uses_pg_try_advisory_lock() -> bool:
@@ -891,12 +900,12 @@ def sync_library(*, manga_root: str) -> None:
     Worker runs ``run_manga_library_cache_refresh`` (same as cron); lock ensures one
     concurrent sync.
 
-    Raises ``ValueError`` if ``manga_root`` does not match ``settings.MANGA_ROOT``.
+    Raises ``ValueError`` if ``manga_root`` does not match ``default_manga_library().fs_path``.
     """
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
-    configured = os.path.abspath(os.path.expanduser(settings.MANGA_ROOT))
+    configured = os.path.abspath(os.path.expanduser(default_manga_library().fs_path))
     if root_norm != configured:
-        raise ValueError("manga_root does not match configured MANGA_ROOT")
+        raise ValueError("manga_root does not match default MangaLibrary fs_path")
     async_task("manga.scheduled_tasks.run_manga_library_cache_refresh")
 
 

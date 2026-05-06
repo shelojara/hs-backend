@@ -2,8 +2,6 @@
 
 import logging
 
-from django.conf import settings
-
 from manga import services
 
 logger = logging.getLogger(__name__)
@@ -12,7 +10,8 @@ logger = logging.getLogger(__name__)
 def run_manga_library_cache_refresh() -> None:
     """Periodic job: rescan manga root and persist series/chapter rows."""
     try:
-        services.sync_manga_library_cache(manga_root=settings.MANGA_ROOT)
+        lib = services.default_manga_library()
+        services.sync_manga_library_cache(manga_root=lib.fs_path)
     except services.LibrarySyncAlreadyRunningError:
         logger.info("manga library cache refresh skipped (another sync in progress)")
 

@@ -14,6 +14,7 @@ import manga.services as manga_services
 from manga.models import (
     CbzConvertJob,
     MangaHiddenDirectory,
+    MangaLibrary,
     Series,
     SeriesItem,
 )
@@ -572,7 +573,9 @@ def test_list_manga_cbz_files_missing_subpath_returns_empty(tmp_path, monkeypatc
 def test_sync_library_enqueues_django_q_task(tmp_path, monkeypatch):
     root = tmp_path / "lib"
     root.mkdir()
-    monkeypatch.setattr(manga_services.settings, "MANGA_ROOT", str(root))
+    lib = MangaLibrary.objects.get()
+    lib.fs_path = str(root.resolve())
+    lib.save(update_fields=["fs_path"])
     with patch.object(manga_services, "async_task") as m_async:
         sync_library(manga_root=str(root))
     m_async.assert_called_once_with("manga.scheduled_tasks.run_manga_library_cache_refresh")
@@ -582,8 +585,10 @@ def test_sync_library_enqueues_django_q_task(tmp_path, monkeypatch):
 def test_sync_library_rejects_wrong_manga_root(tmp_path, monkeypatch):
     root = tmp_path / "lib"
     root.mkdir()
-    monkeypatch.setattr(manga_services.settings, "MANGA_ROOT", str(root / "other"))
-    with pytest.raises(ValueError, match="MANGA_ROOT"):
+    lib = MangaLibrary.objects.get()
+    lib.fs_path = str((root / "other").resolve())
+    lib.save(update_fields=["fs_path"])
+    with pytest.raises(ValueError, match="default MangaLibrary"):
         sync_library(manga_root=str(root))
 
 
