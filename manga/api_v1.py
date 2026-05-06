@@ -44,6 +44,7 @@ from manga.schemas import (
     ListSeriesResponse,
     RefreshSeriesInfoRequest,
     RefreshSeriesInfoResponse,
+    SyncLibraryResponse,
     SearchMangabakaSeriesRequest,
     SearchMangabakaSeriesResponse,
     SetSeriesMangabakaRequest,
@@ -343,6 +344,15 @@ def sync_series_items_rpc(request, payload: SyncSeriesItemsRequest):
             raise HttpError(404, msg) from exc
         raise HttpError(400, msg) from exc
     return SyncSeriesItemsResponse(series_id=row.pk)
+
+
+@router.post("/v1.Manga.SyncLibrary", response=SyncLibraryResponse)
+def sync_library_rpc(request):
+    try:
+        services.sync_library(manga_root=settings.MANGA_ROOT)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return SyncLibraryResponse()
 
 
 @router.post("/v1.Manga.SearchMangabakaSeries", response=SearchMangabakaSeriesResponse)
