@@ -1385,7 +1385,7 @@ def _mangabaka_title_match_threshold() -> int:
 
 
 def _mangabaka_info_batch_size() -> int:
-    return max(1, int(getattr(settings, "MANGABAKA_INFO_SYNC_BATCH_SIZE", 5)))
+    return max(1, int(getattr(settings, "MANGABAKA_INFO_SYNC_BATCH_SIZE", 20)))
 
 
 def _mangabaka_http_delay_seconds() -> float:
