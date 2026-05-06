@@ -5,7 +5,8 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth import get_user_model
 
-from manga.models import CbzConvertJob, CbzConvertJobStatus, Series, SeriesItem
+from manga.models import CbzConvertJob, CbzConvertJobStatus, SeriesItem
+from manga.tests.helpers import series_for_library_root
 from manga.services import (
     create_cbz_convert_job,
     get_cbz_convert_job,
@@ -22,7 +23,7 @@ def test_create_cbz_convert_job_persists_pending_and_enqueues_worker(mock_async,
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -57,7 +58,7 @@ def test_run_cbz_convert_job_marks_completed(mock_convert, tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -92,7 +93,7 @@ def test_run_cbz_convert_job_marks_failed_with_message(_mock_convert, tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -121,7 +122,7 @@ def test_get_cbz_convert_job_returns_row_for_owner(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -145,7 +146,7 @@ def test_get_cbz_convert_job_wrong_user_raises(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -170,7 +171,7 @@ def test_list_cbz_convert_jobs_returns_all_for_series_newest_first(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -202,8 +203,8 @@ def test_list_cbz_convert_jobs_scoped_to_series_items(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s_a = Series.objects.create(library_root=abs_root, series_rel_path="a", name="a")
-    s_b = Series.objects.create(library_root=abs_root, series_rel_path="b", name="b")
+    s_a = series_for_library_root(abs_root, series_rel_path="a", name="a")
+    s_b = series_for_library_root(abs_root, series_rel_path="b", name="b")
     item_a = SeriesItem.objects.create(
         series=s_a,
         rel_path="a/1.cbz",
@@ -244,8 +245,8 @@ def test_list_cbz_convert_jobs_null_series_id_all_series_in_library(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s_a = Series.objects.create(library_root=abs_root, series_rel_path="a", name="a")
-    s_b = Series.objects.create(library_root=abs_root, series_rel_path="b", name="b")
+    s_a = series_for_library_root(abs_root, series_rel_path="a", name="a")
+    s_b = series_for_library_root(abs_root, series_rel_path="b", name="b")
     item_a = SeriesItem.objects.create(
         series=s_a,
         rel_path="a/1.cbz",
@@ -286,7 +287,7 @@ def test_list_cbz_convert_jobs_filters_by_status(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -369,7 +370,7 @@ def test_list_cbz_convert_jobs_wrong_library_raises(tmp_path):
     root_a.mkdir()
     root_b.mkdir()
     abs_a = str(root_a.resolve())
-    s = Series.objects.create(library_root=abs_a, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_a, series_rel_path="s", name="s")
     SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",

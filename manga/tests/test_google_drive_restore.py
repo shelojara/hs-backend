@@ -8,6 +8,7 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from manga.models import GoogleDriveRestoreJob, GoogleDriveRestoreJobStatus, Series
+from manga.tests.helpers import series_for_library_root
 from manga.services import (
     create_google_drive_restore_job,
     get_google_drive_restore_job,
@@ -40,8 +41,8 @@ def test_list_restore_candidates_counts_missing_across_categories(
         {"id": "x2", "name": "b.cbz", "size": 20},
     ]
 
-    Series.objects.create(
-        library_root=abs_root,
+    series_for_library_root(
+        abs_root,
         series_rel_path=posixpath.join("manga", "Alpha"),
         name="Alpha",
     )
@@ -173,7 +174,7 @@ def test_run_restore_job_downloads_and_creates_series(
     mock_download.assert_called_once()
     assert mock_sync.called
     s = Series.objects.get(
-        library_root=abs_root,
+        library__fs_path=abs_root,
         series_rel_path=posixpath.join("manga", "Restored"),
     )
     assert s.name == "Restored"

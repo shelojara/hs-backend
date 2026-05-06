@@ -18,6 +18,7 @@ from manga.models import (
     Series,
     SeriesItem,
 )
+from manga.tests.helpers import series_for_library_root
 from manga.services import (
     build_cbz_page_slice,
     clean_cbz_display_name,
@@ -59,7 +60,7 @@ def test_sync_series_items_for_cbz_path_updates_dropbox_flags(tmp_path, monkeypa
 
     sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
 
-    s = Series.objects.get(library_root=abs_root, series_rel_path="MySeries")
+    s = Series.objects.get(library__fs_path=abs_root, series_rel_path="MySeries")
     assert s.item_count == 1
     row = SeriesItem.objects.get(series=s, rel_path="MySeries/ch.cbz")
     assert row.is_converted is True
@@ -80,7 +81,7 @@ def test_sync_series_items_sets_dropbox_uploaded_at_when_newly_seen_in_dropbox(t
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _seg: [FakeDf()])
     sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
     row = SeriesItem.objects.get(
-        series__library_root=abs_root,
+        series__library__fs_path=abs_root,
         rel_path="MySeries/ch.cbz",
     )
     first = row.dropbox_uploaded_at
@@ -106,7 +107,7 @@ def test_sync_series_items_clears_dropbox_uploaded_at_when_not_in_dropbox(tmp_pa
 
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _seg: [FakeDf()])
     sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
-    row = SeriesItem.objects.get(series__library_root=abs_root, rel_path="MySeries/ch.cbz")
+    row = SeriesItem.objects.get(series__library__fs_path=abs_root, rel_path="MySeries/ch.cbz")
     assert row.dropbox_uploaded_at is not None
 
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _seg: [])
@@ -128,7 +129,7 @@ def test_sync_series_items_sets_file_created_at_from_filesystem(tmp_path, monkey
 
     sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="MySeries/ch.cbz")
 
-    s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="MySeries")
+    s = Series.objects.get(library__fs_path=str(root.resolve()), series_rel_path="MySeries")
     row = SeriesItem.objects.get(series=s, rel_path="MySeries/ch.cbz")
     assert row.file_created_at is not None
     expected = manga_services._filesystem_created_at_from_stat(os.stat(cbz))
@@ -158,7 +159,7 @@ def test_sync_series_items_for_series_upserts_from_disk(tmp_path, monkeypatch):
     (root / "MySeries" / "a.cbz").write_bytes(b"x")
     (root / "MySeries" / "b.cbz").write_bytes(b"y")
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="MySeries", name="MySeries")
+    s = series_for_library_root(abs_root, series_rel_path="MySeries", name="MySeries")
     SeriesItem.objects.create(
         series=s,
         rel_path="MySeries/a.cbz",
@@ -182,7 +183,7 @@ def test_sync_series_items_for_series_raises_when_hidden(tmp_path, monkeypatch):
     (root / "secret").mkdir()
     (root / "secret" / "x.cbz").write_bytes(b"x")
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="secret", name="secret")
+    s = series_for_library_root(abs_root, series_rel_path="secret", name="secret")
     MangaHiddenDirectory.objects.create(rel_path="secret")
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _seg: [])
 
@@ -211,7 +212,7 @@ def test_convert_cbz_evicts_oldest_dropbox_first_when_full(tmp_path, monkeypatch
     root = tmp_path / "m"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="series", name="series")
+    s = series_for_library_root(abs_root, series_rel_path="series", name="series")
     old = SeriesItem.objects.create(
         series=s,
         rel_path="series/old.cbz",
@@ -272,7 +273,7 @@ def test_convert_cbz_raises_when_dropbox_full_and_nothing_to_evict(tmp_path, mon
     root = tmp_path / "m"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="series", name="series")
+    s = series_for_library_root(abs_root, series_rel_path="series", name="series")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="series/only.cbz",
@@ -299,7 +300,7 @@ def test_convert_cbz_sets_dropbox_fields_without_series_resync(tmp_path, monkeyp
     cbz.parent.mkdir(parents=True)
     cbz.write_bytes(b"PK\x03\x04")
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="series", name="series")
+    s = series_for_library_root(abs_root, series_rel_path="series", name="series")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="series/ch.cbz",
@@ -324,7 +325,7 @@ def test_resolve_cbz_download_ok(tmp_path):
     cbz.parent.mkdir(parents=True)
     cbz.write_bytes(b"x")
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=1)
 
     got = resolve_cbz_download(manga_root=str(root), item_id=row.pk)
@@ -339,7 +340,7 @@ def test_resolve_cbz_download_rejects_non_cbz(tmp_path):
     z = root / "x.zip"
     z.write_bytes(b"z")
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="", name="lib")
+    s = series_for_library_root(abs_root, series_rel_path="", name="lib")
     row = SeriesItem.objects.create(series=s, rel_path="x.zip", filename="x.zip", size_bytes=1)
     with pytest.raises(ValueError, match="Not a CBZ"):
         resolve_cbz_download(manga_root=str(root), item_id=row.pk)
@@ -353,7 +354,7 @@ def test_resolve_cbz_download_rejects_item_wrong_library(tmp_path):
     root_b.mkdir()
     abs_a = str(root_a.resolve())
     abs_b = str(root_b.resolve())
-    s = Series.objects.create(library_root=abs_a, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_a, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=0)
     with pytest.raises(ValueError, match="Item not found"):
         resolve_cbz_download(manga_root=abs_b, item_id=row.pk)
@@ -364,7 +365,7 @@ def test_resolve_cbz_download_missing_file(tmp_path):
     root = tmp_path / "m"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(series=s, rel_path="s/missing.cbz", filename="missing.cbz", size_bytes=0)
     with pytest.raises(ValueError, match="CBZ not found"):
         resolve_cbz_download(manga_root=str(root), item_id=row.pk)
@@ -398,7 +399,7 @@ def test_build_cbz_page_slice_returns_slice_sorted_natural(tmp_path):
         ["010.jpg", "002.jpg", "001.jpg"],
     )
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=1)
 
     built = build_cbz_page_slice(manga_root=str(root), item_id=row.pk, offset=0, limit=2)
@@ -415,7 +416,7 @@ def test_build_cbz_page_slice_second_page_window(tmp_path):
     cbz.parent.mkdir(parents=True)
     _write_minimal_cbz(cbz, ["a.jpg", "b.jpg", "c.jpg"])
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=1)
 
     built = build_cbz_page_slice(manga_root=str(root), item_id=row.pk, offset=1, limit=2)
@@ -432,7 +433,7 @@ def test_build_cbz_page_slice_offset_out_of_range(tmp_path):
     cbz.parent.mkdir(parents=True)
     _write_minimal_cbz(cbz, ["a.jpg"])
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=1)
 
     with pytest.raises(ValueError, match="Offset out of range"):
@@ -446,7 +447,7 @@ def test_build_cbz_page_slice_no_images(tmp_path):
     cbz.parent.mkdir(parents=True)
     _write_minimal_cbz(cbz, ["readme.txt"])
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=1)
 
     with pytest.raises(ValueError, match="No image pages in CBZ"):
@@ -460,7 +461,7 @@ def test_build_cbz_page_slice_invalid_zip(tmp_path):
     cbz.parent.mkdir(parents=True)
     cbz.write_bytes(b"not a zip")
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=1)
 
     with pytest.raises(ValueError, match="Invalid CBZ file"):
@@ -643,12 +644,12 @@ def test_sync_manga_library_cache_series_is_dir_with_direct_cbz(tmp_path, monkey
     assert n_ch == 2
 
     abs_root = str(root.resolve())
-    s_alpha = Series.objects.get(library_root=abs_root, series_rel_path="Alpha")
+    s_alpha = Series.objects.get(library__fs_path=abs_root, series_rel_path="Alpha")
     assert s_alpha.name == "Alpha"
     assert s_alpha.item_count == 1
     assert SeriesItem.objects.filter(series=s_alpha).count() == 1
 
-    s_nested = Series.objects.get(library_root=abs_root, series_rel_path="nested")
+    s_nested = Series.objects.get(library__fs_path=abs_root, series_rel_path="nested")
     assert s_nested.name == "nested"
     assert s_nested.item_count == 1
 
@@ -683,13 +684,13 @@ def test_series_category_parent_directory_basename(tmp_path, monkeypatch):
     sync_manga_library_cache(manga_root=str(root))
     abs_root = str(root.resolve())
 
-    top = Series.objects.get(library_root=abs_root, series_rel_path="TopOnly")
+    top = Series.objects.get(library__fs_path=abs_root, series_rel_path="TopOnly")
     assert top.category == ""
 
-    nested = Series.objects.get(library_root=abs_root, series_rel_path="Shonen/Naruto")
+    nested = Series.objects.get(library__fs_path=abs_root, series_rel_path="Shonen/Naruto")
     assert nested.category == "Shonen"
 
-    at_lib_root = Series.objects.get(library_root=abs_root, series_rel_path="")
+    at_lib_root = Series.objects.get(library__fs_path=abs_root, series_rel_path="")
     assert at_lib_root.category == ""
 
 
@@ -820,8 +821,8 @@ def test_sync_manga_library_cache_commits_series_before_failing_one(tmp_path, mo
     with pytest.raises(RuntimeError, match="simulated Beta"):
         sync_manga_library_cache(manga_root=str(root))
 
-    assert Series.objects.filter(library_root=abs_root).count() == 1
-    kept = Series.objects.get(library_root=abs_root)
+    assert Series.objects.filter(library__fs_path=abs_root).count() == 1
+    kept = Series.objects.get(library__fs_path=abs_root)
     assert kept.series_rel_path == "Alpha"
     assert kept.item_count == 1
     assert SeriesItem.objects.filter(series=kept).count() == 1
@@ -837,7 +838,7 @@ def test_list_series_items_sorts_filenames_naturally(tmp_path, monkeypatch):
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
 
     sync_manga_library_cache(manga_root=str(root))
-    s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
+    s = Series.objects.get(library__fs_path=str(root.resolve()), series_rel_path="S")
     assert s.item_count == 3
     names = [r.filename for r in list_series_items(manga_root=str(root), series_id=s.id)]
     assert names == ["ch1.cbz", "ch2.cbz", "ch10.cbz"]
@@ -853,7 +854,7 @@ def test_list_series_items_filters_by_is_converted(tmp_path, monkeypatch):
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
 
     sync_manga_library_cache(manga_root=str(root))
-    s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
+    s = Series.objects.get(library__fs_path=str(root.resolve()), series_rel_path="S")
     a = SeriesItem.objects.get(series=s, filename="a.cbz")
     b = SeriesItem.objects.get(series=s, filename="b.cbz")
     a.is_converted = True
@@ -883,7 +884,7 @@ def test_list_series_items_google_drive_backed_up_flag(tmp_path, monkeypatch):
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
 
     sync_manga_library_cache(manga_root=str(root))
-    s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
+    s = Series.objects.get(library__fs_path=str(root.resolve()), series_rel_path="S")
     a = SeriesItem.objects.get(series=s, filename="a.cbz")
     b = SeriesItem.objects.get(series=s, filename="b.cbz")
     assert a.is_backed_up is False
@@ -911,7 +912,7 @@ def test_get_series_returns_row(tmp_path, monkeypatch):
     (root / "S" / "ch.cbz").write_bytes(b"x")
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
     sync_manga_library_cache(manga_root=str(root))
-    s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
+    s = Series.objects.get(library__fs_path=str(root.resolve()), series_rel_path="S")
     got = get_series(manga_root=str(root), series_id=s.id)
     assert got.pk == s.pk
     assert got.name == s.name
@@ -924,8 +925,8 @@ def test_get_series_wrong_library_raises(tmp_path):
     root_a.mkdir()
     root_b.mkdir()
     abs_a = str(root_a.resolve())
-    s = Series.objects.create(
-        library_root=abs_a,
+    s = series_for_library_root(
+        abs_a,
         series_rel_path="s",
         name="s",
     )
@@ -979,7 +980,7 @@ def test_sync_manga_library_cache_deletes_cbz_jobs_before_stale_series(tmp_path,
 
     sync_manga_library_cache(manga_root=str(root))
     abs_root = str(root.resolve())
-    old = Series.objects.get(library_root=abs_root, series_rel_path="OldSeries")
+    old = Series.objects.get(library__fs_path=abs_root, series_rel_path="OldSeries")
     u = get_user_model().objects.create_user(username="sync_job_user", password="pw")
     CbzConvertJob.objects.create(
         user=u,
@@ -992,7 +993,7 @@ def test_sync_manga_library_cache_deletes_cbz_jobs_before_stale_series(tmp_path,
     sync_manga_library_cache(manga_root=str(root))
 
     assert not Series.objects.filter(pk=old.pk).exists()
-    assert Series.objects.filter(library_root=abs_root, series_rel_path="KeptSeries").exists()
+    assert Series.objects.filter(library__fs_path=abs_root, series_rel_path="KeptSeries").exists()
     assert CbzConvertJob.objects.count() == 0
 
 
@@ -1003,7 +1004,7 @@ def test_convert_cbz_rejects_item_wrong_library(tmp_path, monkeypatch):
     root_a.mkdir()
     root_b.mkdir()
     abs_a = str(root_a.resolve())
-    s = Series.objects.create(library_root=abs_a, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_a, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(series=s, rel_path="s/ch.cbz", filename="ch.cbz", size_bytes=0)
     monkeypatch.setattr(manga_services, "process_manga", lambda _paths, _wd: (_ for _ in ()).throw(AssertionError))
 
@@ -1097,7 +1098,7 @@ def test_sync_manga_library_cache_skips_item_cover_when_already_set(tmp_path, mo
     monkeypatch.setattr(manga_services, "first_cbz_page_as_base64", track)
 
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S")
+    s = series_for_library_root(abs_root, series_rel_path="S", name="S")
     SeriesItem.objects.create(
         series=s,
         rel_path="S/ch.cbz",
@@ -1127,7 +1128,7 @@ def test_sync_manga_library_cache_sets_cover_from_first_cbz_first_page(tmp_path,
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
 
     sync_manga_library_cache(manga_root=str(root))
-    s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
+    s = Series.objects.get(library__fs_path=str(root.resolve()), series_rel_path="S")
     assert s.cover_image_mime_type == "image/jpeg"
     assert s.cover_image_base64 is not None
     out = Image.open(BytesIO(base64.standard_b64decode(s.cover_image_base64)))
@@ -1143,7 +1144,7 @@ def test_sync_series_items_for_cbz_path_refreshes_cover(tmp_path, monkeypatch):
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
 
     sync_series_items_for_cbz_path(manga_root=str(root), cbz_rel_path="S/only.cbz")
-    s = Series.objects.get(library_root=str(root.resolve()), series_rel_path="S")
+    s = Series.objects.get(library__fs_path=str(root.resolve()), series_rel_path="S")
     assert s.cover_image_mime_type == "image/jpeg"
     assert s.cover_image_base64 is not None
     out = Image.open(BytesIO(base64.standard_b64decode(s.cover_image_base64)))
@@ -1183,7 +1184,7 @@ def test_clean_series_item_filename_on_disk_renames_hash_prefix_to_chapter(tmp_p
     (root / "S").mkdir()
     (root / "S" / "#9.cbz").write_bytes(b"x")
     abs_root = str(root.resolve())
-    series = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S")
+    series = series_for_library_root(abs_root, series_rel_path="S", name="S")
     item = SeriesItem.objects.create(
         series=series,
         rel_path="S/#9.cbz",
@@ -1204,7 +1205,7 @@ def test_clean_series_item_filename_on_disk_renames_file_and_row(tmp_path) -> No
     (root / "S").mkdir()
     (root / "S" / "x_y_z.cbz").write_bytes(b"x")
     abs_root = str(root.resolve())
-    series = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S")
+    series = series_for_library_root(abs_root, series_rel_path="S", name="S")
     item = SeriesItem.objects.create(
         series=series,
         rel_path="S/x_y_z.cbz",
@@ -1226,7 +1227,7 @@ def test_clean_series_item_filename_on_disk_errors_when_target_exists(tmp_path) 
     (root / "S" / "x_y_z.cbz").write_bytes(b"a")
     (root / "S" / "y.cbz").write_bytes(b"b")
     abs_root = str(root.resolve())
-    series = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S")
+    series = series_for_library_root(abs_root, series_rel_path="S", name="S")
     item = SeriesItem.objects.create(
         series=series,
         rel_path="S/x_y_z.cbz",
@@ -1240,14 +1241,14 @@ def test_clean_series_item_filename_on_disk_errors_when_target_exists(tmp_path) 
 @pytest.mark.django_db
 def test_series_is_fully_backed_up_vacuous_when_no_items(tmp_path) -> None:
     abs_root = str(tmp_path.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S", item_count=0)
+    s = series_for_library_root(abs_root, series_rel_path="S", name="S", item_count=0)
     assert s.is_fully_backed_up is True
 
 
 @pytest.mark.django_db
 def test_series_is_fully_backed_up_false_when_any_item_not_backed_up(tmp_path) -> None:
     abs_root = str(tmp_path.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S", item_count=2)
+    s = series_for_library_root(abs_root, series_rel_path="S", name="S", item_count=2)
     SeriesItem.objects.create(series=s, rel_path="S/a.cbz", filename="a.cbz", is_backed_up=True)
     SeriesItem.objects.create(series=s, rel_path="S/b.cbz", filename="b.cbz", is_backed_up=False)
     assert s.is_fully_backed_up is False
@@ -1256,7 +1257,7 @@ def test_series_is_fully_backed_up_false_when_any_item_not_backed_up(tmp_path) -
 @pytest.mark.django_db
 def test_list_series_annotates_is_fully_backed_up(tmp_path) -> None:
     abs_root = str(tmp_path.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S", item_count=1)
+    s = series_for_library_root(abs_root, series_rel_path="S", name="S", item_count=1)
     SeriesItem.objects.create(series=s, rel_path="S/a.cbz", filename="a.cbz", is_backed_up=True)
     rows = list_series(manga_root=abs_root)
     assert len(rows) == 1
@@ -1266,7 +1267,7 @@ def test_list_series_annotates_is_fully_backed_up(tmp_path) -> None:
 @pytest.mark.django_db
 def test_get_series_annotates_is_fully_backed_up(tmp_path) -> None:
     abs_root = str(tmp_path.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="S", name="S", item_count=1)
+    s = series_for_library_root(abs_root, series_rel_path="S", name="S", item_count=1)
     SeriesItem.objects.create(series=s, rel_path="S/a.cbz", filename="a.cbz", is_backed_up=False)
     row = get_series(manga_root=abs_root, series_id=s.pk)
     assert series_is_fully_backed_up_value(row) is False

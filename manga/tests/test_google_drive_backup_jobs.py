@@ -6,7 +6,8 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth import get_user_model
 
-from manga.models import GoogleDriveBackupJob, GoogleDriveBackupJobStatus, Series, SeriesItem
+from manga.models import GoogleDriveBackupJob, GoogleDriveBackupJobStatus, SeriesItem
+from manga.tests.helpers import series_for_library_root
 from manga.services import (
     create_google_drive_backup_job,
     get_google_drive_backup_job,
@@ -23,7 +24,7 @@ def test_create_google_drive_backup_job_persists_pending_and_enqueues(mock_async
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row_a = SeriesItem.objects.create(
         series=s,
         rel_path="s/a.cbz",
@@ -65,7 +66,7 @@ def test_create_google_drive_backup_job_empty_series_raises(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     u = User.objects.create_user(username="gd_u_empty", password="pw")
     with pytest.raises(ValueError, match="Series has no items"):
         create_google_drive_backup_job(
@@ -93,7 +94,7 @@ def test_run_google_drive_backup_job_success(
     cbz = root / "s" / "ch.cbz"
     cbz.parent.mkdir()
     cbz.write_bytes(b"PK\x03\x04fake")
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -142,7 +143,7 @@ def test_run_google_drive_backup_job_skips_upload_when_same_name_and_size(
     cbz = root / "s" / "ch.cbz"
     cbz.parent.mkdir()
     cbz.write_bytes(b"PK\x03\x04fake")
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -174,7 +175,7 @@ def test_run_google_drive_backup_job_marks_failed(_mock_resolve, tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -204,7 +205,7 @@ def test_get_google_drive_backup_job_owner(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",
@@ -227,7 +228,7 @@ def test_get_google_drive_backup_job_wrong_user_raises(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="s", name="s")
+    s = series_for_library_root(abs_root, series_rel_path="s", name="s")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="s/ch.cbz",

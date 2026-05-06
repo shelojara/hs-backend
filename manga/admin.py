@@ -273,11 +273,12 @@ class SeriesAdmin(admin.ModelAdmin):
         "category",
         "series_rel_path",
         "item_count",
+        "library",
         "library_root",
         "scanned_at",
     )
-    list_filter = ("library_root", "category")
-    search_fields = ("name", "series_rel_path", "library_root")
+    list_filter = ("library", "category")
+    search_fields = ("name", "series_rel_path", "library_root", "library__name", "library__fs_path")
     readonly_fields = (
         "scanned_at",
         "mangabaka_search_snoozed_until",

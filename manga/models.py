@@ -314,6 +314,11 @@ class CbzConvertJob(models.Model):
 class Series(models.Model):
     """Cached manga series: directory under ``library_root`` that directly contains ≥1 ``.cbz`` file."""
 
+    library = models.ForeignKey(
+        MangaLibrary,
+        on_delete=models.PROTECT,
+        related_name="series",
+    )
     library_root = models.CharField(
         max_length=4096,
         help_text="Normalized absolute path to manga library root when this row was written.",
@@ -359,19 +364,19 @@ class Series(models.Model):
     scanned_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ("library_root", "name", "series_rel_path")
+        ordering = ("library", "name", "series_rel_path")
         verbose_name = "manga series (cached)"
         verbose_name_plural = "manga series (cached)"
         constraints = [
             models.UniqueConstraint(
-                fields=("library_root", "series_rel_path"),
-                name="manga_mangalibraryseries_unique_root_path",
+                fields=("library", "series_rel_path"),
+                name="manga_series_unique_library_path",
             ),
         ]
         indexes = [
             models.Index(
-                fields=["library_root", "category"],
-                name="manga_series_root_category",
+                fields=["library", "category"],
+                name="manga_series_lib_category",
             ),
         ]
 

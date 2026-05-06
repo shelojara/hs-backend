@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 
 import manga.services as manga_services
-from manga.models import Series, SeriesItem
+from manga.models import SeriesItem
+from manga.tests.helpers import series_for_library_root
 from manga.services import convert_cbz
 
 
@@ -17,7 +18,7 @@ def test_convert_cbz_removes_temp_work_dir_after_success(tmp_path, monkeypatch):
     cbz.parent.mkdir(parents=True)
     cbz.write_bytes(b"PK\x03\x04")
     abs_root = str(root.resolve())
-    s = Series.objects.create(library_root=abs_root, series_rel_path="series", name="series")
+    s = series_for_library_root(abs_root, series_rel_path="series", name="series")
     row = SeriesItem.objects.create(
         series=s,
         rel_path="series/ch.cbz",

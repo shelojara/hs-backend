@@ -8,10 +8,9 @@ logger = logging.getLogger(__name__)
 
 
 def run_manga_library_cache_refresh() -> None:
-    """Periodic job: rescan manga root and persist series/chapter rows."""
+    """Periodic job: rescan every ``MangaLibrary`` root and persist series/chapter rows."""
     try:
-        lib = services.default_manga_library()
-        services.sync_manga_library_cache(manga_root=lib.fs_path)
+        services.sync_all_manga_library_caches()
     except services.LibrarySyncAlreadyRunningError:
         logger.info("manga library cache refresh skipped (another sync in progress)")
 

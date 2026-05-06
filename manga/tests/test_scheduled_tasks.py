@@ -23,12 +23,21 @@ def test_mangabaka_series_info_schedule_cron_every_five_minutes():
 
 
 @pytest.mark.django_db
+def test_run_manga_library_cache_refresh_calls_sync_all():
+    import manga.services as manga_services
+
+    with patch.object(manga_services, "sync_all_manga_library_caches") as m_all:
+        run_manga_library_cache_refresh()
+    m_all.assert_called_once_with()
+
+
+@pytest.mark.django_db
 def test_run_manga_library_cache_refresh_skips_when_locked():
     import manga.services as manga_services
 
     with patch.object(
         manga_services,
-        "sync_manga_library_cache",
+        "sync_all_manga_library_caches",
         side_effect=manga_services.LibrarySyncAlreadyRunningError(),
     ):
         run_manga_library_cache_refresh()
