@@ -3,6 +3,7 @@ import logging
 import os
 import posixpath
 import time
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 import shutil
 import tempfile
@@ -11,6 +12,11 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Any, BinaryIO, Literal
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover — non-Unix
+    fcntl = None  # type: ignore[misc, assignment]
 
 from django.conf import settings
 from django.db import connection, transaction
@@ -64,6 +70,65 @@ logger = logging.getLogger(__name__)
 # Serialize Dropbox eviction + upload across workers (PostgreSQL only).
 _DROPBOX_UPLOAD_ADVISORY_LOCK_1 = 0x6D616E67
 _DROPBOX_UPLOAD_ADVISORY_LOCK_2 = 0x64726F70
+
+# Serialize full-library cache sync (cron + RushLibrarySync + any caller).
+# Distinct pair from Dropbox advisory locks above.
+_LIBRARY_SYNC_PG_ADVISORY_1 = 0x4D414E47  # ASCII MANG
+_LIBRARY_SYNC_PG_ADVISORY_2 = 0x4C494252  # ASCII LIBR
+
+
+class LibrarySyncAlreadyRunningError(Exception):
+    """Another full-library sync is in progress (cron or Rush)."""
+
+
+def _library_sync_uses_pg_try_advisory_lock() -> bool:
+    return connection.vendor == "postgresql"
+
+
+@contextmanager
+def _library_sync_global_lock() -> Any:
+    """One global mutex for ``sync_manga_library_cache`` / ``rush_manga_library_sync``.
+
+    PostgreSQL: session ``pg_try_advisory_lock`` (non-blocking). Else: flock file under
+    ``BASE_DIR`` (matches pattern in ``manga.google_drive_service`` for SQLite dev).
+    """
+    if _library_sync_uses_pg_try_advisory_lock():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_try_advisory_lock(%s, %s)",
+                [_LIBRARY_SYNC_PG_ADVISORY_1, _LIBRARY_SYNC_PG_ADVISORY_2],
+            )
+            row = cursor.fetchone()
+            acquired = bool(row and row[0])
+        if not acquired:
+            raise LibrarySyncAlreadyRunningError()
+        try:
+            yield
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_advisory_unlock(%s, %s)",
+                    [_LIBRARY_SYNC_PG_ADVISORY_1, _LIBRARY_SYNC_PG_ADVISORY_2],
+                )
+        return
+
+    if fcntl is None:
+        yield
+        return
+    path = Path(settings.BASE_DIR) / "manga_library_full_sync.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise LibrarySyncAlreadyRunningError() from exc
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 def _filesystem_created_at_from_stat(st: os.stat_result) -> datetime | None:
@@ -767,16 +832,7 @@ def _replace_series_items_from_cbz_listing(
     _refresh_series_items_google_drive_backed_up(series=series)
 
 
-def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
-    """Walk filesystem; upsert ``Series`` / ``SeriesItem`` rows (drops vanished).
-
-    Series = directory with ≥1 ``.cbz`` directly inside (same rule as user-facing ``list_manga_cbz_files`` scope).
-
-    Stale series rows removed in one transaction; each series sync commits separately so failure mid-run
-    keeps DB updates for series already processed.
-
-    Returns ``(series_count, chapter_count)`` after sync.
-    """
+def _sync_manga_library_cache_impl(*, manga_root: str) -> tuple[int, int]:
     hidden = _manga_hidden_rel_paths()
     root_norm = os.path.abspath(os.path.expanduser(manga_root))
     wanted_paths = set(_iter_series_rel_paths_with_direct_cbz(manga_root=manga_root, hidden=hidden))
@@ -811,6 +867,30 @@ def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
     chapter_total = SeriesItem.objects.filter(series__library_root=root_norm).count()
 
     return series_count, chapter_total
+
+
+def sync_manga_library_cache(*, manga_root: str) -> tuple[int, int]:
+    """Walk filesystem; upsert ``Series`` / ``SeriesItem`` rows (drops vanished).
+
+    Series = directory with ≥1 ``.cbz`` directly inside (same rule as user-facing ``list_manga_cbz_files`` scope).
+
+    Stale series rows removed in one transaction; each series sync commits separately so failure mid-run
+    keeps DB updates for series already processed.
+
+    Serialized globally with cron / ``rush_manga_library_sync``: at most one full-library sync at a time.
+
+    Returns ``(series_count, chapter_count)`` after sync.
+    """
+    with _library_sync_global_lock():
+        return _sync_manga_library_cache_impl(manga_root=manga_root)
+
+
+def rush_manga_library_sync(*, manga_root: str) -> tuple[int, int]:
+    """Full-library rescan (RPC ``RushLibrarySync``); alias of ``sync_manga_library_cache``.
+
+    Raises ``LibrarySyncAlreadyRunningError`` when cron or another caller holds the lock.
+    """
+    return sync_manga_library_cache(manga_root=manga_root)
 
 
 def sync_series_items_for_cbz_path(*, manga_root: str, cbz_rel_path: str) -> None:

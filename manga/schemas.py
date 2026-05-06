@@ -110,6 +110,11 @@ class SyncSeriesItemsResponse(Schema):
     series_id: int
 
 
+class RushLibrarySyncResponse(Schema):
+    series_count: int
+    chapter_count: int
+
+
 class SearchMangabakaSeriesRequest(Schema):
     """Query MangaBaka series search (ids + titles for ``SetSeriesMangabaka``)."""
 

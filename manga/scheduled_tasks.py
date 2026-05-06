@@ -1,13 +1,20 @@
 """django-q2 tasks for manga library cache and async CBZ conversion."""
 
+import logging
+
 from django.conf import settings
 
 from manga import services
 
+logger = logging.getLogger(__name__)
+
 
 def run_manga_library_cache_refresh() -> None:
     """Periodic job: rescan manga root and persist series/chapter rows."""
-    services.sync_manga_library_cache(manga_root=settings.MANGA_ROOT)
+    try:
+        services.sync_manga_library_cache(manga_root=settings.MANGA_ROOT)
+    except services.LibrarySyncAlreadyRunningError:
+        logger.info("manga library cache refresh skipped (another sync in progress)")
 
 
 def run_cbz_convert_job(job_id: int) -> None:

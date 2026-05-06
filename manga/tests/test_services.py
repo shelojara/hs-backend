@@ -29,6 +29,8 @@ from manga.services import (
     list_series_items,
     resolve_cbz_download,
     series_is_fully_backed_up_value,
+    LibrarySyncAlreadyRunningError,
+    rush_manga_library_sync,
     sync_manga_library_cache,
     sync_series_items_for_cbz_path,
     sync_series_items_for_series,
@@ -563,6 +565,55 @@ def test_list_manga_cbz_files_missing_subpath_returns_empty(tmp_path, monkeypatc
     monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
 
     assert list_manga_cbz_files(manga_root=str(root), path="no_such_dir") == []
+
+
+@pytest.mark.django_db
+def test_rush_manga_library_sync_matches_full_sync_counts(tmp_path, monkeypatch):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "S").mkdir()
+    (root / "S" / "a.cbz").write_bytes(b"x")
+    monkeypatch.setattr(manga_services, "list_dropbox_files", lambda _path: [])
+
+    a = sync_manga_library_cache(manga_root=str(root))
+    b = rush_manga_library_sync(manga_root=str(root))
+    assert a == b
+
+
+@pytest.mark.django_db
+def test_library_sync_global_lock_blocks_nested_pg_try(monkeypatch):
+    locked = False
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute(self, sql, params=None):
+            nonlocal locked
+            self._row = None
+            if "pg_try_advisory_lock" in sql:
+                if not locked:
+                    locked = True
+                    self._row = (True,)
+                else:
+                    self._row = (False,)
+            elif "pg_advisory_unlock" in sql:
+                locked = False
+                self._row = (True,)
+
+        def fetchone(self):
+            return self._row
+
+    monkeypatch.setattr(manga_services.connection, "cursor", lambda: FakeCursor())
+    monkeypatch.setattr(manga_services, "_library_sync_uses_pg_try_advisory_lock", lambda: True)
+
+    with manga_services._library_sync_global_lock():
+        with pytest.raises(LibrarySyncAlreadyRunningError):
+            with manga_services._library_sync_global_lock():
+                pass
 
 
 @pytest.mark.django_db
