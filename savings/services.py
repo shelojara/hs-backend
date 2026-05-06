@@ -126,25 +126,12 @@ def create_asset(
     return row.pk
 
 
-def _asset_completion_ratio(asset: Asset) -> Decimal:
-    """Fraction toward target (0..1) for ordering active assets; no target → 0."""
-    if asset.target_amount is None or asset.target_amount <= 0:
-        return Decimal("0")
-    if asset.current_amount <= 0:
-        return Decimal("0")
-    raw = asset.current_amount / asset.target_amount
-    if raw >= 1:
-        return Decimal("1")
-    return raw
-
-
 def _list_assets_sort_key(asset: Asset) -> tuple:
-    """Order: ACTIVE by completion ratio desc, then PAUSED same way, then COMPLETED by name."""
+    """Order: ACTIVE by weight desc, then PAUSED same way, then COMPLETED by name."""
     if asset.state == AssetState.COMPLETED:
         return (2, asset.name, asset.pk)
-    ratio = _asset_completion_ratio(asset)
     tier = 0 if asset.state == AssetState.ACTIVE else 1
-    return (tier, -ratio, asset.name, asset.pk)
+    return (tier, -asset.weight, asset.name, asset.pk)
 
 
 def list_assets(

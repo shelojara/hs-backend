@@ -333,7 +333,7 @@ def test_list_assets_personal_excludes_family_rows():
 
 
 @pytest.mark.django_db
-def test_list_assets_orders_by_completion_then_completed_last():
+def test_list_assets_orders_by_weight_then_completed_last():
     user = _user()
     # completed last
     done = create_asset(
@@ -346,11 +346,29 @@ def test_list_assets_orders_by_completion_then_completed_last():
         currency="CLP",
     )
     set_asset_status(user_id=user.pk, asset_id=done, state=AssetState.COMPLETED)
-    # high ratio first among active
+    # higher weight first among active
     create_asset(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
-        name="Almost",
+        name="Heavy",
+        weight=Decimal("5"),
+        current_amount=Decimal("10"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Mid",
+        weight=Decimal("3"),
+        current_amount=Decimal("50"),
+        target_amount=Decimal("100"),
+        currency="CLP",
+    )
+    create_asset(
+        user_id=user.pk,
+        scope=SavingsScope.PERSONAL,
+        name="Light",
         weight=Decimal("1"),
         current_amount=Decimal("90"),
         target_amount=Decimal("100"),
@@ -359,26 +377,8 @@ def test_list_assets_orders_by_completion_then_completed_last():
     create_asset(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
-        name="Mid",
-        weight=Decimal("1"),
-        current_amount=Decimal("50"),
-        target_amount=Decimal("100"),
-        currency="CLP",
-    )
-    create_asset(
-        user_id=user.pk,
-        scope=SavingsScope.PERSONAL,
-        name="Low",
-        weight=Decimal("1"),
-        current_amount=Decimal("10"),
-        target_amount=Decimal("100"),
-        currency="CLP",
-    )
-    create_asset(
-        user_id=user.pk,
-        scope=SavingsScope.PERSONAL,
-        name="No target",
-        weight=Decimal("1"),
+        name="Tiny",
+        weight=Decimal("0.5"),
         current_amount=Decimal("999"),
         target_amount=None,
         currency="CLP",
@@ -386,14 +386,14 @@ def test_list_assets_orders_by_completion_then_completed_last():
 
     rows = list_assets(user_id=user.pk, scope=SavingsScope.PERSONAL)
     names = [r.name for r in rows]
-    assert names == ["Almost", "Mid", "Low", "No target", "Z_done"]
+    assert names == ["Heavy", "Mid", "Light", "Tiny", "Z_done"]
 
     active_only = list_assets(
         user_id=user.pk,
         scope=SavingsScope.PERSONAL,
         state=AssetState.ACTIVE,
     )
-    assert [r.name for r in active_only] == ["Almost", "Mid", "Low", "No target"]
+    assert [r.name for r in active_only] == ["Heavy", "Mid", "Light", "Tiny"]
 
     done_only = list_assets(
         user_id=user.pk,
