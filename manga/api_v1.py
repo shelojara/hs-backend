@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import FileResponse
 from ninja import Router
@@ -57,6 +56,10 @@ from manga.schemas import (
 )
 
 router = Router(auth=protected_api_auth, tags=["Manga"])
+
+
+def _manga_root() -> str:
+    return services.default_manga_library().fs_path
 
 
 def _series_info_schema_or_none(series: Series) -> SeriesInfoSchema | None:
@@ -126,7 +129,7 @@ def _google_drive_restore_job_schema(j: GoogleDriveRestoreJob) -> GoogleDriveRes
 def create_cbz_convert_job(request, payload: CreateCbzConvertJobRequest):
     try:
         job_id = services.create_cbz_convert_job(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             item_id=payload.item_id,
             kind=payload.kind,
             user_id=request.auth.pk,
@@ -143,7 +146,7 @@ def create_cbz_convert_job(request, payload: CreateCbzConvertJobRequest):
 def list_cbz_convert_jobs(request, payload: ListCbzConvertJobsRequest):
     try:
         rows = services.list_cbz_convert_jobs(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             series_id=payload.series_id,
             user_id=request.auth.pk,
             status=payload.status,
@@ -176,7 +179,7 @@ def get_cbz_convert_job(request, payload: GetCbzConvertJobRequest):
 def create_google_drive_backup_job_rpc(request, payload: CreateGoogleDriveBackupJobRequest):
     try:
         job_ids = services.create_google_drive_backup_job(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             series_id=payload.series_id,
             user_id=request.auth.pk,
         )
@@ -192,7 +195,7 @@ def create_google_drive_backup_job_rpc(request, payload: CreateGoogleDriveBackup
 def list_google_drive_backup_jobs_rpc(request, payload: ListGoogleDriveBackupJobsRequest):
     try:
         rows = services.list_google_drive_backup_jobs(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             series_id=payload.series_id,
             user_id=request.auth.pk,
             status=payload.status,
@@ -223,7 +226,7 @@ def get_google_drive_backup_job_rpc(request, payload: GetGoogleDriveBackupJobReq
 
 @router.post("/v1.Manga.ListGoogleDriveRestoreCandidates", response=ListGoogleDriveRestoreCandidatesResponse)
 def list_google_drive_restore_candidates_rpc(request):
-    rows = services.list_google_drive_restore_candidates(manga_root=settings.MANGA_ROOT)
+    rows = services.list_google_drive_restore_candidates(manga_root=_manga_root())
     return ListGoogleDriveRestoreCandidatesResponse(
         items=[
             GoogleDriveRestoreCandidateSchema(
@@ -241,7 +244,7 @@ def list_google_drive_restore_candidates_rpc(request):
 def create_google_drive_restore_job_rpc(request, payload: CreateGoogleDriveRestoreJobRequest):
     try:
         jid = services.create_google_drive_restore_job(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             series_name=payload.series_name,
             category=payload.category,
             user_id=request.auth.pk,
@@ -270,7 +273,7 @@ def get_google_drive_restore_job_rpc(request, payload: GetGoogleDriveRestoreJobR
 def list_series(request, payload: ListSeriesRequest):
     try:
         rows = services.list_series(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             limit=payload.limit,
             offset=payload.offset,
             category=payload.category,
@@ -285,7 +288,7 @@ def list_series(request, payload: ListSeriesRequest):
 def get_series(request, payload: GetSeriesRequest):
     try:
         row = services.get_series(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             series_id=payload.series_id,
         )
     except ValueError as exc:
@@ -300,7 +303,7 @@ def get_series(request, payload: GetSeriesRequest):
 def set_series_mangabaka(request, payload: SetSeriesMangabakaRequest):
     try:
         row = services.set_series_mangabaka_series_id(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             series_id=payload.series_id,
             mangabaka_series_id=payload.mangabaka_series_id,
         )
@@ -318,7 +321,7 @@ def set_series_mangabaka(request, payload: SetSeriesMangabakaRequest):
 def refresh_series_info(request, payload: RefreshSeriesInfoRequest):
     try:
         row = services.refresh_series_info_from_mangabaka(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             series_id=payload.series_id,
         )
     except ValueError as exc:
@@ -335,7 +338,7 @@ def refresh_series_info(request, payload: RefreshSeriesInfoRequest):
 def sync_series_items_rpc(request, payload: SyncSeriesItemsRequest):
     try:
         row = services.sync_series_items_for_series(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             series_id=payload.series_id,
         )
     except ValueError as exc:
@@ -349,7 +352,7 @@ def sync_series_items_rpc(request, payload: SyncSeriesItemsRequest):
 @router.post("/v1.Manga.SyncLibrary", response=SyncLibraryResponse)
 def sync_library_rpc(request):
     try:
-        services.sync_library(manga_root=settings.MANGA_ROOT)
+        services.sync_library(manga_root=_manga_root())
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     return SyncLibraryResponse()
@@ -368,7 +371,7 @@ def search_mangabaka_series_rpc(request, payload: SearchMangabakaSeriesRequest):
 
 @router.post("/v1.Manga.ListSeriesCategories", response=ListSeriesCategoriesResponse)
 def list_series_categories(request):
-    categories = services.list_distinct_series_categories(manga_root=settings.MANGA_ROOT)
+    categories = services.list_distinct_series_categories(manga_root=_manga_root())
     return ListSeriesCategoriesResponse(categories=categories)
 
 
@@ -376,7 +379,7 @@ def list_series_categories(request):
 def list_series_items(request, payload: ListSeriesItemsRequest):
     try:
         rows = services.list_series_items(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             series_id=payload.series_id,
             limit=payload.limit,
             offset=payload.offset,
@@ -408,7 +411,7 @@ def list_series_items(request, payload: ListSeriesItemsRequest):
 def convert_cbz(request, payload: ConvertCbzRequest):
     try:
         services.convert_cbz(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             item_id=payload.item_id,
             kind=payload.kind,
         )
@@ -424,7 +427,7 @@ def convert_cbz(request, payload: ConvertCbzRequest):
 def download_cbz(request, payload: DownloadCbzRequest):
     try:
         resolved = services.resolve_cbz_download(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             item_id=payload.item_id,
         )
     except ValueError as exc:
@@ -444,7 +447,7 @@ def download_cbz(request, payload: DownloadCbzRequest):
 def download_cbz_pages(request, payload: DownloadCbzPagesRequest):
     try:
         built = services.build_cbz_page_slice(
-            manga_root=settings.MANGA_ROOT,
+            manga_root=_manga_root(),
             item_id=payload.item_id,
             offset=payload.offset,
             limit=payload.limit,

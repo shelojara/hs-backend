@@ -209,6 +209,12 @@ class MangaLibraryAdmin(admin.ModelAdmin):
     list_display = ("name", "fs_path")
     search_fields = ("name", "fs_path")
 
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return False
+
 
 class SeriesItemInline(admin.TabularInline):
     model = SeriesItem

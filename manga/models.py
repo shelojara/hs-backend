@@ -60,7 +60,9 @@ class MangaHiddenDirectory(models.Model):
 
 
 class MangaLibrary(models.Model):
-    """Global manga filesystem library (one row per root path on disk)."""
+    """Singleton row (``pk`` = 1): canonical manga library root on disk."""
+
+    SINGLETON_PK = 1
 
     name = models.CharField(max_length=256)
     fs_path = models.CharField(
@@ -70,9 +72,24 @@ class MangaLibrary(models.Model):
     )
 
     class Meta:
-        ordering = ("name", "pk")
+        ordering = ("pk",)
         verbose_name = "manga library"
-        verbose_name_plural = "manga libraries"
+        verbose_name_plural = "manga library"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(pk=1),
+                name="manga_mangalibrary_singleton_pk",
+            ),
+        ]
+
+    def save(self, *args, **kwargs) -> None:
+        self.pk = self.SINGLETON_PK
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs) -> tuple[int, dict[str, int]]:
+        raise NotImplementedError(
+            "MangaLibrary is a singleton; update fs_path in admin instead of deleting."
+        )
 
     def __str__(self) -> str:
         return self.name

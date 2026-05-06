@@ -83,8 +83,8 @@ class LibrarySyncAlreadyRunningError(Exception):
 
 
 def default_manga_library() -> MangaLibrary:
-    """Primary ``MangaLibrary`` row (migration 0035 seeds one); ``fs_path`` is canonical sync root."""
-    lib = MangaLibrary.objects.order_by("pk").first()
+    """Singleton ``MangaLibrary`` (``pk`` = 1); ``fs_path`` is canonical sync root."""
+    lib = MangaLibrary.objects.filter(pk=MangaLibrary.SINGLETON_PK).first()
     if lib is None:
         raise RuntimeError("MangaLibrary row missing; run migrations.")
     return lib

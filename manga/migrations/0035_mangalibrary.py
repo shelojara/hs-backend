@@ -1,6 +1,5 @@
 import os
 
-from django.conf import settings
 from django.db import migrations, models
 
 
@@ -8,8 +7,7 @@ def seed_default_manga_library(apps, schema_editor):
     MangaLibrary = apps.get_model("manga", "MangaLibrary")
     if MangaLibrary.objects.exists():
         return
-    raw = getattr(settings, "MANGA_ROOT", "/manga")
-    fs_path = os.path.abspath(os.path.expanduser(str(raw)))
+    fs_path = os.path.abspath(os.path.expanduser("/manga"))
     MangaLibrary.objects.create(name="Default", fs_path=fs_path)
 
 

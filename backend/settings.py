@@ -242,8 +242,6 @@ Q_CLUSTER = {
     "label": "Task Queue",
 }
 
-MANGA_ROOT = os.getenv("MANGA_ROOT", "/manga")
-
 # Google Drive backups: Django admin → "Google Drive OAuth credentials" (Web client + superuser OAuth).
 # Library folder ``MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME`` is created under the user's My Drive root.
 MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME = os.getenv("MANGA_GOOGLE_DRIVE_ROOT_FOLDER_NAME", "Manga").strip() or "Manga"

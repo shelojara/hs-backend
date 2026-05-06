@@ -220,7 +220,6 @@ def test_sync_detail_api_error_leaves_incomplete_for_retry(settings):
 
 @pytest.mark.django_db
 def test_set_series_mangabaka_creates_info_and_clears_snooze(settings):
-    settings.MANGA_ROOT = "/tmp/lib"
     t0 = django_timezone.now()
     s = Series.objects.create(
         library_root="/tmp/lib",
@@ -251,7 +250,6 @@ def test_set_series_mangabaka_creates_info_and_clears_snooze(settings):
 
 @pytest.mark.django_db
 def test_set_series_mangabaka_updates_existing_info(settings):
-    settings.MANGA_ROOT = "/tmp/lib"
     s = Series.objects.create(
         library_root="/tmp/lib",
         series_rel_path="N",
@@ -299,7 +297,6 @@ def test_set_series_mangabaka_wrong_root_raises():
 
 @pytest.mark.django_db
 def test_refresh_series_info_updates_detail_when_mangabaka_id_set(settings):
-    settings.MANGA_ROOT = "/tmp/lib"
     s = Series.objects.create(
         library_root="/tmp/lib",
         series_rel_path="R",
@@ -328,7 +325,6 @@ def test_refresh_series_info_updates_detail_when_mangabaka_id_set(settings):
 
 @pytest.mark.django_db
 def test_refresh_series_info_raises_without_mangabaka_link(settings):
-    settings.MANGA_ROOT = "/tmp/lib"
     s = Series.objects.create(
         library_root="/tmp/lib",
         series_rel_path="S",
@@ -341,7 +337,6 @@ def test_refresh_series_info_raises_without_mangabaka_link(settings):
 
 @pytest.mark.django_db
 def test_refresh_series_info_raises_when_seriesinfo_has_null_mangabaka_id(settings):
-    settings.MANGA_ROOT = "/tmp/lib"
     s = Series.objects.create(
         library_root="/tmp/lib",
         series_rel_path="T",
